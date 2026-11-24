@@ -138,13 +138,13 @@ void material_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, doubl
   const auto setter = [&](int tool, const Wanted& wanted = {}) -> SetterState {
     const auto result = port->fixed_setter({SetterAction::touch_off, tool, position()}, epoch, wanted);
     if (!result)
-      throw std::runtime_error(result.error());
+      throw std::runtime_error(result.error().text);
     return *result;
   };
   const auto setter_status = [&]() -> SetterState {
     const auto result = port->fixed_setter({.action = SetterAction::status}, epoch, {});
     if (!result)
-      throw std::runtime_error(result.error());
+      throw std::runtime_error(result.error().text);
     return *result;
   };
   const auto material = [&](ProbeDirection direction, const Wanted& wanted = {}) {
@@ -180,7 +180,7 @@ void material_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, doubl
     const auto before = port->status();
     const auto start = position();
     const auto result = material(direction, wanted);
-    require(result.has_value(), result ? "material probe completed" : result.error());
+    require(result.has_value(), result ? "material probe completed" : result.error().text);
     const auto after = port->status();
     require(result->material && result->material->wcs == 2 &&
                 result->material->axis == "XYZ"[axis] && after.wcs == 2 &&
@@ -332,15 +332,15 @@ void material_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, doubl
   const auto missed_corner = port->fixed_setter(
       {SetterAction::corner, 99, position(), ProbeDirection::x_plus, ProbeDirection::y_plus},
       epoch, {});
-  require(!missed_corner && missed_corner.error().contains("lifted clear") &&
+  require(!missed_corner && missed_corner.error().text.contains("lifted clear") &&
               std::abs(position()[2] - 20) < 0.2 && port->status().g5x == corner_before.g5x,
-          missed_corner ? "expected a missed outside face" : missed_corner.error());
+          missed_corner ? "expected a missed outside face" : missed_corner.error().text);
   start_at();
   corner_window('z', -100, 12);
   const auto corner = port->fixed_setter(
       {SetterAction::corner, 99, position(), ProbeDirection::x_plus, ProbeDirection::y_plus}, epoch,
       {});
-  require(corner.has_value(), corner ? "corner probe completed" : corner.error());
+  require(corner.has_value(), corner ? "corner probe completed" : corner.error().text);
   const auto corner_after = port->status();
   // Faces at -5 mm plus the 1 mm ball radius; the probe ends lifted above the Y approach point.
   require(corner && corner->material && corner->material->corner && corner->material->wcs == 2 &&
@@ -356,7 +356,8 @@ void material_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, doubl
   const auto low = port->fixed_setter(
       {SetterAction::corner, 99, position(), ProbeDirection::x_plus, ProbeDirection::y_plus}, epoch,
       {});
-  require(!low && low.error().contains("above the top"), low ? "expected a refusal" : low.error());
+  require(!low && low.error().text.contains("above the top"),
+          low ? "expected a refusal" : low.error().text);
 
   // Ball calibration over a 20 mm gauge with faces at -10 and +10 mm. Both faces are probed from
   // outside, so a 2.1 mm effective ball touches with its centre 1.05 mm outside each face, at
@@ -374,14 +375,15 @@ void material_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, doubl
     return port->fixed_setter(request, epoch, {});
   };
   const auto calibrated = gauge(20);
-  require(calibrated && calibrated->ball_diameter && std::abs(*calibrated->ball_diameter - 2.1) < 0.02,
+  require(calibrated && calibrated->ball_diameter &&
+              std::abs(*calibrated->ball_diameter - 2.1) < 0.02,
           calibrated ? std::format("the gauge measured the ball at {:.3f} mm",
                                    calibrated->ball_diameter.value_or(0))
-                     : calibrated.error());
+                     : calibrated.error().text);
   require(std::abs(position()[2] - 20) < 0.2, "the calibration lifted the probe afterwards");
   const auto wrong = gauge(24);
-  require(!wrong && wrong.error().contains("more than 0.5 mm"),
-          wrong ? "expected a refused diameter" : wrong.error());
+  require(!wrong && wrong.error().text.contains("more than 0.5 mm"),
+          wrong ? "expected a refused diameter" : wrong.error().text);
   mdi("G10 L1 P99 R1");
 
   // A boss: the block's ball-centre contacts at x -9/+9 and y -7/+7, its top at 12 mm. Faces
@@ -404,8 +406,9 @@ void material_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, doubl
               std::abs(boss_after.work[1] - (position()[1] - 0)) < 0.03 &&
               std::abs(position()[2] - 20) < 0.2,
           boss ? std::format("the boss centre is X0 Y0, diameter {:.3f} mm (work {:.3f} {:.3f})",
-                             boss->center_diameter.value_or(0), boss_after.work[0], boss_after.work[1])
-               : boss.error());
+                             boss->center_diameter.value_or(0), boss_after.work[0],
+                             boss_after.work[1])
+               : boss.error().text);
 
   // Both contacts can be real yet lie on the same side of the confirmed starting point.
   // Refuse to write their midpoint to the work origin.
@@ -417,9 +420,9 @@ void material_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, doubl
   boss_request.gauge_width_mm = 2;
   const auto before_wrong_boss = port->status().g5x;
   const auto wrong_boss = port->fixed_setter(boss_request, epoch, {});
-  require(!wrong_boss && wrong_boss.error().contains("do not enclose") &&
+  require(!wrong_boss && wrong_boss.error().text.contains("do not enclose") &&
               port->status().g5x == before_wrong_boss && std::abs(position()[2] - 20) < 0.2,
-          wrong_boss ? "expected a refusal for a boss outside the start" : wrong_boss.error());
+          wrong_boss ? "expected a refusal for a boss outside the start" : wrong_boss.error().text);
 
   // A bore: the ball trips outside x -9..+9 and y -7..+7 (NAND of both windows); centre 0, 0, a
   // 14 mm centre chord in Y plus the 2 mm ball: 16 mm.
@@ -447,8 +450,9 @@ void material_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, doubl
               std::abs(bore_after.work[0] - position()[0]) < 0.03 &&
               std::abs(bore_after.work[1] - position()[1]) < 0.03,
           bore ? std::format("the bore centre is X0 Y0, diameter {:.3f} mm (work {:.3f} {:.3f})",
-                             bore->center_diameter.value_or(0), bore_after.work[0], bore_after.work[1])
-               : bore.error());
+                             bore->center_diameter.value_or(0), bore_after.work[0],
+                             bore_after.work[1])
+               : bore.error().text);
   halcmd("unlinkp sim-ruby-release.in");
   halcmd("net sim-corner-trip sim-ruby-release.in");
   halcmd("unlinkp sim-ruby-release.in");
@@ -462,12 +466,14 @@ void material_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, doubl
   angle_request.gauge_width_mm = 20;
   const auto edge = port->fixed_setter(angle_request, epoch, {});
   require(edge && edge->edge_angle_deg && std::abs(*edge->edge_angle_deg) < 0.05,
-          edge ? std::format("the square front edge measured {:.3f}°", edge->edge_angle_deg.value_or(99))
-               : edge.error());
+          edge ? std::format("the square front edge measured {:.3f}°",
+                             edge->edge_angle_deg.value_or(99))
+               : edge.error().text);
   angle_request.gauge_width_mm = 2;
   angle_request.start = position();
   const auto close = port->fixed_setter(angle_request, epoch, {});
-  require(!close && close.error().contains("5 to 300 mm"), close ? "expected a refusal" : close.error());
+  require(!close && close.error().text.contains("5 to 300 mm"),
+          close ? "expected a refusal" : close.error().text);
 
   start_at();
   mdi("G10 L2 P2 R90");
@@ -479,8 +485,8 @@ void material_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, doubl
   const auto start = position();
   const auto before = port->status().g5x;
   const auto failed_cleanly = [&](const auto& result, std::string_view reason) {
-    require(!result && result.error().contains(reason),
-            result ? "expected a probe failure" : result.error());
+    require(!result && result.error().text.contains(reason),
+            result ? "expected a probe failure" : result.error().text);
     require(port->status().g5x == before && port->snapshot().machine == MachineState::on &&
                 std::abs(position()[2] - start[2]) < 0.03,
             "a probe failure returned to its start and left the work origin intact");
@@ -540,7 +546,8 @@ void feature_scenarios(NmlPort& port, double scale, const auto& mdi) {
     ++epoch.tool;
     halcmd(std::format("setp sim-tool-setter.max {}", (tool == 98 ? 10 : 12) / scale));
     const auto touched = port.fixed_setter({SetterAction::touch_off, tool, machine()}, epoch, {});
-    require(touched.has_value(), touched ? "the reference and probe have known lengths" : touched.error());
+    require(touched.has_value(),
+            touched ? "the reference and probe have known lengths" : touched.error().text);
   }
   mdi("G21 G90 G54");
   const auto g54 = port.status().g5x;
@@ -582,11 +589,12 @@ void feature_scenarios(NmlPort& port, double scale, const auto& mdi) {
       const auto status = port.status();
       const double edge_x = x == ProbeDirection::x_minus ? -6 : 14;
       const double edge_y = y == ProbeDirection::y_minus ? -10 : 6;
-      require(hit && hit->material && hit->material->corner &&
-                  std::abs(status.work[0] - (2 - edge_x)) < 0.03 &&
-                  std::abs(status.work[1] - (1 - edge_y)) < 0.03 &&
-                  std::abs(machine()[2] - 20) < 0.03 && std::abs(status.g5x[2] - initial.g5x[2]) < 1e-6,
-              hit ? "inside corner sets both axes using the selected wall signs" : hit.error());
+      require(
+          hit && hit->material && hit->material->corner &&
+              std::abs(status.work[0] - (2 - edge_x)) < 0.03 &&
+              std::abs(status.work[1] - (1 - edge_y)) < 0.03 &&
+              std::abs(machine()[2] - 20) < 0.03 && std::abs(status.g5x[2] - initial.g5x[2]) < 1e-6,
+          hit ? "inside corner sets both axes using the selected wall signs" : hit.error().text);
     }
   }
   at_start();
@@ -595,9 +603,11 @@ void feature_scenarios(NmlPort& port, double scale, const auto& mdi) {
   require(pocket && pocket->feature_size[0] && pocket->feature_size[1] &&
               std::abs(*pocket->feature_size[0] - 20) < 0.03 &&
               std::abs(*pocket->feature_size[1] - 16) < 0.03 &&
-              std::abs(pocket_status.work[0] + 2) < 0.03 && std::abs(pocket_status.work[1] - 3) < 0.03 &&
+              std::abs(pocket_status.work[0] + 2) < 0.03 &&
+              std::abs(pocket_status.work[1] - 3) < 0.03 &&
               std::abs(pocket_status.g5x[2] - initial.g5x[2]) < 1e-6,
-          pocket ? "rectangular pocket finds both physical widths and sets XY together" : pocket.error());
+          pocket ? "rectangular pocket finds both physical widths and sets XY together"
+                 : pocket.error().text);
 
   const auto selected = scale == 1 ? ProbeDirection::y_plus : ProbeDirection::x_plus;
   const std::size_t across = scale == 1 ? 1 : 0;
@@ -610,12 +620,13 @@ void feature_scenarios(NmlPort& port, double scale, const auto& mdi) {
                 measured->material->axis == "XY"[across] && measured->feature_size[across] &&
                 std::abs(*measured->feature_size[across] - expected_width) < 0.03 &&
                 !measured->feature_size[1 - across] &&
-                std::abs(after.work[across] - (machine()[across] - (across == 0 ? 4 : -2))) < 0.03 &&
+                std::abs(after.work[across] - (machine()[across] - (across == 0 ? 4 : -2))) <
+                    0.03 &&
                 std::abs(after.g5x[1 - across] - before.g5x[1 - across]) < 1e-6 &&
-                std::abs(after.g5x[2] - before.g5x[2]) < 1e-6 &&
-                after.g92 == before.g92 && std::abs(machine()[2] - 20) < 0.03,
+                std::abs(after.g5x[2] - before.g5x[2]) < 1e-6 && after.g92 == before.g92 &&
+                std::abs(machine()[2] - 20) < 0.03,
             measured ? "span sets one axis with ball compensation and leaves the other axes intact"
-                     : measured.error());
+                     : measured.error().text);
   };
   span(SetterAction::slot, 0, across == 0 ? 20 : 16);
 
@@ -623,9 +634,10 @@ void feature_scenarios(NmlPort& port, double scale, const auto& mdi) {
   const auto before_miss = port.status();
   limits('y', -100, 100);
   const auto miss = run(SetterAction::inside_corner, ProbeDirection::x_minus, ProbeDirection::y_plus);
-  require(!miss && miss.error().contains("No probe contact") && port.status().g5x == before_miss.g5x &&
-              std::abs(machine()[0] - 2) < 0.03 && std::abs(machine()[1] - 1) < 0.03,
-          miss ? "expected a missed second wall" : miss.error());
+  require(!miss && miss.error().text.contains("No probe contact") &&
+              port.status().g5x == before_miss.g5x && std::abs(machine()[0] - 2) < 0.03 &&
+              std::abs(machine()[1] - 1) < 0.03,
+          miss ? "expected a missed second wall" : miss.error().text);
   limits('y', -9, 5);
 
   halcmd("unlinkp motion.probe-input");
@@ -637,9 +649,9 @@ void feature_scenarios(NmlPort& port, double scale, const auto& mdi) {
   limits('z', -100, -99);
   const auto ridge_miss =
       run(SetterAction::ridge, selected, ProbeDirection::y_plus, across == 0 ? 16 : 12);
-  require(!ridge_miss && ridge_miss.error().contains("lifted clear") &&
+  require(!ridge_miss && ridge_miss.error().text.contains("lifted clear") &&
               port.status().g5x == ridge_origin && std::abs(machine()[2] - 20) < 0.03,
-          ridge_miss ? "expected a missed ridge face" : ridge_miss.error());
+          ridge_miss ? "expected a missed ridge face" : ridge_miss.error().text);
   require(std::abs(port.status().g5x[2] - initial.g5x[2]) < 1e-6 && port.status().g92 == initial.g92 &&
               port.status().tool_offset == initial.tool_offset &&
               std::ranges::contains(port.status().active_codes, "G91"),
@@ -701,7 +713,8 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
     ++epoch.tool;
     halcmd(std::format("setp sim-tool-setter.max {}", (tool == 98 ? 10 : 12) / scale));
     const auto touched = port.fixed_setter({SetterAction::touch_off, tool, machine()}, epoch, {});
-    require(touched.has_value(), touched ? "the reference and probe have known lengths" : touched.error());
+    require(touched.has_value(),
+            touched ? "the reference and probe have known lengths" : touched.error().text);
   }
   mdi("G21 G90 G54");
   const auto g54 = port.status().g5x;
@@ -760,7 +773,7 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
     const auto taken = port.fixed_setter(top, epoch, {});
     if (!taken || !taken->measured)
       throw std::runtime_error(
-          std::format("{}: {}", name, taken ? "no measurement" : taken.error()));
+          std::format("{}: {}", name, taken ? "no measurement" : taken.error().text));
     change();
     const auto before_apply = port.status();
     const auto writes_before = port.writes().size();
@@ -773,10 +786,11 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
     std::cout << std::format("fact=measure_only action=stale_{} rotation={} refused={} writes={}",
                              name, degrees, !result, port.writes().size() - writes_before)
               << std::endl;
-    require(!result && result.error().contains(reason) && port.writes().size() == writes_before &&
-                after.g5x == before_apply.g5x && after.g92 == before_apply.g92 &&
-                after.rotation_xy == before_apply.rotation_xy && table_text() == table_before,
-            result ? std::format("{}: expected a refused measurement", name) : result.error());
+    require(!result && result.error().text.contains(reason) &&
+                port.writes().size() == writes_before && after.g5x == before_apply.g5x &&
+                after.g92 == before_apply.g92 && after.rotation_xy == before_apply.rotation_xy &&
+                table_text() == table_before,
+            result ? std::format("{}: expected a refused measurement", name) : result.error().text);
   };
   if (geometry_only) {
     probe_input("sim-rot-outer", "sim-rot-solid.and");
@@ -838,14 +852,14 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
                                             .measure_only = true},
                                            epoch, {});
     if (!pending || !pending->measured)
-      throw std::runtime_error(pending ? "no measurement" : pending.error());
+      throw std::runtime_error(pending ? "no measurement" : pending.error().text);
     edit_tool({1, 1, 8, 2, "Unrelated cutter"});
     const auto applied = port.fixed_setter({.action = SetterAction::apply_measurement,
                                             .tool = 99,
                                             .edge_measurement = pending->measured->id},
                                            epoch, {});
     require(applied && applied->material,
-            applied ? "an unrelated tool edit keeps the measurement usable" : applied.error());
+            applied ? "an unrelated tool edit keeps the measurement usable" : applied.error().text);
     return;
   }
 
@@ -856,9 +870,10 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
     std::optional<double> diameter{};
   };
   const auto verify = [&](const Expected& expected, const NmlStatus& before,
-                          const std::expected<SetterState, std::string>& result) {
+                          const std::expected<SetterState, LocalizedReason>& result) {
     if (!result)
-      throw std::runtime_error(std::format("{} at {}°: {}", expected.name, degrees, result.error()));
+      throw std::runtime_error(
+          std::format("{} at {}°: {}", expected.name, degrees, result.error().text));
     const auto after = port.status();
     const auto kept = origin_of(before);
     const auto measured = origin_of(after);
@@ -899,7 +914,7 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
     const auto result = port.fixed_setter(probe, epoch, {});
     if (!result || !result->measured)
       throw std::runtime_error(std::format("{} measure at {}°: {}", expected.name, degrees,
-                                           result ? "no measurement" : result.error()));
+                                           result ? "no measurement" : result.error().text));
     const auto after = port.status();
     const auto& m = *result->measured;
     const auto kept = origin_of(before);
@@ -936,7 +951,8 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
     const auto applied = port.fixed_setter(
         {.action = SetterAction::apply_measurement, .tool = 99, .edge_measurement = m.id}, epoch, {});
     if (!applied)
-      throw std::runtime_error(std::format("{} apply at {}°: {}", expected.name, degrees, applied.error()));
+      throw std::runtime_error(
+          std::format("{} apply at {}°: {}", expected.name, degrees, applied.error().text));
     auto reported = *result;
     reported.material = applied->material;
     return reported;
@@ -1022,7 +1038,8 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
                            .direction = ProbeDirection::z_top, .measure_only = true};
     const auto z = port.fixed_setter(top, epoch, {});
     if (!z || !z->measured)
-      throw std::runtime_error(std::format("Z top measure at {}°: {}", degrees, z ? "no measurement" : z.error()));
+      throw std::runtime_error(
+          std::format("Z top measure at {}°: {}", degrees, z ? "no measurement" : z.error().text));
     const auto& zm = *z->measured;
     const auto measured_status = port.status();
     const bool unchanged = measured_status.g5x == before.g5x && measured_status.g92 == before.g92 &&
@@ -1049,18 +1066,19 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
                 std::abs(z_after.work[2] - 8) < 0.03 &&
                 std::abs(origin_of(z_after)[0] - origin_of(before)[0]) < 0.03 &&
                 std::abs(origin_of(z_after)[1] - origin_of(before)[1]) < 0.03,
-            z_applied ? "applying the measured top sets Z0 there and keeps XY" : z_applied.error());
+            z_applied ? "applying the measured top sets Z0 there and keeps XY"
+                      : z_applied.error().text);
     // A measurement is applied once; a new probe action forgets it.
     const auto again = port.fixed_setter(
         {.action = SetterAction::apply_measurement, .tool = 99, .edge_measurement = zm.id}, epoch, {});
-    require(!again && again.error().contains("Probe the feature again"),
+    require(!again && again.error().text.contains("Probe the feature again"),
             "a measurement cannot be applied twice");
     // A changed work origin refuses an applied measurement before writing.
     at(2, 1);
     top.start = machine();
     const auto stale = port.fixed_setter(top, epoch, {});
     if (!stale || !stale->measured)
-      throw std::runtime_error(stale ? "no measurement" : stale.error());
+      throw std::runtime_error(stale ? "no measurement" : stale.error().text);
     mdi("G21 G10 L20 P0 Z7");
     mdi(scale == 1 ? "G21 G91" : "G20 G91");
     const auto stale_writes = port.writes().size();
@@ -1068,7 +1086,7 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
     const auto refused = port.fixed_setter(
         {.action = SetterAction::apply_measurement, .tool = 99, .edge_measurement = stale->measured->id},
         epoch, {});
-    require(!refused && refused.error().contains("work frame") &&
+    require(!refused && refused.error().text.contains("work frame") &&
                 port.writes().size() == stale_writes && port.status().g5x == stale_origin,
             "a measurement taken in another work frame is refused before writing");
     const auto units = scale == 1 ? "G21 G91" : "G20 G91";
@@ -1119,7 +1137,7 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
                      "second_applied={}",
                      degrees, !forgotten, forgotten_program_writes, latest.has_value())
               << std::endl;
-    require(!forgotten && forgotten.error().contains("Probe the feature again") &&
+    require(!forgotten && forgotten.error().text.contains("Probe the feature again") &&
                 forgotten_program_writes == 0 && latest.has_value() &&
                 first->measured->id != second->measured->id,
             "a new probe action forgets the measurement before it");
@@ -1129,7 +1147,7 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
       FixedSetterRequest writer{.action = action, .tool = 99, .start = machine(), .measure_only = true};
       writer.gauge_width_mm = 20;
       const auto refused_writer = port.fixed_setter(writer, epoch, {});
-      require(!refused_writer && refused_writer.error().contains("always writes its result") &&
+      require(!refused_writer && refused_writer.error().text.contains("always writes its result") &&
                   port.writes().size() == writes_before,
               "the ball calibration and the tool setter refuse measure-only natively too");
     }
@@ -1151,10 +1169,9 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
   std::cout << std::format("fact=rotated_probe action=ball rotation={} refused={} writes={}", degrees,
                            !refused_ball, port.writes().size() - writes_before_ball)
             << std::endl;
-  require(!refused_ball && refused_ball.error().contains("without rotation") &&
-              port.writes().size() == writes_before_ball &&
-              port.status().g5x == origin_before_ball,
-          refused_ball ? "expected a refused ball calibration" : refused_ball.error());
+  require(!refused_ball && refused_ball.error().text.contains("without rotation") &&
+              port.writes().size() == writes_before_ball && port.status().g5x == origin_before_ball,
+          refused_ball ? "expected a refused ball calibration" : refused_ball.error().text);
 
   // The travel check is on the machine endpoint: 1 mm inside the Y limit, the +X work axis
   // leaves it although the X search alone would not.
@@ -1170,9 +1187,9 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
                            edge_y, edge_y + 20 * s, s > 0 ? 250 : -250,
                            port.writes().size() - writes)
             << std::endl;
-  require(!outside && outside.error().contains("outside the configured travel") &&
+  require(!outside && outside.error().text.contains("outside the configured travel") &&
               port.writes().size() == writes && port.status().g5x == origin,
-          outside ? "expected a travel refusal" : outside.error());
+          outside ? "expected a travel refusal" : outside.error().text);
   mdi(std::format("G21 G90 G53 G0 X0 Y{} Z20", edge_y / 2));
   mdi("G21 G90 G53 G0 X0 Y0 Z20");
 
@@ -1201,7 +1218,7 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
     request.gauge_width_mm = 20;
     const auto measured = port.fixed_setter(request, epoch, {});
     if (!measured)
-      throw std::runtime_error(std::format("angle at {}°: {}", rotation, measured.error()));
+      throw std::runtime_error(std::format("angle at {}°: {}", rotation, measured.error().text));
     std::cout << std::format("fact=rotated_probe action=angle edge={} rotation={:.4f} angle_expected={:.4f} "
                              "angle_measured={:.4f} apply_expected={:.4f} apply_offered={:.4f}",
                              direction == ProbeDirection::y_plus ? "front" : "left", rotation,
@@ -1238,7 +1255,7 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
               std::ranges::equal(turned.g5x, unturned,
                                  [](double a, double b) { return std::abs(a - b) < 1e-6; }),
           applied ? "applying adds the measured turn to the present rotation"
-                  : applied.error());
+                  : applied.error().text);
   // Square to the edge now: the remaining turn is zero.
   static_cast<void>(angle(ProbeDirection::y_plus, 0));
 
@@ -1256,7 +1273,8 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
                            wrapped_expected, port.status().rotation_xy)
             << std::endl;
   require(wrapped && std::abs(port.status().rotation_xy - wrapped_expected) < 0.05,
-          wrapped ? "applying past 180° writes the same turn inside -180..180°" : wrapped.error());
+          wrapped ? "applying past 180° writes the same turn inside -180..180°"
+                  : wrapped.error().text);
   static_cast<void>(angle(ProbeDirection::y_plus, 0));
   // A stop mid-cycle drops the machine's enable: the cycle has turned the feed override (M50)
   // and adaptive feed (M52) off, and switched to G90 once it has sent a move. Once the machine
@@ -1515,7 +1533,8 @@ void runout_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, double 
     at(0, 0, 20);
     halcmd(std::format("setp sim-tool-setter.max {}", (tool == 98 ? 10 : 12) / scale));
     const auto touched = port->fixed_setter({SetterAction::touch_off, tool, machine()}, epoch, {});
-    require(touched.has_value(), touched ? "the reference and probe have known lengths" : touched.error());
+    require(touched.has_value(),
+            touched ? "the reference and probe have known lengths" : touched.error().text);
   }
   // G55: X0 Y0 at the ring centre, Z0 at machine Z 12.
   mdi("G21 G90 G54");
@@ -1600,7 +1619,8 @@ void runout_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, double 
     request.outside = outside;
     const auto result = port->fixed_setter(request, epoch, {});
     if (!result || !result->runout)
-      throw std::runtime_error(std::format("{} runout: {}", name, result ? "not reported" : result.error()));
+      throw std::runtime_error(
+          std::format("{} runout: {}", name, result ? "not reported" : result.error().text));
     const auto& runout = *result->runout;
     expect(name, {{"radius_x", -0.01, runout.radius_mm[0]}, {"radius_y", -0.01, runout.radius_mm[1]},
                   {"table_diameter", 2, runout.table_diameter_mm}},
@@ -1624,7 +1644,7 @@ void runout_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, double 
     request.start = machine();
     const auto result = port->fixed_setter(request, epoch, {});
     if (!result)
-      throw std::runtime_error(std::format("{}: {}", name, result.error()));
+      throw std::runtime_error(std::format("{}: {}", name, result.error().text));
     const auto after = port->status();
     mdi("G55");
     return {*result, {after.g5x[0], after.g5x[1]}};
@@ -1646,9 +1666,9 @@ void runout_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, double 
     std::cout << std::format("fact=runout action={} refused={} writes={} file_kept={}", name, !result,
                              port->writes().size() - writes, saved() == file)
               << std::endl;
-    require(!result && result.error().contains(reason) && (moves || port->writes().size() == writes) &&
-                saved() == file,
-            result ? std::format("{} is refused", name) : result.error());
+    require(!result && result.error().text.contains(reason) &&
+                (moves || port->writes().size() == writes) && saved() == file,
+            result ? std::format("{} is refused", name) : result.error().text);
   };
 
   // Three runs, each within the sim's 480 s: the ring (bores, ring features, refusals, abort),
@@ -1750,7 +1770,7 @@ void runout_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, double 
                                  .angles_deg = angles};
       const auto result = port->fixed_setter(request, epoch, {});
       if (!result)
-        throw std::runtime_error(std::format("{}: {}", name, result.error()));
+        throw std::runtime_error(std::format("{}: {}", name, result.error().text));
       Arc done{.state = *result};
       if (measure_only) {
         const auto& found = result->measured;
@@ -1764,7 +1784,7 @@ void runout_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, double 
               {.action = SetterAction::apply_measurement, .tool = 99, .edge_measurement = found->id},
               epoch, {});
           require(applied && applied->material,
-                  applied ? std::format("{} applies its measurement", name) : applied.error());
+                  applied ? std::format("{} applies its measurement", name) : applied.error().text);
         }
       }
       const auto after = port->status();
@@ -1920,9 +1940,9 @@ void runout_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, double 
   far.gauge_width_mm = 20;
   const auto missed = port->fixed_setter(far, epoch, {});
   std::cout << std::format("fact=runout action=miss refused={} reason=\"{}\" file_kept={}", !missed,
-                           missed ? "" : missed.error(), saved() == file)
+                           missed ? "" : missed.error().text, saved() == file)
             << std::endl;
-  require(!missed && missed.error().starts_with("−X face") && saved() == file,
+  require(!missed && missed.error().text.starts_with("−X face") && saved() == file,
           "a miss part way leaves the file as it was");
   reconnect(20);
 
@@ -1941,7 +1961,7 @@ void runout_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, double 
   load(98);
   const auto cleared = port->fixed_setter({.action = SetterAction::clear_runout, .tool = 99}, epoch, {});
   require(cleared && !cleared->runout && !std::filesystem::exists(runout_file),
-          cleared ? "Clear removes the correction with T98 loaded" : cleared.error());
+          cleared ? "Clear removes the correction with T98 loaded" : cleared.error().text);
   load(99);
   mdi("G54");
   require(port->status().g5x == g54, "runout calibration changes no other work system");
@@ -1993,7 +2013,8 @@ void arc_scenarios(NmlPort& port, double scale, double degrees, const auto& mdi,
     ++epoch.tool;
     halcmd(std::format("setp sim-tool-setter.max {}", (tool == 98 ? 10 : 12) / scale));
     const auto touched = port.fixed_setter({SetterAction::touch_off, tool, machine()}, epoch, {});
-    require(touched.has_value(), touched ? "the reference and probe have known lengths" : touched.error());
+    require(touched.has_value(),
+            touched ? "the reference and probe have known lengths" : touched.error().text);
   }
   mdi("G21 G90 G54");
   const auto g54 = port.status().g5x;
@@ -2096,7 +2117,7 @@ void arc_scenarios(NmlPort& port, double scale, double degrees, const auto& mdi,
       at(3.6, -1.7); // a sound circle still fits from off centre
       const auto clear = port.fixed_setter(request(true), epoch, {});
       if (!clear)
-        throw std::runtime_error(clear.error());
+        throw std::runtime_error(clear.error().text);
       if (!clear->measured)
         throw std::runtime_error(clear->origin_refusal
                                      ? clear->origin_refusal->text
@@ -2138,7 +2159,7 @@ void arc_scenarios(NmlPort& port, double scale, double degrees, const auto& mdi,
                     after.tool_offset == before.tool_offset && port.writes().size() > writes &&
                     g10_since(writes) == 0 && table_text() == table,
                 refused ? "an early trip refuses the origin write with the residual key"
-                        : refused.error());
+                        : refused.error().text);
       }
       box(1000, 1001, 1000, 1001);
     }
@@ -2181,7 +2202,7 @@ void arc_scenarios(NmlPort& port, double scale, double degrees, const auto& mdi,
       const auto before = port.status().g5x;
       const auto missed_writes = port.writes().size();
       const auto missed = port.fixed_setter(bore, epoch, {});
-      require(!missed && missed.error().contains("Contact 4") && port.status().g5x == before &&
+      require(!missed && missed.error().text.contains("Contact 4") && port.status().g5x == before &&
                   g10_since(missed_writes) == 0,
               "a missed verification contact aborts without writing");
     } else {
@@ -2203,7 +2224,7 @@ void arc_scenarios(NmlPort& port, double scale, double degrees, const auto& mdi,
         stopped = stopped || (fifth && now - *fifth >= 250ms);
         return !stopped;
       });
-      require(stopped && !result && result.error().contains("Contact 5") &&
+      require(stopped && !result && result.error().text.contains("Contact 5") &&
                   port.status().g5x == before && g10_since(writes) == 0,
               "Stop during the extra search aborts without writing");
     }
@@ -2232,10 +2253,10 @@ void arc_scenarios(NmlPort& port, double scale, double degrees, const auto& mdi,
                              "refused={} moved={} g10_blocks={} offsets_unchanged={} reason=\"{}\"",
                              name, degrees, angles[0], angles[1], angles[2], !result,
                              port.writes().size() > writes, g10, unchanged,
-                             result ? std::string{} : result.error())
+                             result ? std::string{} : result.error().text)
               << std::endl;
-    require(!result && result.error().contains(reason) && unchanged,
-            result ? std::format("{}: expected a refusal", name) : result.error());
+    require(!result && result.error().text.contains(reason) && unchanged,
+            result ? std::format("{}: expected a refusal", name) : result.error().text);
     return after;
   };
   const auto run = [&](std::string_view name, SetterAction action, std::array<double, 3> angles,
@@ -2248,7 +2269,7 @@ void arc_scenarios(NmlPort& port, double scale, double degrees, const auto& mdi,
       request.gauge_width_mm = 12;
     const auto result = port.fixed_setter(request, epoch, {});
     if (!result)
-      throw std::runtime_error(std::format("{} at {}°: {}", name, degrees, result.error()));
+      throw std::runtime_error(std::format("{} at {}°: {}", name, degrees, result.error().text));
     const auto after = port.status();
     const auto origin = origin_of(after);
     const double span = arc_spread(angles).span_deg;
@@ -2363,7 +2384,7 @@ void arc_scenarios(NmlPort& port, double scale, double degrees, const auto& mdi,
     const auto result = port.fixed_setter(request, epoch, {});
     if (!result || !result->measured)
       throw std::runtime_error(std::format("{} measure at {}°: {}", name, degrees,
-                                           result ? "no measurement" : result.error()));
+                                           result ? "no measurement" : result.error().text));
     const auto after = port.status();
     const auto& m = *result->measured;
     const auto g10 = g10_since(writes);
@@ -2393,7 +2414,8 @@ void arc_scenarios(NmlPort& port, double scale, double degrees, const auto& mdi,
               << std::endl;
     require(applied && applied->material && applied->material->corner &&
                 std::abs(origin[0] - 4) < 0.03 && std::abs(origin[1] + 2) < 0.03,
-            applied ? std::format("{}: applying sets X0 Y0 at the centre", name) : applied.error());
+            applied ? std::format("{}: applying sets X0 Y0 at the centre", name)
+                    : applied.error().text);
   };
   // Move G55 off the centre first, so applying has something to change.
   mdi("G21 G10 L20 P0 X1 Y1");
@@ -2424,8 +2446,8 @@ void arc_scenarios(NmlPort& port, double scale, double degrees, const auto& mdi,
                              arc_spread(angles).closest_deg, arc_spread(angles).span_deg, !refused,
                              port.writes().size() - writes)
               << std::endl;
-    require(!refused && refused.error().contains(reason) && port.writes().size() == writes,
-            refused ? "expected a refused angle set" : refused.error());
+    require(!refused && refused.error().text.contains(reason) && port.writes().size() == writes,
+            refused ? "expected a refused angle set" : refused.error().text);
   }
 
   // The travel check covers every direction before the first move: 1 mm inside the Y limit,
@@ -2451,12 +2473,12 @@ void arc_scenarios(NmlPort& port, double scale, double degrees, const auto& mdi,
                            "endpoint_3_y={:.4f} limit_y={} writes={} moved={} reason=\"{}\"",
                            degrees, edge_y, edge_y + (s >= 0 ? 20 : -20), s >= 0 ? 250 : -250,
                            port.writes().size() - writes, !still,
-                           outside ? std::string{} : outside.error())
+                           outside ? std::string{} : outside.error().text)
             << std::endl;
-  require(!outside && outside.error().contains("Contact 3") &&
-              outside.error().contains("outside the configured travel") &&
+  require(!outside && outside.error().text.contains("Contact 3") &&
+              outside.error().text.contains("outside the configured travel") &&
               port.writes().size() == writes && still && port.status().g5x == origin,
-          outside ? "expected a travel refusal" : outside.error());
+          outside ? "expected a travel refusal" : outside.error().text);
   mdi(std::format("G21 G90 G53 G0 X0 Y{} Z20", edge_y / 2));
   mdi("G21 G90 G53 G0 X0 Y0 Z20");
   mdi("G54");
@@ -2488,7 +2510,8 @@ void height_map_scenarios(NmlPort& port, HalShared& shared, double scale, double
     ++epoch.tool;
     halcmd(std::format("setp sim-tool-setter.max {}", (tool == 98 ? 10 : 12) / scale));
     const auto touched = port.fixed_setter({SetterAction::touch_off, tool, machine()}, epoch, {});
-    require(touched.has_value(), touched ? "the reference and probe have known lengths" : touched.error());
+    require(touched.has_value(),
+            touched ? "the reference and probe have known lengths" : touched.error().text);
   }
   mdi("G21 G90 G54");
   const auto g54 = port.status().g5x;
@@ -2561,7 +2584,7 @@ void height_map_scenarios(NmlPort& port, HalShared& shared, double scale, double
     });
     if (!result || !result->height_map)
       throw std::runtime_error(std::format("height map at {}° with {} mm Z lag: {}", turn, z_lag,
-                                           result ? "no map" : result.error()));
+                                           result ? "no map" : result.error().text));
     const auto& points = result->height_map->points;
     bool ok = result->height_map->columns == 3 && result->height_map->rows == 3 && points.size() == 9 &&
               result->height_map->wcs == 2 && !result->height_map->partial &&
@@ -2620,13 +2643,15 @@ void height_map_scenarios(NmlPort& port, HalShared& shared, double scale, double
         std::tuple{std::array{-5.0, -4.0, 15.0, 12.0}, 1.0, 3.0, std::string("2 to 150 points")}}) {
     const auto writes = port.writes().size();
     const auto refused = port.fixed_setter(map_request(grid, step, clearance), epoch, {});
-    std::cout << std::format("fact=height_map action=refused x_max={} step={} clearance={} refused={} writes={} "
-                             "reason=\"{}\"",
-                             grid[2], step, clearance, !refused, port.writes().size() - writes,
-                             refused ? "" : refused.error())
-              << std::endl;
-    require(!refused && refused.error().contains(reason) && port.writes().size() == writes,
-            refused ? "expected a refused height map" : refused.error());
+    std::cout
+        << std::format(
+               "fact=height_map action=refused x_max={} step={} clearance={} refused={} writes={} "
+               "reason=\"{}\"",
+               grid[2], step, clearance, !refused, port.writes().size() - writes,
+               refused ? "" : refused.error().text)
+        << std::endl;
+    require(!refused && refused.error().text.contains(reason) && port.writes().size() == writes,
+            refused ? "expected a refused height map" : refused.error().text);
   }
 
   // Stopped maps. Each runs a single row of three points (work Y -4, X -5, 5 and 15; tops 0.07,
@@ -2673,9 +2698,10 @@ void height_map_scenarios(NmlPort& port, HalShared& shared, double scale, double
     const bool on = port.status().controller.machine == MachineState::on;
     const bool rest = at_rest();
     const auto points = result && result->height_map ? count(*result->height_map) : 0;
-    const std::string why = !result ? result.error()
-                            : result->height_map && result->height_map->partial ? *result->height_map->partial
-                                                                                 : "";
+    const std::string why = !result ? result.error().text
+                            : result->height_map && result->height_map->partial
+                                ? *result->height_map->partial
+                                : "";
     std::cout << std::format("fact=height_map action={} machine_on={} at_rest={} points={} partial={} reason=\"{}\"",
                              name, on, rest, points, result && result->height_map && result->height_map->partial,
                              why)
@@ -2699,11 +2725,14 @@ void height_map_scenarios(NmlPort& port, HalShared& shared, double scale, double
   {
     const auto g5x = port.status().g5x;
     const auto single = port.fixed_setter({SetterAction::material, 99, machine(), ProbeDirection::z_top}, epoch, {});
-    std::cout << std::format("fact=height_map action=single_z_top_with_lag z_lag=-0.125 refused={} g5x_unchanged={} "
+    std::cout << std::format("fact=height_map action=single_z_top_with_lag z_lag=-0.125 refused={} "
+                             "g5x_unchanged={} "
                              "reason=\"{}\"",
-                             !single, port.status().g5x == g5x, single ? "" : single.error())
+                             !single, port.status().g5x == g5x, single ? "" : single.error().text)
               << std::endl;
-    require(!single && single.error().contains("Probe input, position or feed controls changed before descent.") &&
+    require(!single &&
+                single.error().text.contains(
+                    "Probe input, position or feed controls changed before descent.") &&
                 port.status().g5x == g5x,
             "a single Z top still refuses 0.125 mm between the commanded and the measured Z");
   }
@@ -2773,7 +2802,9 @@ void height_map_scenarios(NmlPort& port, HalShared& shared, double scale, double
     const auto result = port.fixed_setter(map_request({-5, -4, 15, 4}, 10, 1.2), epoch, {});
     const auto points = result && result->height_map ? count(*result->height_map) : 0;
     const std::string why = result && result->height_map && result->height_map->partial
-                                ? *result->height_map->partial : result ? "" : result.error();
+                                ? *result->height_map->partial
+                            : result ? ""
+                                     : result.error().text;
     std::cout << std::format("fact=height_map action=margin points={} machine_on={} reason=\"{}\"", points,
                              port.status().controller.machine == MachineState::on, why)
               << std::endl;
@@ -2832,7 +2863,7 @@ void edge_rotations(NmlPort& port, double scale, const auto& mdi) {
                 before.g92 == after.g92 && after.rotation_xy == 0,
             measured ? std::format("edge measured {:.3f}° in G55 without writing it",
                                    measured->edge_angle_deg.value_or(99))
-                     : measured.error());
+                     : measured.error().text);
     return FixedSetterRequest{.action = SetterAction::apply_angle,
                               .tool = 99,
                               .edge_measurement = measured->edge_rotation->id};
@@ -2842,7 +2873,7 @@ void edge_rotations(NmlPort& port, double scale, const auto& mdi) {
   mdi("G10 L2 P2 X6");
   const auto before_stale = port.writes().size();
   const auto refused = port.fixed_setter(stale, epoch, {});
-  require(!refused && refused.error().contains("work frame") &&
+  require(!refused && refused.error().text.contains("work frame") &&
               before_stale == port.writes().size(),
           "a changed work origin refuses the measured rotation before writing");
   for (const auto& [direction, angle] : {std::pair{ProbeDirection::y_plus, expected},
@@ -2874,7 +2905,7 @@ void edge_rotations(NmlPort& port, double scale, const auto& mdi) {
                 before_apply == position(),
             applied ? std::format("G55 applied {:.3f}° without changing origin, shifts or position",
                                   after.rotation_xy)
-                    : applied.error());
+                    : applied.error().text);
     const auto replay = port.fixed_setter(request, epoch, {});
     require(!replay, "a rotation measurement can only be applied once");
     mdi("G10 L2 P2 R0");
@@ -3282,7 +3313,7 @@ void run(const std::string& ini, std::string_view scenario) {
   const auto setter = [&](const FixedSetterRequest& request) -> SetterState {
     const auto result = port->fixed_setter(request, epoch, {});
     if (!result)
-      throw std::runtime_error(result.error());
+      throw std::runtime_error(result.error().text);
     return *result;
   };
   const auto read_table = [&]() {
@@ -3296,7 +3327,11 @@ void run(const std::string& ini, std::string_view scenario) {
   const auto old_table = read_table();
   const auto premature = port->fixed_setter(
       {.action = SetterAction::check, .tool = reference_tool, .start = move.start}, epoch, {});
-  require(!premature && premature.error().contains("Teach the setter") && old_table == read_table(),
+  require(!premature && premature.error().text.contains("Teach the setter") &&
+              premature.error().localization ==
+                  MessageKey{"backend.nmlPort.teachSetter",
+                             {{"tool", std::to_string(reference_tool)}}} &&
+              old_table == read_table(),
           "checking requires a taught plane even with the reference tool loaded");
   const auto taught = setter(
       {.action = SetterAction::touch_off, .tool = reference_tool, .start = move.start});
@@ -3359,10 +3394,10 @@ void run(const std::string& ini, std::string_view scenario) {
        {std::pair{11.7, "shorter"}, std::pair{12.3, "longer"}}) {
     halcmd(std::format("setp sim-tool-setter.max {}", height / scale));
     const auto failed = port->fixed_setter(check, epoch, {});
-    require(!failed && failed.error().contains(direction) && failed.error().contains("tolerance") &&
-                intact(),
+    require(!failed && failed.error().text.contains(direction) &&
+                failed.error().text.contains("tolerance") && intact(),
             std::format("a {} tool fails after retract and keeps its table and offset ({})",
-                        direction, failed ? "unexpected pass" : failed.error()));
+                        direction, failed ? "unexpected pass" : failed.error().text));
   }
   halcmd(std::format("setp sim-tool-setter.max {}", 12 / scale));
   const auto unstable = port->fixed_setter(repeat, epoch, [&]() {
@@ -3378,7 +3413,7 @@ void run(const std::string& ini, std::string_view scenario) {
     }
     return true;
   });
-  require(shifted && trips == 4 && !unstable && unstable.error().contains("exceeds 0.01 mm") &&
+  require(shifted && trips == 4 && !unstable && unstable.error().text.contains("exceeds 0.01 mm") &&
               saved_table == read_table() && port->snapshot().machine == MachineState::on,
           "three slow contacts with excessive spread retract and leave the table untouched");
 
@@ -3447,9 +3482,11 @@ void run(const std::string& ini, std::string_view scenario) {
   mdi(std::format("G10 L1 P98 Z{}", reference_length + 1));
   const auto writes_before_reteach = port->writes().size();
   const auto stale = port->fixed_setter(touch_request(2), epoch, {});
-  require(!stale && stale.error().contains("Teach the setter with T98 or a touched-off tool first") &&
-              port->writes().size() == writes_before_reteach,
-          "a changed reference blocks the next touch-off before any command");
+  require(
+      !stale &&
+          stale.error().text.contains("Teach the setter with T98 or a touched-off tool first") &&
+          port->writes().size() == writes_before_reteach,
+      "a changed reference blocks the next touch-off before any command");
   const auto edited_reference = setter_status();
   require(!edited_reference.calibration && edited_reference.measured_tools.empty(),
           "changing T98 length clears every mark and invalidates calibration");

@@ -212,7 +212,8 @@ auto words(long type) -> std::string_view {
 }
 
 auto withdrawn() -> ActionResult {
-  return {ActionStatus::cancelled, "Cancelled before it was sent."};
+  return {ActionStatus::cancelled, "Cancelled before it was sent.",
+          MessageKey{"backend.nmlPort.cancelledBeforeSent"}};
 }
 
 // Polls until `done` holds. False when it did not within the timeout.
@@ -636,7 +637,7 @@ struct NmlPort::Impl {
   }
 
   // A failure whose reason is what task published about it, or `fallback`.
-  [[nodiscard]] auto failure(std::size_t from, std::string_view fallback) -> ActionResult {
+  [[nodiscard]] auto failure(std::size_t from, LocalizedReason fallback) -> ActionResult {
     static_cast<void>(until(error_text_time, [&]() -> bool {
       collect();
       return error_since(from);
@@ -647,7 +648,9 @@ struct NmlPort::Impl {
       return false;
     }));
     auto reason = take_errors(from);
-    return failed(reason.empty() ? std::string(fallback) : std::move(reason));
+    if (!reason.empty())
+      return {ActionStatus::failed, std::move(reason)};
+    return {ActionStatus::failed, std::move(fallback.text), std::move(fallback.localization)};
   }
 
   // Ends an action: its `Wanted` is the caller's and is not kept past the call.
@@ -744,7 +747,8 @@ struct NmlPort::Impl {
       return answered(stat());
     });
     if (!echo)
-      return {ActionStatus::timed_out, "LinuxCNC did not acknowledge the command."};
+      return {ActionStatus::timed_out, "LinuxCNC did not acknowledge the command.",
+              MessageKey{"backend.nmlPort.notAcknowledged"}};
     unanswered_stop.reset();
     return {};
   }
@@ -802,9 +806,11 @@ struct NmlPort::Impl {
       return echo;
     const int rcs = outcome(completion_timeout);
     if (rcs == RCS_EXEC)
-      return {ActionStatus::timed_out, "LinuxCNC did not finish the command."};
+      return {ActionStatus::timed_out, "LinuxCNC did not finish the command.",
+              MessageKey{"backend.nmlPort.notFinished"}};
     if (rcs == RCS_ERROR)
-      return failure(from, "LinuxCNC reported an error.");
+      return failure(from,
+                     {"LinuxCNC reported an error.", MessageKey{"backend.nmlPort.reportedError"}});
     return {};
   }
 
@@ -829,7 +835,8 @@ struct NmlPort::Impl {
       return refused;
     }));
     if (refused)
-      return failure(from, "LinuxCNC reported an error.");
+      return failure(from,
+                     {"LinuxCNC reported an error.", MessageKey{"backend.nmlPort.reportedError"}});
     return {};
   }
 
@@ -839,13 +846,14 @@ struct NmlPort::Impl {
     if (auto sent = send(message); !accepted(sent))
       return sent;
     if (outcome(start_window) == RCS_ERROR)
-      return failure(from, "LinuxCNC reported an error.");
+      return failure(from,
+                     {"LinuxCNC reported an error.", MessageKey{"backend.nmlPort.reportedError"}});
     return {};
   }
 
   // Waits for a state task reports after the command is done.
   template <typename Predicate>
-  [[nodiscard]] auto settled(std::size_t from, std::string_view otherwise, Predicate reached)
+  [[nodiscard]] auto settled(std::size_t from, LocalizedReason otherwise, Predicate reached)
       -> ActionResult {
     const bool ok = until(settle_timeout, [&]() -> bool {
       collect();
@@ -855,7 +863,7 @@ struct NmlPort::Impl {
     const EMC_STAT* s = stat();
     if (ok && s != nullptr && reached(*s))
       return {};
-    return failure(from, otherwise);
+    return failure(from, std::move(otherwise));
   }
 
   // World (teleop) mode for axis jogs, joint mode for joint jogs and homing.
@@ -869,10 +877,13 @@ struct NmlPort::Impl {
     message.enable = on ? 1 : 0;
     if (auto done = run(message, from); !accepted(done))
       return done;
-    auto switched = settled(from,
-                            on ? "LinuxCNC did not enter world mode for an axis jog."
-                               : "LinuxCNC did not enter joint mode.",
-                            [&](const EMC_STAT& s) -> bool { return in_teleop(s) == on; });
+    auto switched =
+        settled(from,
+                on ? LocalizedReason{"LinuxCNC did not enter world mode for an axis jog.",
+                                     MessageKey{"backend.nmlPort.noWorldMode"}}
+                   : LocalizedReason{"LinuxCNC did not enter joint mode.",
+                                     MessageKey{"backend.nmlPort.noJointMode"}},
+                [&](const EMC_STAT& s) -> bool { return in_teleop(s) == on; });
     // The wait is over: the command this was the preparation for may not be wanted any more.
     if (accepted(switched) && !still())
       return withdraw();
@@ -1171,18 +1182,21 @@ auto NmlPort::set_machine_state(MachineState state, const Wanted& wanted) -> Act
   if (auto done = impl_->run(message, from); !accepted(done))
     return done;
   // Task reports the command done even when it left the state as it was (on from E-stop).
-  return impl_->settled(
-      from, "LinuxCNC did not change the machine state.", [&](const EMC_STAT& now) -> bool {
-        switch (state) {
-        case MachineState::estop:
-          return now.task.state == EMC_TASK_STATE_ESTOP;
-        case MachineState::on:
-          return now.task.state == EMC_TASK_STATE_ON;
-        case MachineState::off:
-          break;
-        }
-        return now.task.state == EMC_TASK_STATE_ESTOP_RESET || now.task.state == EMC_TASK_STATE_OFF;
-      });
+  return impl_->settled(from,
+                        {"LinuxCNC did not change the machine state.",
+                         MessageKey{"backend.nmlPort.machineStateUnchanged"}},
+                        [&](const EMC_STAT& now) -> bool {
+                          switch (state) {
+                          case MachineState::estop:
+                            return now.task.state == EMC_TASK_STATE_ESTOP;
+                          case MachineState::on:
+                            return now.task.state == EMC_TASK_STATE_ON;
+                          case MachineState::off:
+                            break;
+                          }
+                          return now.task.state == EMC_TASK_STATE_ESTOP_RESET ||
+                                 now.task.state == EMC_TASK_STATE_OFF;
+                        });
 }
 
 auto NmlPort::power_off() -> ActionResult {
@@ -1194,12 +1208,15 @@ auto NmlPort::power_off() -> ActionResult {
   message.state = EMC_TASK_STATE_OFF;
   if (auto done = impl_->run(message, from); !accepted(done))
     return done;
-  return impl_->settled(from, "LinuxCNC did not confirm machine power off.",
+  return impl_->settled(from,
+                        {"LinuxCNC did not confirm machine power off.",
+                         MessageKey{"backend.nmlPort.powerOffUnconfirmed"}},
                         [&](const EMC_STAT& now) -> bool {
-    return impl_->status.link() == Link::live &&
-           (now.task.state == EMC_TASK_STATE_ESTOP ||
-            now.task.state == EMC_TASK_STATE_ESTOP_RESET || now.task.state == EMC_TASK_STATE_OFF);
-  });
+                          return impl_->status.link() == Link::live &&
+                                 (now.task.state == EMC_TASK_STATE_ESTOP ||
+                                  now.task.state == EMC_TASK_STATE_ESTOP_RESET ||
+                                  now.task.state == EMC_TASK_STATE_OFF);
+                        });
 }
 
 auto NmlPort::set_task_mode(TaskMode mode, const Wanted& wanted) -> ActionResult {
@@ -1216,7 +1233,9 @@ auto NmlPort::set_task_mode(TaskMode mode, const Wanted& wanted) -> ActionResult
   // Task ignores a mode change during a jog and refuses one while a program runs, in both cases
   // with an operator error only: the mode itself is the evidence.
   return impl_->settled(
-      from, "LinuxCNC did not change the task mode.", [&](const EMC_STAT& now) -> bool {
+      from,
+      {"LinuxCNC did not change the task mode.", MessageKey{"backend.nmlPort.taskModeUnchanged"}},
+      [&](const EMC_STAT& now) -> bool {
         return now.task.mode == message.mode &&
                (now.echo_serial_number != impl_->serial || now.status != RCS_EXEC);
       });
@@ -2856,7 +2875,7 @@ auto NmlPort::open_program_file(std::string_view path, const Wanted& wanted, boo
       impl_->discard_breakpoint();
   }
   return impl_->settled(
-      from, "LinuxCNC did not open the program.",
+      from, {"LinuxCNC did not open the program.", MessageKey{"backend.nmlPort.notOpened"}},
       [&](const EMC_STAT& now) -> bool { return text_of(now.task.file) == path; });
 }
 
@@ -2902,10 +2921,11 @@ auto NmlPort::start_checked(const PreviewInputs& inputs, const Wanted& current,
     return opened;
   // The public status maps the temporary wrapper to its original. Check the exact file
   // reported by Task before revalidating the inputs or sending PLAN_RUN.
-  if (auto settled = impl_->settled(from, "LinuxCNC did not open the checked program.",
-                                   [&](const EMC_STAT& now) -> bool {
-                                     return text_of(now.task.file) == open.file;
-                                   });
+  if (auto settled = impl_->settled(
+          from,
+          {"LinuxCNC did not open the checked program.",
+           MessageKey{"backend.nmlPort.checkedNotOpened"}},
+          [&](const EMC_STAT& now) -> bool { return text_of(now.task.file) == open.file; });
       !accepted(settled))
     return settled;
   if (!current())
@@ -3147,16 +3167,23 @@ auto NmlPort::prepare_tool_measurement(int tool, std::uint64_t request, int line
            now.wcs == before.wcs && now.g5x == before.g5x && now.g92 == before.g92 &&
            now.rotation_xy == before.rotation_xy;
   };
-  if (auto stopped = impl_->settled(from, "LinuxCNC did not clear the pending tool change.", stationary);
+  if (auto stopped =
+          impl_->settled(from,
+                         {"LinuxCNC did not clear the pending tool change.",
+                          MessageKey{"backend.toolChangeMeasurement.pendingChangeNotCleared"}},
+                         stationary);
       !accepted(stopped))
     return stopped;
   EMC_TASK_SET_MODE mode;
   mode.mode = EMC_TASK_MODE_MDI;
   if (auto sent = impl_->send(mode); !accepted(sent))
     return sent;
-  if (auto switched = impl_->settled(
-          from, "LinuxCNC did not enter idle MDI for tool measurement.",
-          [&](const EMC_STAT& current) { return current.task.mode == mode.mode && stationary(current); });
+  if (auto switched = impl_->settled(from,
+                                     {"LinuxCNC did not enter idle MDI for tool measurement.",
+                                      MessageKey{"backend.toolChangeMeasurement.idleMdi"}},
+                                     [&](const EMC_STAT& current) {
+                                       return current.task.mode == mode.mode && stationary(current);
+                                     });
       !accepted(switched))
     return switched;
   if (impl_->read_tool_table() != table)
@@ -3171,11 +3198,13 @@ auto NmlPort::prepare_tool_measurement(int tool, std::uint64_t request, int line
     return registered;
   if (impl_->loads)
     ++impl_->loads->mdi_blocks;
-  return impl_->settled(from, "LinuxCNC did not confirm the installed tool.",
-                       [&](const EMC_STAT& current) {
-                         return current.task.mode == mode.mode && stationary(current) &&
-                                current.io.tool.toolInSpindle == tool;
-                       });
+  return impl_->settled(from,
+                        {"LinuxCNC did not confirm the installed tool.",
+                         MessageKey{"backend.toolChangeMeasurement.registrationUnconfirmed"}},
+                        [&](const EMC_STAT& current) {
+                          return current.task.mode == mode.mode && stationary(current) &&
+                                 current.io.tool.toolInSpindle == tool;
+                        });
 }
 
 auto NmlPort::validate_restart(RestartPoint& point, const PreviewInputs& inputs) -> std::string {
@@ -3223,7 +3252,7 @@ auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inpu
              !raw.motion.on_soft_limit;
     };
     const auto wait = [&](std::chrono::milliseconds timeout, const auto& ready,
-                          std::string_view reason) -> ActionResult {
+                          LocalizedReason reason) -> ActionResult {
       bool done = false;
       static_cast<void>(until(timeout, [&] {
         impl_->collect();
@@ -3235,7 +3264,7 @@ auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inpu
       }));
       if (!impl_->still())
         return impl_->withdraw();
-      return done ? ActionResult{} : impl_->failure(from, reason);
+      return done ? ActionResult{} : impl_->failure(from, std::move(reason));
     };
     const auto mode = [&](auto target) -> ActionResult {
       EMC_TASK_SET_MODE message;
@@ -3243,7 +3272,8 @@ auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inpu
       if (auto sent = impl_->send(message); !accepted(sent))
         return sent;
       return wait(settle_timeout, [&](const EMC_STAT& s) { return s.task.mode == target; },
-                  "LinuxCNC did not change mode for the restart.");
+                  {"LinuxCNC did not change mode for the restart.",
+                   MessageKey{"backend.nmlPort.restartModeUnchanged"}});
     };
     const auto send_mdi = [&](std::string_view block) -> ActionResult {
       EMC_TASK_PLAN_EXECUTE message;
@@ -3262,9 +3292,11 @@ auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inpu
         -> ActionResult {
       if (auto sent = send_mdi(text); !accepted(sent))
         return sent;
-      return wait(timeout, [&](const EMC_STAT& s) {
-        return s.echo_serial_number == impl_->serial && complete(s);
-      }, "LinuxCNC did not complete the restart approach.");
+      return wait(
+          timeout,
+          [&](const EMC_STAT& s) { return s.echo_serial_number == impl_->serial && complete(s); },
+          {"LinuxCNC did not complete the restart approach.",
+           MessageKey{"backend.nmlPort.approachIncomplete"}});
     };
     const auto current_tool = [&] {
       const auto table = impl_->read_tool_table();
@@ -3282,7 +3314,8 @@ auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inpu
       if (synch == Impl::Synch::given_way)
         return impl_->withdraw();
       if (synch != Impl::Synch::done)
-        return impl_->failure(from, "LinuxCNC did not save its parameters for the restart.");
+        return impl_->failure(from, {"LinuxCNC did not save its parameters for the restart.",
+                                     MessageKey{"backend.nmlPort.restartSynchFailed"}});
       if (!files_current())
         return failed("The machine's saved parameters changed after the restart was reviewed. "
                       "Choose the line again.",
@@ -3293,9 +3326,13 @@ auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inpu
       return failed("The restart program or tool length changed.",
                     MessageKey{"backend.nmlPort.restartChanged"});
     if (after_change) {
-      if (auto done = wait(completion_timeout, [&](const EMC_STAT& s) {
-            return complete(s) && s.io.tool.toolInSpindle == point.tool;
-          }, "LinuxCNC did not finish loading the restart tool."); !accepted(done))
+      if (auto done = wait(completion_timeout,
+                           [&](const EMC_STAT& s) {
+                             return complete(s) && s.io.tool.toolInSpindle == point.tool;
+                           },
+                           {"LinuxCNC did not finish loading the restart tool.",
+                            MessageKey{"backend.nmlPort.restartToolNotLoaded"}});
+          !accepted(done))
         return done;
       if (auto current = synched(); !accepted(current))
         return current;
@@ -3314,13 +3351,14 @@ auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inpu
       if (auto done = block("M5 M9", completion_timeout); !accepted(done))
         return done;
       if (config.signals.spindle_rpm) {
-        if (auto stopped = wait(
-                std::chrono::seconds{15},
-                [&](const EMC_STAT& raw) {
-                  const auto s = to_status(raw, config, impl_->hal, impl_->status.link());
-                  return s.spindle_actual_rpm && *s.spindle_actual_rpm < 1.0;
-                },
-                "The spindle did not stop before the restart approach.");
+        if (auto stopped = wait(std::chrono::seconds{15},
+                                [&](const EMC_STAT& raw) {
+                                  const auto s =
+                                      to_status(raw, config, impl_->hal, impl_->status.link());
+                                  return s.spindle_actual_rpm && *s.spindle_actual_rpm < 1.0;
+                                },
+                                {"The spindle did not stop before the restart approach.",
+                                 MessageKey{"backend.nmlPort.spindleNotStopped"}});
             !accepted(stopped))
           return stopped;
       }
@@ -3336,20 +3374,28 @@ auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inpu
                             std::chrono::seconds{45}); !accepted(done))
         return done;
       // The trajectory reports completion before the individual joints can report in-position.
-      if (auto lifted = wait(settle_timeout, [&](const EMC_STAT& raw) {
-            const auto settled = to_status(raw, config, impl_->hal, impl_->status.link());
-            return idle(settled) &&
-                   restart_at_z(settled, clearance, config.motion_tolerances.restart_position_mm);
-          }, "The machine did not reach the confirmed Z clearance.");
+      if (auto lifted = wait(settle_timeout,
+                             [&](const EMC_STAT& raw) {
+                               const auto settled =
+                                   to_status(raw, config, impl_->hal, impl_->status.link());
+                               return idle(settled) &&
+                                      restart_at_z(settled, clearance,
+                                                   config.motion_tolerances.restart_position_mm);
+                             },
+                             {"The machine did not reach the confirmed Z clearance.",
+                              MessageKey{"backend.nmlPort.zClearanceNotReached"}});
           !accepted(lifted))
         return lifted;
       if (point.tool != inputs.start.tool_in_spindle) {
         if (auto sent = send_mdi(std::format("T{} M6", point.tool)); !accepted(sent))
           return sent;
-        return wait(completion_timeout, [&](const EMC_STAT& raw) {
-          const auto s = to_status(raw, config, impl_->hal, impl_->status.link());
-          return s.controller.requested_tool == point.tool;
-        }, "LinuxCNC did not request the required tool change.");
+        return wait(completion_timeout,
+                    [&](const EMC_STAT& raw) {
+                      const auto s = to_status(raw, config, impl_->hal, impl_->status.link());
+                      return s.controller.requested_tool == point.tool;
+                    },
+                    {"LinuxCNC did not request the required tool change.",
+                     MessageKey{"backend.nmlPort.toolChangeNotRequested"}});
       }
     }
     const auto loaded = read();
@@ -3455,7 +3501,7 @@ auto NmlPort::pause(const Wanted& wanted) -> ActionResult {
   EMC_TASK_PLAN_PAUSE message;
   if (auto sent = impl_->send(message); !accepted(sent))
     return sent;
-  return impl_->settled(from, "LinuxCNC did not pause.",
+  return impl_->settled(from, {"LinuxCNC did not pause.", MessageKey{"backend.nmlPort.notPaused"}},
                         [](const EMC_STAT& now) -> bool { return now.task.task_paused != 0; });
 }
 
@@ -3704,10 +3750,12 @@ auto NmlPort::resume(const Wanted& wanted) -> ActionResult {
     EMC_TASK_PLAN_RESUME message;
     if (auto sent = impl_->send(message); !accepted(sent))
       return sent;
-    return impl_->settled(from, "LinuxCNC did not resume.", [&](const EMC_STAT& now) {
-      return now.task.task_paused == 0 ||
-             (!at_breakpoint && impl_->breakpoint && impl_->breakpoint->marker_seen.load());
-    });
+    return impl_->settled(
+        from, {"LinuxCNC did not resume.", MessageKey{"backend.nmlPort.notResumed"}},
+        [&](const EMC_STAT& now) {
+          return now.task.task_paused == 0 ||
+                 (!at_breakpoint && impl_->breakpoint && impl_->breakpoint->marker_seen.load());
+        });
   };
   auto resumed = resume_program();
   if (restoring) {

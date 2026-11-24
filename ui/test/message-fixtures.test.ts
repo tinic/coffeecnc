@@ -1078,7 +1078,11 @@ const examples = [
     "type": "result",
     "id": 43,
     "outcome": "failed",
-    "reason": "LinuxCNC reported an error."
+    "reason": "LinuxCNC reported an error.",
+    "localization": {
+      "key": "backend.nmlPort.reportedError",
+      "params": {}
+    }
   },
   {
     "type": "result",

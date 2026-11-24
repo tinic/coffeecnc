@@ -126,6 +126,7 @@
       "dismissTip": "Diese Meldung ausblenden; sie bleibt im Meldungsprotokoll",
       "dismiss": "Ausblenden",
       "estopButton": "NOT-HALT",
+      "backup": "Sichern und wiederherstellen",
       "diagnostics": "Diagnose"
     },
     "machineBlock": {
@@ -260,6 +261,43 @@
       "machineOn": "Maschine ein",
       "readOnly": "Nur lesen",
       "messageLog": "Meldungsprotokoll"
+    },
+    "backup": {
+      "title": "Sichern und wiederherstellen",
+      "backupTitle": "Sichern",
+      "backupWhat": "Ein Archiv mit der INI-Datei und ihren HAL-Dateien, der Werkzeugtabelle, den Nullpunktverschiebungen (.var) sowie den Werkzeugmodellen, Einstellungen, der Verlaufsliste der Verschiebungen und dem Meldungsprotokoll von CoffeeCNC.",
+      "backupAction": "Ordner wählen und sichern…",
+      "chooseFolder": "Ordner für die Sicherung wählen",
+      "useFolder": "Hier sichern",
+      "written": "{path} gespeichert: {files} Dateien, {size}.",
+      "notIncluded": "Nicht in der Sicherung: {path} ({reason})",
+      "restoreTitle": "Wiederherstellen",
+      "restoreWhat": "Wählen Sie eine Sicherung, um zu sehen, was sie ändern würde. Erst beim Wiederherstellen wird etwas geschrieben.",
+      "chooseBackup": "Sicherung wählen…",
+      "waitingLive": "Warten auf eine aktive Verbindung zur Maschine.",
+      "created": "Gesichert am {time}.",
+      "machine": "Maschine {machine}.",
+      "nothingChanges": "Alle Dateien sind wie jetzt: nichts wiederherzustellen.",
+      "restoreEffect": "Die Wiederherstellung beendet CoffeeCNC und LinuxCNC. Die Dateien werden geschrieben, sobald LinuxCNC angehalten hat; die ersetzten Dateien bleiben als Sicherung im Datenordner.",
+      "restartNeeded": "Starten Sie LinuxCNC danach erneut: Änderungen an .var, Werkzeugtabelle, INI und HAL gelten ab dem Start.",
+      "restoreAction": "{n} Datei wiederherstellen und beenden | {n} Dateien wiederherstellen und beenden",
+      "restoring": "Wiederherstellung: CoffeeCNC und LinuxCNC werden jetzt beendet. Starten Sie LinuxCNC erneut, wenn es angehalten hat.",
+      "simulatedDone": "Simulierte Wiederherstellung abgeschlossen. Dieser Browser bleibt geöffnet.",
+      "role": {
+        "ini": "INI-Datei",
+        "hal": "HAL-Datei",
+        "tool_table": "Werkzeugtabelle",
+        "parameters": "Nullpunktverschiebungen (.var)",
+        "data": "CoffeeCNC-Daten"
+      },
+      "change": {
+        "new": "Neu",
+        "changed": "Ändert sich",
+        "same": "Gleich",
+        "at_exit": "Wenn LinuxCNC anhält"
+      },
+      "symlink": "ein Link: die Datei ersetzt den Link",
+      "atExitNote": "LinuxCNC schreibt die Nullpunktverschiebungen (.var) und CoffeeCNC seine eigenen Daten beim Anhalten; diese Dateien werden danach verglichen und geschrieben. Das Alarmprotokoll ist in der Sicherung, wird aber nicht wiederhergestellt."
     },
     "diagnostics": {
       "title": "HAL-Diagnose",

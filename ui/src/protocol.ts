@@ -406,6 +406,36 @@ export interface OffsetHistory {
   entries: HistoryEntry[]
 }
 
+/** A backup archive was written. */
+export interface BackupWritten {
+  type: 'backup_written'
+  path: string
+  files: number
+  bytes: number
+  /** HAL files the INI names that are not in the archive: LinuxCNC's own, or outside the configuration folder. */
+  not_included: { path: string; reason: string }[]
+}
+
+export type BackupRole = 'ini' | 'hal' | 'tool_table' | 'parameters' | 'data'
+
+/** What a restore of the archive at `path` would write; precedes the result of `check_restore`. */
+export interface RestoreSummary {
+  type: 'restore_summary'
+  path: string
+  /** Handed back with `restore`: the archive is still the one checked. */
+  token: string
+  machine_id: string | null
+  /** Milliseconds since the Unix epoch; 0 when unknown. */
+  created: number
+  /**
+   * `at_exit`: the work offsets (.var) and the data files, which LinuxCNC and CoffeeCNC write as
+   * they stop; they are compared and written after that. The alarm log is in the backup but is not
+   * restored and not listed. `symlink`: the target is a symbolic link, which the restore replaces
+   * by the file (where it points is not written).
+   */
+  files: { role: BackupRole; name: string; target: string; change: 'new' | 'changed' | 'same' | 'at_exit'; bytes: number; symlink: boolean }[]
+}
+
 /** One entry of the alarm log: an operator message, or a command result other than `accepted`. */
 export interface AlarmEntry {
   /** The run of CoffeeCNC it was told in, from 1; a higher number is a later run. */
@@ -499,6 +529,11 @@ export interface OperatorMessage {
   time: number
 }
 
+export interface RefusalMessage {
+  key: string
+  params: Record<string, string>
+}
+
 /** Final outcome of the command with this `id`. Every command gets exactly one. */
 export interface CommandResult {
   type: 'result'
@@ -509,8 +544,10 @@ export interface CommandResult {
     | 'rejected' // not valid in the current state; nothing was sent to LinuxCNC
     | 'failed' // LinuxCNC reported an error
     | 'timed_out' // LinuxCNC did not answer
-  /** Reason for anything but `accepted`, in words for the operator. */
+  /** English fallback for a refused, failed or timed-out command. */
   reason: string
+  /** Message key and named arguments supplied for a catalogued command refusal. */
+  refusal?: RefusalMessage
   setter?: SetterState
   /** The plan of an accepted `plan_restart`. */
   restart?: RestartPlan
@@ -623,6 +660,8 @@ export type FromMachine =
   | Preview
   | WorkOffsets
   | OffsetHistory
+  | BackupWritten
+  | RestoreSummary
   | AlarmLog
   | Diagnostics
   | OperatorMessage
@@ -828,6 +867,28 @@ export interface RestoreOffset extends CommandBase {
   type: 'restore_offset'
   entry: number
 }
+/** Writes a backup archive of the machine's data into `directory`; answered with `backup_written`. */
+export interface Backup extends CommandBase {
+  type: 'backup'
+  directory: string
+}
+/**
+ * What a restore of the archive would write; answered with `restore_summary`. Refused unless the
+ * machine is off or in E-stop and no program runs.
+ */
+export interface CheckRestore extends CommandBase {
+  type: 'check_restore'
+  path: string
+}
+/**
+ * Restores the archive checked with `token`. Accepted: CoffeeCNC and LinuxCNC stop, and the
+ * files are written once LinuxCNC has stopped. Same refusals as `check_restore`.
+ */
+export interface Restore extends CommandBase {
+  type: 'restore'
+  path: string
+  token: string
+}
 /**
  * Sets the loaded tool's length so Z reads `value` at its present position (G10 L10), and
  * applies it (G43).
@@ -946,6 +1007,9 @@ export type ToMachine =
   | RestoreOffset
   | SetWorkRotation
   | ClearG92
+  | Backup
+  | CheckRestore
+  | Restore
   | WatchDiagnostics
   | LaunchHalTool
 

@@ -16,6 +16,7 @@ import type {
   InterpState,
   MachineState,
   Preview,
+  RefusalMessage,
   RestartPlan,
   SetOverride,
   Status,
@@ -164,6 +165,7 @@ type JogState =
 interface Rejection {
   outcome: 'rejected' | 'failed'
   reason: string
+  refusal?: RefusalMessage
 }
 
 /** The longest program text `save_program` writes, as natively. */
@@ -171,8 +173,8 @@ const maxSavedProgramBytes = 512 * 1024
 /** The longest MDI block, as natively (session.cpp max_mdi_bytes). */
 const maxMdiBytes = 254
 
-function reject(reason: string): Rejection {
-  return { outcome: 'rejected', reason }
+function reject(reason: string, key?: string, params: RefusalMessage['params'] = {}): Rejection {
+  return { outcome: 'rejected', reason, ...(key === undefined ? {} : { refusal: { key, params } }) }
 }
 
 function fail(reason: string): Rejection {
@@ -1058,6 +1060,67 @@ export class SimMachine {
     this.emit(result)
   }
 
+  // ---- backup and restore ---------------------------------------------------------------------
+  // The simulator's archive is JSON text in its program folder: the tool table and the work
+  // offsets, which the simulated LinuxCNC holds; the INI and HAL files are fixed and the same.
+
+  private backupState(): { tools: string; parameters: string } {
+    return {
+      tools: JSON.stringify(this.modal.tools),
+      parameters: JSON.stringify({ offsets: this.modal.offsets, rotations: this.modal.rotations }),
+    }
+  }
+
+  private backup(directory: string): Rejection | null {
+    if (listDirectory(this.files, directory) === null) return reject('Choose a folder for the backup.')
+    const stamp = new Date(this.clock()).toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15)
+    const path = `${directory}/coffeecnc-sim-${stamp}.tar.gz`
+    const text = JSON.stringify({ format: 'coffeecnc-sim-backup', created: this.clock(), ...this.backupState() })
+    this.files.set(path, text)
+    this.emit({ type: 'backup_written', path, files: 4, bytes: text.length, not_included: [] })
+    return null
+  }
+
+  private checkRestore(path: string, token: string | null): Rejection | null {
+    if (this.machine === 'on') return reject('Switch the machine off or press E-stop before a restore.')
+    if (this.exec !== null) return reject('Stop the program before a restore.')
+    const text = this.files.get(path)
+    if (text === undefined) return reject(`${path} does not exist.`)
+    let saved: { format?: unknown; created?: unknown; tools?: unknown; parameters?: unknown }
+    try {
+      saved = JSON.parse(text) as typeof saved
+    } catch {
+      return reject('This is not a backup archive: Unrecognized archive format')
+    }
+    if (saved.format !== 'coffeecnc-sim-backup' || typeof saved.tools !== 'string' || typeof saved.parameters !== 'string')
+      return reject('This is not a CoffeeCNC backup: it has no manifest.')
+    const now = this.backupState()
+    const stamp = programStamp(path + text)
+    if (token === null) {
+      const config = '/home/sim/linuxcnc/configs/sim'
+      const change = (a: string, b: string): 'same' | 'changed' => a === b ? 'same' : 'changed'
+      this.emit({
+        type: 'restore_summary', path, token: stamp, machine_id: null,
+        created: typeof saved.created === 'number' ? saved.created : 0,
+        files: [
+          { role: 'ini', name: 'config/sim.ini', target: `${config}/sim.ini`, change: 'same', bytes: 2048, symlink: false },
+          { role: 'hal', name: 'config/sim.hal', target: `${config}/sim.hal`, change: 'same', bytes: 1024, symlink: false },
+          { role: 'tool_table', name: 'tool-table/sim.tbl', target: `${config}/sim.tbl`, change: change(saved.tools, now.tools), bytes: saved.tools.length, symlink: false },
+          { role: 'parameters', name: 'parameters/sim.var', target: `${config}/sim.var`, change: 'at_exit', bytes: saved.parameters.length, symlink: false },
+          { role: 'data', name: 'data/tool-models.json', target: '/home/sim/.local/share/coffeecnc/sim/tool-models.json', change: 'at_exit', bytes: 512, symlink: false },
+        ],
+      })
+      return null
+    }
+    if (token !== stamp) return reject('The backup file changed after it was checked. Check it again.')
+    this.modal.tools.splice(0, this.modal.tools.length, ...(JSON.parse(saved.tools) as Modal['tools']))
+    const parameters = JSON.parse(saved.parameters) as Pick<Modal, 'offsets' | 'rotations'>
+    this.modal.offsets = parameters.offsets
+    this.modal.rotations = parameters.rotations
+    this.operatorMessage('info', 'Simulated restore: the tool table and work offsets are the backup\'s. This browser stays open.')
+    return null
+  }
+
   private notOn(what: string): Rejection | null {
     if (this.machine === 'estop') {
       return reject(`Can't ${what}: machine is in E-stop`)
@@ -1105,7 +1168,7 @@ export class SimMachine {
         return reject('Native tool model storage is unavailable in the browser simulator')
       case 'set_operator_settings':
         // As Session without tool model storage, which also holds the operator settings.
-        return reject('Operator settings storage is not part of this session.')
+        return reject('Operator settings storage is not part of this session.', 'messages.session.noOperatorSettings')
       case 'ready':
         this.emit(this.configuration)
         this.sendTools()
@@ -1124,7 +1187,7 @@ export class SimMachine {
       case 'launch_hal_tool':
         return reject('The browser simulator has no HAL tools: it runs without LinuxCNC.')
       case 'quit':
-        if (this.exec !== null) return reject('Stop the program before quitting.')
+        if (this.exec !== null) return reject('Stop the program before quitting.', 'messages.policy.stopBeforeQuit')
         // Exercise the shutdown request without closing the development browser or resetting E-stop.
         this.setMachine(this.machine === 'estop' ? 'estop' : 'off')
         this.sendStatus()
@@ -1145,7 +1208,7 @@ export class SimMachine {
         return null
       case 'mdi':
         // As command_policy.cpp valid_text: LinuxCNC's LINELEN is 255 with the terminator.
-        if (!validMdiText(command.text)) return reject('MDI requires one nonempty block of at most 254 bytes.')
+        if (!validMdiText(command.text)) return reject('MDI requires one nonempty block of at most 254 bytes.', 'messages.policy.mdiInvalid')
         return this.probeCode(command.text) ?? this.mdi(command.text)
       case 'list_directory': {
         const listing = listDirectory(this.files, command.path)
@@ -1156,7 +1219,7 @@ export class SimMachine {
         return null
       }
       case 'manage_program_file':
-        return reject('Program file management is unavailable.')
+        return reject('Program file management is unavailable.', 'backend.programFiles.unavailable')
       case 'open_program':
         return this.open(command.path)
       case 'run': {
@@ -1181,7 +1244,7 @@ export class SimMachine {
       }
       case 'step':
         if (this.pendingProbe) return reject('Use Stop to end the probe cycle.')
-        if (this.exec?.breakpoint) return reject('Use Resume to continue the breakpoint run.')
+        if (this.exec?.breakpoint) return reject('Use Resume to continue the breakpoint run.', 'messages.policy.resumeBreakpoint')
         return this.probeCode() ?? this.step()
       case 'pause':
         if (this.pendingProbe) return reject('Use Stop to end the probe cycle.')
@@ -1246,8 +1309,8 @@ export class SimMachine {
         if (command.option === 'optional_stop') {
           this.optionalStop = command.on
         } else {
-          if (this.exec?.breakpoint) return reject('Stop the breakpoint run before changing block delete.')
-          if (this.exec !== null) return reject('Stop execution before changing block delete.')
+          if (this.exec?.breakpoint) return reject('Stop the breakpoint run before changing block delete.', 'messages.policy.stopBreakpointBlockDelete')
+          if (this.exec !== null) return reject('Stop execution before changing block delete.', 'messages.policy.stopBeforeBlockDelete')
           this.blockDelete = command.on
         }
         return null
@@ -1332,6 +1395,12 @@ export class SimMachine {
       }
       case 'restore_offset':
         return this.restoreOffset(command.entry)
+      case 'backup':
+        return this.backup(command.directory)
+      case 'check_restore':
+        return this.checkRestore(command.path, null)
+      case 'restore':
+        return this.checkRestore(command.path, command.token)
       case 'edit_program':
         return this.editProgram(command.path, command.line, command.old_text, command.new_text)
       case 'save_program':
@@ -1461,7 +1530,10 @@ export class SimMachine {
     const marks = this.marks
     if (marks !== null) {
       const missing = axisIndices.find((index) => (axis === 'all' || letters[index] === axis) && !marks[index])
-      if (missing !== undefined) return reject(crossMarkFirst(names[missing] ?? ''))
+      if (missing !== undefined) {
+        const axis = names[missing] ?? ''
+        return reject(crossMarkFirst(axis), 'messages.policy.crossReferenceMark', { axis })
+      }
     }
     this.stopJogs()
     this.mode = 'manual'
@@ -1531,14 +1603,14 @@ export class SimMachine {
       return blocked
     }
     if (!this.inPosition()) {
-      return reject('Wait for motion to stop before an incremental jog.')
+      return reject('Wait for motion to stop before an incremental jog.', 'messages.policy.waitBeforeIncrement')
     }
     if (this.jogVelocity(letter, velocity) === 0 || !Number.isFinite(distance) || distance === 0) {
       return reject('Jog step needs a distance and a speed above zero')
     }
     const target = this.phys[axis] + distance
     if (this.homed[axis] && (target < travel.min[axis] || target > travel.max[axis])) {
-      return reject('Incremental jog exceeds configured travel.')
+      return reject('Incremental jog exceeds configured travel.', 'messages.policy.incrementBeyondTravel')
     }
     this.mode = 'manual'
     this.jogs[axis] = { kind: 'step', target, velocity: this.jogVelocity(letter, velocity) }
@@ -1676,9 +1748,9 @@ export class SimMachine {
   /** Changes one F or S number of the loaded program's text and opens it again. */
   private editProgram(path: string, line: number, before: string, after: string): Rejection | null {
     const program = this.program
-    if (program === null) return reject('Load a program first.')
-    if (this.exec !== null) return reject('Stop execution before editing the program.')
-    if (path !== program.file) return reject('Only the loaded program can be edited.')
+    if (program === null) return reject('Load a program first.', 'messages.policy.loadProgramFirst')
+    if (this.exec !== null) return reject('Stop execution before editing the program.', 'messages.policy.stopBeforeEdit')
+    if (path !== program.file) return reject('Only the loaded program can be edited.', 'messages.session.onlyLoadedEditable')
     if (!feedOrSpeedEdit(before, after)) return reject('Only the number of one F or S word can be changed.')
     if (program.lines[line - 1] !== before) return fail('The program changed since it was shown. Open it again.')
     const text = this.files.get(path)
@@ -1692,12 +1764,12 @@ export class SimMachine {
   /** Writes a new program in the program directory, as the native program writer does. */
   private saveProgram(path: string, text: string, replace: boolean): Rejection | null {
     if (text === '' || new TextEncoder().encode(text).length > maxSavedProgramBytes || text.includes('\0'))
-      return reject('The program text is empty, longer than 512 KiB or contains a NUL byte.')
+      return reject('The program text is empty, longer than 512 KiB or contains a NUL byte.', 'messages.policy.programTextInvalid')
     const target = newProgramPath(this.files, path)
     if (typeof target !== 'string') return fail(target.error)
     if (this.files.has(target)) {
       if (!replace) return fail(`A program named ${target.slice(target.lastIndexOf('/') + 1)} exists already.`)
-      if (target === this.program?.file) return reject('The loaded program is not replaced. Choose another name.')
+      if (target === this.program?.file) return reject('The loaded program is not replaced. Choose another name.', 'messages.session.loadedNotReplaced')
     }
     this.files.set(target, text)
     return null
@@ -1706,11 +1778,11 @@ export class SimMachine {
   /** The program editor's save over the loaded program, then opened again, as natively. */
   private saveOverProgram(path: string, text: string, stamp: string): Rejection | null {
     if (text === '' || new TextEncoder().encode(text).length > maxSavedProgramBytes || text.includes('\0'))
-      return reject('The program text is empty, longer than 512 KiB or contains a NUL byte.')
+      return reject('The program text is empty, longer than 512 KiB or contains a NUL byte.', 'messages.policy.programTextInvalid')
     const program = this.program
-    if (program === null) return reject('Load a program first.')
-    if (this.exec !== null) return reject('Stop the program before saving it.')
-    if (path !== program.file) return reject('Only the loaded program can be edited.')
+    if (program === null) return reject('Load a program first.', 'messages.policy.loadProgramFirst')
+    if (this.exec !== null) return reject('Stop the program before saving it.', 'messages.policy.stopBeforeSave')
+    if (path !== program.file) return reject('Only the loaded program can be edited.', 'messages.session.onlyLoadedEditable')
     const before = this.files.get(path)
     if (before === undefined) return fail('The program no longer exists.')
     if (programStamp(before) !== stamp) return fail('The program file changed since it was opened. Open it again to edit it.')
@@ -1859,7 +1931,7 @@ export class SimMachine {
     } else if (which === 'rapid') {
       this.overrides.rapid = clamp(0, 1)
     } else if (which === 'velocity_limit') {
-      if (value < 0 || value > 1) return reject('Maximum velocity limit is out of range.')
+      if (value < 0 || value > 1) return reject('Maximum velocity limit is out of range.', 'messages.policy.velocityLimitRange')
       this.overrides.velocity_limit = value
     } else {
       this.overrides.spindle = clamp(hello.min_spindle_override, hello.max_spindle_override)
@@ -1870,9 +1942,9 @@ export class SimMachine {
   /** Writes back the earlier values of a history entry, as G10 L2, G52 or G10 L1 would. */
   private restoreOffset(id: number): Rejection | null {
     const entry = this.history.entry(id)
-    if (entry === undefined) return reject('That history entry is no longer kept.')
+    if (entry === undefined) return reject('That history entry is no longer kept.', 'messages.session.historyEntryGone')
     if (entry.changes.some((change) => change.before === null || change.after === null))
-      return reject('This entry has no earlier value to restore.')
+      return reject('This entry has no earlier value to restore.', 'messages.session.noEarlierValue')
     const blocked = this.offsetCommand('restore offsets')
     if (blocked !== null) return blocked
     const tool = entry.target === 'tool' ? this.modal.tools.find((row) => row.number === entry.number) : undefined

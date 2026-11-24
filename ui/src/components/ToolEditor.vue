@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onBeforeUnmount, reactive, ref, shallowRef } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { translateMessage } from '../i18n/messages'
 import { linkBlock, panel, send } from '../machine'
 import { vNumeric } from '../numeric-input'
 import { parseNumericExpression } from '../numeric-expression'
@@ -28,7 +27,7 @@ const pendingSave = new AbortController()
 onBeforeUnmount(() => { open = false; pendingSave.abort() })
 function isOpen(): boolean { return open }
 const saving = ref(false)
-const feedback = ref('')
+const feedback = shallowRef<(() => string) | null>(null)
 const deleting = ref(false)
 function text(value: number): string { return String(Number(toDisplay(value, unit).toFixed(6))) }
 const form = reactive({ number: String(props.tool?.number ?? (Math.max(0, ...(panel.toolTable?.tools.map((tool) => tool.number) ?? [])) + 1)),
@@ -110,8 +109,8 @@ async function save(): Promise<void> {
   if (saving.value) return
   // Save is always offered: a press either saves or says what stops it.
   const reason = tool === null ? t('tools.editor.checkFields') : block.value ?? modelBlock.value ?? shapeError.value
-  if (tool === null || reason !== null) { feedback.value = reason ?? ''; return }
-  saving.value = true; feedback.value = ''
+  if (tool === null || reason !== null) { feedback.value = reason === null ? null : (): string => reason; return }
+  saving.value = true; feedback.value = null
   // A row changed elsewhere since this editor opened is written over with this one.
   if (current.value !== undefined) original.value = { ...current.value }
   let tableWritten = false
@@ -127,7 +126,7 @@ async function save(): Promise<void> {
     preview === null ? {} : shapeOverrides(preview.dimensions), modelContext, preview?.holder ?? null)
   saving.value = false
   if (result.saved) { if (isOpen()) emit('close') }
-  else feedback.value = tableWritten ? t('tools.editor.previewNotSaved', { reason: translateMessage(result.reason) }) : result.reason
+  else feedback.value = (): string => tableWritten ? t('tools.editor.previewNotSaved', { reason: result.reason }) : result.reason
 }
 function remove(): void {
   if (original.value === null || block.value !== null || panel.status?.tool.in_spindle === original.value.number) return
@@ -162,7 +161,7 @@ function remove(): void {
         </template>
       </div>
     </div>
-    <p v-if="feedback || block || modelBlock || shapeError || replaces || saving" class="feedback" role="status">{{ translateMessage(feedback) || block || modelBlock || shapeError || (replaces ? t('tools.editor.replaces', { number: form.number }) : '') || t('tools.editor.savingNote') }}</p>
+    <p v-if="feedback || block || modelBlock || shapeError || replaces || saving" class="feedback" role="status">{{ feedback?.() || block || modelBlock || shapeError || (replaces ? t('tools.editor.replaces', { number: form.number }) : '') || t('tools.editor.savingNote') }}</p>
     <template #footer><button v-if="original !== null" class="btn danger" type="button" :disabled="saving || block !== null || panel.status?.tool.in_spindle === original.number" @click="deleting = true">{{ t('common.delete') }}</button><span class="spacer"></span><button class="btn" type="button" @click="emit('close')">{{ saving ? t('common.close') : t('common.cancel') }}</button><button class="btn primary" type="button" :disabled="saving" @click="save">{{ saving ? t('common.saving') : t('tools.editor.saveTool') }}</button></template>
   </ModalDialog>
 </template>

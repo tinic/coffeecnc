@@ -31,6 +31,10 @@ void command_results() {
     require(result == Json{{"type", "result"}, {"id", 42}, {"outcome", name}, {"reason", "Why."}},
             std::string("CommandResult fields as protocol v1: ") + name);
   }
+  const RefusalMessage refusal{"messages.policy.loadProgramFirst"};
+  const auto failed =
+      Json::parse(encode_result(1, CommandOutcome::failed, "Why.", {}, {}, refusal));
+  require(!failed.contains("refusal"), "Only a rejection carries a refusal key");
   const auto accepted = Json::parse(encode_result(7, CommandOutcome::accepted, ""));
   require(accepted.at("reason") == "" && accepted.size() == 4, "Accepted keeps an empty reason");
   for (const auto id : {RequestId{0}, RequestId{-1}, -max_request_id, max_request_id}) {

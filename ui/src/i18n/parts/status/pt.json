@@ -126,6 +126,7 @@
       "dismissTip": "Dispensar esta mensagem; fica no registo de mensagens",
       "dismiss": "Dispensar",
       "estopButton": "PARAGEM DE EMERGÊNCIA",
+      "backup": "Cópia e restauro",
       "diagnostics": "Diagnóstico"
     },
     "machineBlock": {
@@ -260,6 +261,43 @@
       "machineOn": "Máquina ligada",
       "readOnly": "Só leitura",
       "messageLog": "Registo de mensagens"
+    },
+    "backup": {
+      "title": "Cópia de segurança e restauro",
+      "backupTitle": "Copiar",
+      "backupWhat": "Um arquivo com o ficheiro INI e os seus ficheiros HAL, a tabela de ferramentas, os deslocamentos da origem da peça (.var) e os modelos de ferramenta, definições, histórico de deslocamentos e registo de mensagens do CoffeeCNC.",
+      "backupAction": "Escolher pasta e copiar…",
+      "chooseFolder": "Escolher pasta para a cópia",
+      "useFolder": "Copiar aqui",
+      "written": "{path} guardado: {files} ficheiros, {size}.",
+      "notIncluded": "Não está na cópia: {path} ({reason})",
+      "restoreTitle": "Restaurar",
+      "restoreWhat": "Escolha uma cópia para ver o que mudaria. Nada é escrito até restaurar.",
+      "chooseBackup": "Escolher cópia…",
+      "waitingLive": "A aguardar uma ligação ativa à máquina.",
+      "created": "Cópia de {time}.",
+      "machine": "Máquina {machine}.",
+      "nothingChanges": "Todos os ficheiros são iguais aos atuais: nada a restaurar.",
+      "restoreEffect": "O restauro para o CoffeeCNC e o LinuxCNC. Os ficheiros são escritos quando o LinuxCNC tiver parado; os ficheiros substituídos ficam numa cópia na pasta de dados.",
+      "restartNeeded": "Depois, inicie novamente o LinuxCNC: as alterações ao .var, à tabela de ferramentas, ao INI e ao HAL aplicam-se no arranque.",
+      "restoreAction": "Restaurar {n} ficheiro e sair | Restaurar {n} ficheiros e sair",
+      "restoring": "A restaurar: o CoffeeCNC e o LinuxCNC param agora. Inicie novamente o LinuxCNC quando tiver parado.",
+      "simulatedDone": "Restauro simulado concluído. Este navegador continua aberto.",
+      "role": {
+        "ini": "Ficheiro INI",
+        "hal": "Ficheiro HAL",
+        "tool_table": "Tabela de ferramentas",
+        "parameters": "Deslocamentos da origem da peça (.var)",
+        "data": "Dados do CoffeeCNC"
+      },
+      "change": {
+        "new": "Novo",
+        "changed": "Muda",
+        "same": "Igual",
+        "at_exit": "Quando o LinuxCNC parar"
+      },
+      "symlink": "uma ligação: o ficheiro substitui a ligação",
+      "atExitNote": "O LinuxCNC escreve os deslocamentos de trabalho (.var), e o CoffeeCNC os seus próprios dados, ao parar; estes ficheiros são comparados e escritos depois disso. O registo de alarmes está na cópia de segurança, mas não é restaurado."
     },
     "diagnostics": {
       "title": "Diagnóstico HAL",

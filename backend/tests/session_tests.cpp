@@ -1,3 +1,4 @@
+#include <coffeecnc/app/machine_data.hpp>
 #include <coffeecnc/app/offset_history.hpp>
 #include <coffeecnc/app/program_edit.hpp>
 #include <coffeecnc/app/session.hpp>
@@ -9,7 +10,9 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
@@ -19,11 +22,13 @@
 #include <iostream>
 #include <iterator>
 #include <map>
+#include <mutex>
 #include <optional>
 #include <random>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -323,8 +328,10 @@ struct Rig {
   std::chrono::milliseconds clock{};
 
   explicit Rig(bool ready = true, const Limits& limits = Limits{3000, 1.2, 0.5, 1.2, 24000},
-               ToolModelService* models = nullptr, OffsetHistoryStore* history = nullptr)
-      : session(port, limits, programs, models, nullptr, nullptr, nullptr, history),
+               ToolModelService* models = nullptr, OffsetHistoryStore* history = nullptr,
+               MachineDataService* machine_data = nullptr)
+      : session(port, limits, programs, models, nullptr, nullptr, nullptr, history, nullptr, false,
+                machine_data),
         page(driver.begin_page()) {
     port.state = homed_machine();
     files.file("/home/cnc/nc_files/part.ngc", "G0 X1\nM2\n", 1700000123456);
@@ -353,7 +360,8 @@ struct Rig {
     const auto outcome = send(body);
     require(outcome.messages.size() == 1, "Exactly one message for: " + std::string(body));
     auto result = Json::parse(outcome.messages.front());
-    require(result.at("type") == "result" && result.at("id") == id && result.size() == 4,
+    const auto expected_fields = result.contains("refusal") ? 5U : 4U;
+    require(result.at("type") == "result" && result.at("id") == id && result.size() == expected_fields,
             "The message is the result of: " + std::string(body));
     return result;
   }
@@ -809,7 +817,11 @@ void tool_model_commands_go_to_their_service() {
 
 void ready_gate() {
   Rig rig{false};
-  rig.expect(R"("type":"run")", "rejected", gate_reason);
+  const auto early = rig.result(R"("type":"run")");
+  require(early.at("outcome") == "rejected" && early.at("reason") == gate_reason &&
+              early.at("refusal").at("key") == "messages.session.panelNotLoaded" &&
+              early.at("refusal").at("params") == Json::object(),
+          "The ready gate sends a catalog key and its English reason.");
   rig.expect(R"("type":"abort")", "rejected", gate_reason);
   rig.expect(R"("type":"jog_stop_all")", "rejected", gate_reason);
   require(rig.port.calls.empty() && rig.port.snapshots == 0, "Nothing runs before ready");
@@ -940,8 +952,12 @@ void machine_capabilities() {
   rig.acted({"set_task_mode auto", "run"}, "An unhomed run is sent");
   rig.expect(R"("type":"jog","axis":"z","direction":1,"velocity":900,"held":true)", "rejected",
              "Jog velocity is above the Z axis limit of 750 mm/min.");
-  rig.expect(R"("type":"jog_step","axis":"z","distance":1,"velocity":900)", "rejected",
-             "Jog velocity is above the Z axis limit of 750 mm/min.");
+  const auto fast = rig.result(R"("type":"jog_step","axis":"z","distance":1,"velocity":900)");
+  require(fast.at("outcome") == "rejected" &&
+              fast.at("reason") == "Jog velocity is above the Z axis limit of 750 mm/min." &&
+              fast.at("refusal") == Json{{"key", "messages.policy.jogVelocityAxisLimit"},
+                                         {"params", {{"axis", "Z"}, {"limit", "750"}}}},
+          "The worker forwards the policy refusal with its named arguments.");
   rig.acted({}, "A jog above its axis ceiling sends nothing");
   rig.accepted(R"("type":"jog","axis":"x","direction":1,"velocity":1500,"held":true)");
   rig.acted({"set_task_mode manual", "start_jog x 1 1500 joint"},
@@ -2275,6 +2291,128 @@ void quit() {
   }
 }
 
+// A restore that stages its files and asks to quit, as MachineData does.
+class FakeMachineData final : public MachineDataService {
+public:
+  std::function<void()> during;  // inside restore, before it answers
+  std::function<void()> dropped; // inside abandon_restore, after it dropped the plan
+  int staged = 0;
+  int abandoned = 0;
+  std::atomic<bool> armed{}; // a plan is staged and not abandoned
+  auto backup(const std::string&) -> MachineDataAnswer override { return {}; }
+  auto check_restore(const std::string&) -> MachineDataAnswer override { return {}; }
+  std::uint64_t page = 0; // of the last restore
+  auto restore(const std::string&, const std::string&, std::uint64_t asked,
+               const std::function<std::string()>&) -> MachineDataAnswer override {
+    if (during)
+      during();
+    ++staged;
+    page = asked;
+    armed = true;
+    return {CommandOutcome::accepted, "", {}, true};
+  }
+  void abandon_restore() override {
+    ++abandoned;
+    armed = false;
+    if (dropped)
+      dropped();
+  }
+};
+
+// Review #274, 3: a staged restore whose quit was not delivered (the page ended or was replaced,
+// an abort came first) stayed staged, and the next normal exit wrote it from old data.
+void restore_quit_not_delivered() {
+  constexpr auto restore = R"("type":"restore","path":"/media/cnc/STICK/b.tar.gz","token":"0123456789abcdef")";
+  {
+    FakeMachineData data;
+    Rig rig{true, Limits{3000, 1.2, 0.5, 1.2, 24000}, nullptr, nullptr, &data};
+    rig.port.state.machine = MachineState::off;
+    // The rig's first page began once: nothing was staged then.
+    rig.accepted(restore);
+    require(rig.driver.quit && data.staged == 1 && data.abandoned == 1 &&
+                data.page == rig.page.value,
+            "A delivered quit keeps the restore staged for the exit, for the page that asked");
+    // Re-review #274, 1: the page is replaced before the window closes. The window drops a
+    // close that is not for its page, so no exit comes now: the restore is abandoned.
+    rig.page = rig.session.begin_page();
+    require(data.abandoned == 2,
+            "A new page abandons the restore whose close the window drops");
+  }
+  for (const bool replace_page : {false, true}) {
+    FakeMachineData data;
+    Rig rig{true, Limits{3000, 1.2, 0.5, 1.2, 24000}, nullptr, nullptr, &data};
+    rig.port.state.machine = MachineState::off;
+    data.during = [&]() -> void {
+      rig.session.end_page(rig.page);
+      if (replace_page)
+        rig.page = rig.session.begin_page();
+    };
+    require(rig.send(restore).messages.empty(), "An ended page gets no result");
+    // One for the rig's first page, one for the new page, one for the quit not delivered.
+    require(!rig.driver.quit && data.staged == 1 && data.abandoned == (replace_page ? 3 : 2),
+            "The quit is not delivered: the staged restore is abandoned");
+  }
+  {
+    FakeMachineData data;
+    Rig rig{true, Limits{3000, 1.2, 0.5, 1.2, 24000}, nullptr, nullptr, &data};
+    rig.port.state.machine = MachineState::off;
+    data.during = [&]() -> void {
+      static_cast<void>(rig.session.submit(rig.page, R"({"id":99,"type":"abort"})", at(0ms)));
+    };
+    static_cast<void>(rig.send(restore));
+    require(!rig.driver.quit && data.abandoned == 2,
+            "An abort before the quit: the staged restore is abandoned");
+  }
+}
+
+// Review of a2865e8, 3: begin_page abandoned the restore before it took the session's lock and
+// changed the page. A staging that ended in between delivered its quit to the old page (whose
+// close the window then drops) and stayed armed for a later exit. Here the staging ends while
+// begin_page abandons: before the fix that is before the page changed, and the old page gets
+// the quit; with it, begin_page holds the session's lock, so the worker finds the new page.
+void restore_staged_while_page_begins() {
+  FakeMachineData data;
+  Rig rig{true, Limits{3000, 1.2, 0.5, 1.2, 24000}, nullptr, nullptr, &data};
+  rig.port.state.machine = MachineState::off;
+  std::mutex mutex;
+  std::condition_variable changed;
+  bool staging = false;
+  bool go = false;
+  bool sent = false;
+  data.during = [&] {
+    std::unique_lock lock{mutex};
+    staging = true;
+    changed.notify_all();
+    changed.wait(lock, [&] { return go; });
+  };
+  std::thread worker{[&] {
+    static_cast<void>(rig.send(
+        R"("type":"restore","path":"/media/cnc/STICK/b.tar.gz","token":"0123456789abcdef")"));
+    const std::scoped_lock lock{mutex};
+    sent = true;
+    changed.notify_all();
+  }};
+  {
+    std::unique_lock lock{mutex};
+    changed.wait(lock, [&] { return staging; });
+  }
+  std::atomic<bool> first{true};
+  data.dropped = [&] {
+    if (!first.exchange(false))
+      return; // the worker's own abandon, once it found the page changed
+    std::unique_lock lock{mutex};
+    go = true;
+    changed.notify_all();
+    // Before the fix the worker ends here; with it, it waits for begin_page's lock.
+    changed.wait_for(lock, 1s, [&] { return sent; });
+  };
+  const auto page = rig.session.begin_page();
+  worker.join();
+  require(data.staged == 1 && !data.armed && !rig.driver.quit,
+          "A restore staged while a page begins is abandoned, and its quit is not delivered");
+  require(page != rig.page, "The page changed");
+}
+
 void new_page() {
   Rig rig;
   rig.accepted(hold_x);
@@ -2663,7 +2801,12 @@ void exactly_one_result(std::uint32_t seed) {
     require(found.size() == 1, "Exactly one result for: " + wire);
     const auto& result = found.front();
     const auto verdict = result.at("outcome").get<std::string>();
-    require(result.at("id") == id && result.size() == 4, "The result carries the request's ID");
+    const auto refusal = result.find("refusal");
+    require(result.at("id") == id && result.size() == (refusal == result.end() ? 4U : 5U),
+            "The result carries the request's ID");
+    if (refusal != result.end())
+      require(verdict == "rejected" && refusal->at("key").is_string() && refusal->at("params").is_object(),
+              "Only a rejected result can carry a refusal key and arguments");
     require(verdict == "accepted" || verdict == "rejected" || verdict == "failed" ||
                 verdict == "timed_out",
             "The outcome is one of the protocol's four");
@@ -2894,6 +3037,8 @@ auto main(int argc, char** argv) -> int {
     lease_expiry();
     lost_machine_cancels_jogs();
     quit();
+    restore_quit_not_delivered();
+    restore_staged_while_page_begins();
     new_page();
     failed_stop_survives_the_page_and_is_retried();
     explicit_stop_failures_are_retried();

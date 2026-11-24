@@ -572,17 +572,23 @@ void positions_in_mm(const Rig& rig) {
       input.dispatchEvent(new Event('input', { bubbles: true }));
       await new Promise((r) => setTimeout(r, 50));
       return __t.click('section.mdi button[type="submit"]');)");
-  check("active_system_changes_with_g55",
-        rig.wait_js("__t.last.status.offsets.wcs === 2 && "
-                    "__t.last.status.offsets.g5x[0] === 0 && "
-                    "__t.last.work_offsets.systems[1].available === true && "
-                    "__t.last.work_offsets.systems[1].current === true && "
-                    "__t.last.work_offsets.systems[1].offset[0] === 0 && "
-                    "__t.last.work_offsets.systems[0].available === true && "
-                    "__t.last.work_offsets.systems[0].current === true && "
-                    // Six decimals in machine units: 0.0000254 mm on an inch machine.
-                    "Math.abs(__t.last.work_offsets.systems[0].offset[0] - 5.4) < 1e-4"),
-        rig.js("return [__t.last.status.offsets, __t.last.work_offsets];").dump());
+  const bool g55 = rig.wait_js("__t.last.status.offsets.wcs === 2 && "
+                               "__t.last.status.offsets.g5x[0] === 0 && "
+                               "__t.last.work_offsets.systems[1].available === true && "
+                               "__t.last.work_offsets.systems[1].current === true && "
+                               "__t.last.work_offsets.systems[1].offset[0] === 0 && "
+                               "__t.last.work_offsets.systems[0].available === true && "
+                               "__t.last.work_offsets.systems[0].current === true && "
+                               // Six decimals in machine units: 0.0000254 mm on an inch machine.
+                               "Math.abs(__t.last.work_offsets.systems[0].offset[0] - 5.4) < 1e-4");
+  // Take the evidence after the wait. C++ may evaluate a check's detail argument first.
+  const auto g55_detail = rig.js(R"(
+    const { offsets, interp } = __t.last.status;
+    const command = __t.sent.findLast((m) => m?.type === 'mdi' && m.text === 'G55');
+    const result = command && __t.received.find((m) => m.type === 'result' && m.id === command.id);
+    return { offsets, interp, work: __t.last.work_offsets, command: command ?? null,
+             result: result ?? null, note: __t.text(__t.find('section.mdi .setter-band')) };)");
+  check("active_system_changes_with_g55", g55, g55_detail.dump());
   rig.js(R"(
       const input = __t.find('input[aria-label="MDI command"]');
       input.value = 'G54 G10 L2 P1 X0 Y0 Z0';

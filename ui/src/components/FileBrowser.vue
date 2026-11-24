@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { vTooltip } from '../tooltip'
-// Browses the machine's program directory and opens a program.
+// Browses the machine's program directory, opens a program and manages its files. With `pick`,
+// it chooses a folder or a file for another dialog (backup and restore) instead: it opens
+// nothing and offers no file operations.
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -15,7 +17,7 @@ import { translateMessage } from '../i18n/messages'
 const { t } = useI18n()
 
 const props = defineProps<{ pick?: 'folder' | 'file'; title?: string }>()
-const emit = defineEmits<{ close: [] }>()
+const emit = defineEmits<{ close: []; pick: [path: string] }>()
 
 const directory = computed(() => panel.directory)
 // Shortcuts the machine offers: its program directory, the home folder, USB media.
@@ -49,13 +51,15 @@ function choose(entry: DirectoryEntry): void {
   const path = `${directory.value?.path ?? ''}/${entry.name}`
   if (entry.kind === 'directory') {
     list(path)
-  } else {
+  } else if (props.pick === 'file') {
+    emit('pick', path)
+  } else if (props.pick === undefined) {
     open(path)
   }
 }
 
 // Recently opened programs, newest first; the loaded one is already open.
-const recent = computed(() => panel.preferences.recent_programs.filter((path) => path !== panel.status?.program.file).slice(0, 5))
+const recent = computed(() => props.pick !== undefined ? [] : panel.preferences.recent_programs.filter((path) => path !== panel.status?.program.file).slice(0, 5))
 function open(path: string): void {
   send({ type: 'open_program', path })
   emit('close')
@@ -69,13 +73,13 @@ function formatDate(time: number): string {
 }
 
 onMounted(() => {
-  const file = panel.status?.program.file ?? null
+  const file = props.pick !== undefined ? null : panel.status?.program.file ?? null
   list(file === null ? null : file.slice(0, file.lastIndexOf('/')))
 })
 </script>
 
 <template>
-  <ModalDialog :title="t('program.fileBrowser.title')" :size="recent.length ? 'large' : 'medium'" :contained="recent.length > 0" @close="emit('close')">
+  <ModalDialog :title="props.title ?? t('program.fileBrowser.title')" :size="recent.length ? 'large' : 'medium'" :contained="recent.length > 0" @close="emit('close')">
     <div class="browser" :class="{ 'has-recent': recent.length > 0 }">
       <section v-if="recent.length > 0" class="recent" :aria-label="t('program.fileBrowser.recentPrograms')">
         <h3>{{ t('program.fileBrowser.recent') }}</h3>
@@ -99,6 +103,9 @@ onMounted(() => {
             <AppIcon name="up" />{{ t('program.fileBrowser.up') }}
           </button>
           <span class="mono where">{{ directory?.path ?? t('program.fileBrowser.reading') }}</span>
+          <button v-if="props.pick === 'folder'" class="btn primary use" type="button" :disabled="directory === null" @click="emit('pick', directory?.path ?? '')">
+            <AppIcon name="folder" />{{ t('status.backup.useFolder') }}
+          </button>
           <button v-if="writable" class="btn new-folder" type="button" @click="fileActions(null)">
             <AppIcon name="plus" />{{ t('program.fileBrowser.newFolder') }}
           </button>
@@ -133,7 +140,7 @@ onMounted(() => {
         </div>
         <p v-if="directory?.truncated" class="hint" role="status">{{ t('program.fileBrowser.partial') }}</p>
         <p v-if="feedback" class="hint" role="status">{{ feedback }}</p>
-        <p v-if="panel.status && panel.status.interp !== 'idle'" class="blocked">{{ t('program.fileBrowser.stopFirst') }}</p>
+        <p v-if="props.pick === undefined && panel.status && panel.status.interp !== 'idle'" class="blocked">{{ t('program.fileBrowser.stopFirst') }}</p>
       </section>
     </div>
   </ModalDialog>
@@ -159,7 +166,7 @@ onMounted(() => {
   flex: none;
 }
 
-.new-folder { margin-left: auto; flex: none; }
+.use, .new-folder { margin-left: auto; flex: none; }
 .entry-row { display: flex; align-items: center; min-width: 0; }
 .entry-row .entry { flex: 1; min-width: 0; }
 .entry-actions { flex: none; font-size: 20px; }

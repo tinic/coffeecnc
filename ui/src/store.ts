@@ -7,8 +7,10 @@ import { reactive } from 'vue'
 import type { Transport } from './bridge'
 import type {
   AlarmLog,
+  BackupWritten,
   CommandBody,
   CommandResult,
+  RefusalMessage,
   Diagnostics,
   Directory,
   FromMachine,
@@ -17,6 +19,7 @@ import type {
   OffsetHistory,
   Preview,
   ProgramText,
+  RestoreSummary,
   Status,
   ToolTable,
   ToolModels,
@@ -60,6 +63,7 @@ export interface LogEntry {
   id: number
   level: 'error' | 'info'
   text: string
+  refusal?: RefusalMessage
   /** What was asked for, when the entry is the result of a command. */
   context: string
   /** Milliseconds since the Unix epoch, of the last occurrence. */
@@ -73,6 +77,7 @@ export interface MdiEntry {
   text: string
   outcome: 'pending' | CommandResult['outcome']
   reason: string
+  refusal?: RefusalMessage
 }
 
 export interface PanelState {
@@ -99,6 +104,9 @@ export interface PanelState {
   program: ProgramText | null
   preview: Preview | null
   directory: Directory | null
+  /** The last backup written, and the last restore checked, for the backup dialog. */
+  backupWritten: BackupWritten | null
+  restoreSummary: RestoreSummary | null
   log: LogEntry[]
   /** The log entry shown in the status bar, until dismissed. */
   notice: LogEntry | null
@@ -232,6 +240,12 @@ export function describeCommand(command: CommandBody): string {
       return 'Save tool preview model'
     case 'set_operator_settings':
       return 'Save settings'
+    case 'backup':
+      return 'Back up machine data'
+    case 'check_restore':
+      return 'Check backup'
+    case 'restore':
+      return 'Restore backup'
     case 'watch_diagnostics':
       return command.on ? 'Open diagnostics' : 'Close diagnostics'
     case 'launch_hal_tool':
@@ -280,6 +294,8 @@ export function createPanel(options: PanelOptions): Panel {
     program: null,
     preview: null,
     directory: null,
+    backupWritten: null,
+    restoreSummary: null,
     log: [],
     notice: null,
     mdi: [],
@@ -303,15 +319,16 @@ export function createPanel(options: PanelOptions): Panel {
   // An accepted restart that waits for its tool change: the confirmation runs the approach.
   let restartToolChange = false
 
-  function log(level: 'error' | 'info', text: string, context: string, time: number, announce = true): void {
+  function log(level: 'error' | 'info', text: string, context: string, time: number, announce = true, refusal?: RefusalMessage): void {
     const last = state.log.at(-1)
-    if (last?.level === level && last.text === text && last.context === context && time - last.time < collapseWindowMs) {
+    if (last?.level === level && last.text === text && last.context === context && time - last.time < collapseWindowMs &&
+      JSON.stringify(last.refusal) === JSON.stringify(refusal)) {
       last.count += 1
       last.time = time
       if (announce && (level === 'error' || state.notice?.level !== 'error')) state.notice = last
       return
     }
-    state.log.push({ id: nextLogId, level, text, context, time, count: 1 })
+    state.log.push({ id: nextLogId, level, text, context, time, count: 1, ...(refusal ? { refusal } : {}) })
     nextLogId += 1
     if (state.log.length > maxLogEntries) {
       state.log.splice(0, state.log.length - maxLogEntries)
@@ -348,12 +365,14 @@ export function createPanel(options: PanelOptions): Panel {
     }
     pending.delete(message.id)
     const command = entry.command
+    const refusal = message.outcome === 'rejected' ? message.refusal : undefined
     if (command.type === 'start_restart') restartToolChange = message.outcome === 'accepted'
     if (command.type === 'mdi') {
       const mdi = state.mdi.find((candidate) => candidate.id === message.id)
       if (mdi !== undefined) {
         mdi.outcome = message.outcome
         mdi.reason = message.reason
+        if (refusal !== undefined) mdi.refusal = refusal
       }
     }
     if (message.outcome !== 'accepted') {
@@ -362,7 +381,7 @@ export function createPanel(options: PanelOptions): Panel {
       const localResult = command.type === 'plan_restart' || command.type === 'fixed_setter' &&
         (command.action === 'material' && state.tab === 'probe' ||
          (command.action === 'touch_off' || command.action === 'check') && state.tab === 'tools')
-      log('error', reason, describeCommand(command), now(), !localResult)
+      log('error', reason, describeCommand(command), now(), !localResult, refusal)
     }
     for (const listener of resultListeners) {
       listener(command, message)
@@ -469,6 +488,12 @@ export function createPanel(options: PanelOptions): Panel {
         break
       case 'directory':
         state.directory = message
+        break
+      case 'backup_written':
+        state.backupWritten = message
+        break
+      case 'restore_summary':
+        state.restoreSummary = message
         break
       case 'message':
         log(message.level, message.text, '', message.time)

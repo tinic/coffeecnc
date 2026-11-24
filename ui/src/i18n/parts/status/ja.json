@@ -126,6 +126,7 @@
       "dismissTip": "このメッセージを閉じます。メッセージログには残ります",
       "dismiss": "閉じる",
       "estopButton": "非常停止",
+      "backup": "バックアップと復元",
       "diagnostics": "診断"
     },
     "machineBlock": {
@@ -260,6 +261,43 @@
       "machineOn": "機械電源オン",
       "readOnly": "閲覧のみ",
       "messageLog": "メッセージログ"
+    },
+    "backup": {
+      "title": "バックアップと復元",
+      "backupTitle": "バックアップ",
+      "backupWhat": "INI ファイルとその HAL ファイル、工具テーブル、ワーク座標オフセット（.var）、CoffeeCNC の工具モデル、設定、オフセット履歴、メッセージログを 1 つのアーカイブにまとめます。",
+      "backupAction": "フォルダーを選んでバックアップ…",
+      "chooseFolder": "バックアップ先フォルダーを選択",
+      "useFolder": "ここにバックアップ",
+      "written": "{path} を保存しました：{files} ファイル、{size}。",
+      "notIncluded": "バックアップに含まれません：{path}（{reason}）",
+      "restoreTitle": "復元",
+      "restoreWhat": "バックアップを選ぶと、何が変わるかを確認できます。復元するまで何も書き込まれません。",
+      "chooseBackup": "バックアップを選択…",
+      "waitingLive": "機械とのライブ接続を待っています。",
+      "created": "{time} にバックアップ。",
+      "machine": "機械 {machine}。",
+      "nothingChanges": "すべてのファイルが現在と同じです。復元するものはありません。",
+      "restoreEffect": "復元すると CoffeeCNC と LinuxCNC が停止します。LinuxCNC の停止後にファイルが書き込まれ、置き換えられるファイルはデータフォルダーのバックアップに保存されます。",
+      "restartNeeded": "その後 LinuxCNC を再起動してください。.var、工具テーブル、INI、HAL の変更は起動時に反映されます。",
+      "restoreAction": "{n} ファイルを復元して終了",
+      "restoring": "復元中：CoffeeCNC と LinuxCNC を停止します。停止したら LinuxCNC を再起動してください。",
+      "simulatedDone": "シミュレーションの復元が完了しました。このブラウザーは開いたままです。",
+      "role": {
+        "ini": "INI ファイル",
+        "hal": "HAL ファイル",
+        "tool_table": "工具テーブル",
+        "parameters": "ワーク座標オフセット（.var）",
+        "data": "CoffeeCNC データ"
+      },
+      "change": {
+        "new": "新規",
+        "changed": "変更あり",
+        "same": "同じ",
+        "at_exit": "LinuxCNC 停止時"
+      },
+      "symlink": "リンク: ファイルがリンクを置き換えます",
+      "atExitNote": "LinuxCNC はワークオフセット (.var) を、CoffeeCNC は自身のデータを停止時に書き込みます。これらのファイルはその後で比較して書き込みます。アラームログはバックアップに含まれますが、復元しません。"
     },
     "diagnostics": {
       "title": "HAL 診断",

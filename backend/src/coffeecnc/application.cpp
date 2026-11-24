@@ -4,6 +4,8 @@
 #include <coffeecnc/app/alarm_log.hpp>
 #include <coffeecnc/app/diagnostics_feed.hpp>
 #include <coffeecnc/app/file_system.hpp>
+#include <coffeecnc/app/machine_data.hpp>
+#include <coffeecnc/app/restore_helper.hpp>
 #include <coffeecnc/app/offset_history.hpp>
 #include <coffeecnc/app/panel_feed.hpp>
 #include <coffeecnc/app/preview.hpp>
@@ -265,6 +267,25 @@ auto preview_helper() -> std::string {
 auto unix_now() -> std::chrono::milliseconds {
   return std::chrono::duration_cast<std::chrono::milliseconds>(
       std::chrono::system_clock::now().time_since_epoch());
+}
+
+// Starts `coffeecnc --apply-restore <directory> --after <parent>` in a session of its own, so
+// that it outlives this process and the `linuxcnc` script that started it. It gets no
+// descriptor of this process but 0, 1 and 2: the LAN screen's socket is not kept open.
+void start_restore_helper(const std::string& directory) {
+  std::error_code error;
+  auto self = std::filesystem::read_symlink("/proc/self/exe", error).string();
+  if (error) {
+    say("A restore is staged, but the helper cannot be found. It is not written.");
+    return;
+  }
+  const auto parent = std::to_string(getppid());
+  const auto child = spawn_detached({self, "--apply-restore", directory, "--after", parent});
+  if (!child)
+    say(std::format("A restore is staged, but the helper cannot start: {}. It is not written.",
+                    child.error()));
+  else
+    say(std::format("restore helper pid={} waits for pid={}", *child, parent));
 }
 
 // An environment variable; empty when it is not set.
@@ -538,6 +559,9 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
   LocalToolModelFiles copy_files;
   LocalToolModelFiles upload_files;
   LocalToolModelFiles history_files;
+  // Backup and restore, on the worker thread.
+  LocalToolModelFiles machine_data_files;
+  std::unique_ptr<MachineData> machine_data;
   LocalToolModelFiles alarm_files;
   // Every operator message and refusal posted to the page is also kept in the alarm log.
   std::unique_ptr<AlarmLog> alarms;
@@ -652,6 +676,23 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
   }
   int code = 0;
   try {
+    // Before the tool models take the data directory's lock: the start-up check of a restore
+    // takes it for itself, and releases it.
+    {
+      MachineDataPaths paths;
+      paths.machine_id = location.machine_id.value_or("");
+      paths.ini_file = config->ini_file;
+      paths.config_directory = config->directory;
+      if (const auto inspected = inspect_machine_ini(config->ini_file))
+        paths.hal_files = inspected->halfiles;
+      if (!config->postgui_halfile.empty())
+        paths.hal_files.push_back(config->postgui_halfile);
+      paths.tool_table = config->tool_table;
+      paths.parameter_file = config->parameter_file;
+      if (location.availability == ToolModelAvailability::available)
+        paths.data_directory = location.directory;
+      machine_data = std::make_unique<MachineData>(machine_data_files, std::move(paths), unix_now);
+    }
     // Its writer delivers only for a command or a snapshot, after the alarm log below exists.
     models = std::make_unique<ToolModelStore>(model_files, location, post, config->limits);
     // In the machine's data directory, next to the offset history, under the lock the tool
@@ -703,7 +744,8 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
             remote->notifications(outcome.messages);
         },
         models.get(), [&window](PageToken page) -> void { window.close_after_posts(page); },
-        &preview, &restart_engine, &*program_writer, history.get(), diagnostics.get(), &copy_writer);
+        &preview, &restart_engine, &*program_writer, history.get(), diagnostics.get(), &copy_writer,
+        machine_data.get());
     upload_runtime.store(runtime.get());
     PanelFeed::Mirror mirror;
     if (remote) {
@@ -715,9 +757,12 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
     // The `tool_models` snapshot follows the `hello` it belongs to.
     feed = std::make_unique<PanelFeed>(
         source, post, &preview,
-        [&models, &alarms](PageToken page) -> void {
+        [&models, &alarms, &machine_data, &post](PageToken page) -> void {
           models->send_snapshot(page);
           alarms->send_snapshot(page);
+          // What a restore before this run came to, once.
+          if (auto notice = machine_data->take_notice())
+            post(page, {encode_message(notice->first, notice->second, unix_now())});
         },
         progress.get(), history.get(), std::move(mirror));
     if (hooks.before_load)
@@ -727,7 +772,28 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
     say(error.what());
     code = 1;
   }
+  if (machine_data && machine_data->staged() && !location.directory.empty())
+    start_restore_helper(location.directory);
   return code;
+}
+
+auto apply_restore(std::span<const std::string_view> arguments) -> int {
+  if (arguments.size() != 4 || arguments[2] != "--after") {
+    say("usage: coffeecnc --apply-restore <data directory> --after <pid>");
+    return 1;
+  }
+  long parent{};
+  try {
+    parent = std::stol(std::string(arguments[3]));
+  } catch (const std::exception&) {
+    say("--after needs a process id.");
+    return 1;
+  }
+  LocalToolModelFiles files;
+  LocalRestoreHost host;
+  const auto outcome = run_restore_helper(files, std::string(arguments[1]), parent, host);
+  say(outcome.line);
+  return outcome.code;
 }
 
 } // namespace coffeecnc

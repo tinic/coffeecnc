@@ -1,6 +1,6 @@
 # Panel protocol
 
-The authoritative TypeScript contract is [`ui/src/protocol.ts`](../ui/src/protocol.ts). Shared fixtures cover [panel commands](fixtures/commands.json) and [native messages](fixtures/messages.json). C++ tests verify decoding/encoding against them; TypeScript tests keep typed literal mirrors and require every message kind. The command fixture currently contains 41 cases and the native fixture 38, including missing feedback versus zero/false, complete versus partial snapshots, and tool-model storage availability. Lengths are millimetres, speeds mm/min, spindle speed rpm and overrides factors. The native core validates every requested action independently of panel controls.
+The authoritative TypeScript contract is [`ui/src/protocol.ts`](../ui/src/protocol.ts). Shared fixtures cover [panel commands](fixtures/commands.json) and [native messages](fixtures/messages.json). C++ tests verify decoding/encoding against them; TypeScript tests keep typed literal mirrors and require every message kind. The command fixture currently contains 44 cases and the native fixture 42, including missing feedback versus zero/false, complete versus partial snapshots, and tool-model storage availability. Lengths are millimetres, speeds mm/min, spindle speed rpm and overrides factors. The native core validates every requested action independently of panel controls.
 
 ## Fixed tool setter
 
@@ -37,6 +37,10 @@ The [storage contract](../docs/design/native-tool-model-storage.md) defines docu
 
 `hello.operator_settings_storage: 1` enables the `operator_settings` snapshot and `set_operator_settings` command. `hello.max_spindle_rpm` supplies the machine's spindle ceiling. The document contains startup display units, enabled work-system shortcuts, default spindle RPM and default jog velocity in mm/min. Saving never sends controller commands. The snapshot and save revision follow the same identity and durability rules as tool models, with a separate file and the same writer/lock. [Complete contract](../docs/design/operator-settings.md).
 
+## Backup and restore
+
+`backup` writes an archive of the machine's data into `directory` and is answered with `backup_written` (path, number of files, size, and the HAL files `not_included` with the reason) before its result. `check_restore` reads the archive at `path` and writes nothing; `restore_summary` precedes its result with every file of the archive, its `role` (`ini`, `hal`, `tool_table`, `parameters`, `data`), the `target` it would replace on this machine, its `change` (`new`, `changed`, `same`; `at_exit` for the `.var` file and the data files, which LinuxCNC and CoffeeCNC write as they stop and which are compared after that; the alarm log is in the backup but is not restored and is not listed), whether the target is a `symlink` (the restore replaces the link by the file), and a `token`. `restore` takes `path` and that `token`; an archive that changed since is refused. Both are refused unless the machine is off or in E-stop and no program runs. An accepted `restore` quits the application like `quit`: the files are written after LinuxCNC has stopped, and the next start sends an operator message with the outcome. A restore that changes nothing (and has no `.var` file and no data file) is accepted with a reason and does not quit. File handling: [backend rules](../docs/backend-rules.md).
+
 ## Rigid tapping
 
 An optional `hello.rigid_tap` object exposes `max_rpm` (programmed rpm), `reversal_turns` (the larger qualified overrun at either reversal, in spindle revolutions), and `max_z_feed_mm_min` (the Z and trajectory feed ceiling in mm/min). Missing limits hide the conversational G33.1 generator and block literal G33.1 in the program and its subprograms, even if the interpreter cannot preview the program. Program Check validates spindle 0, clockwise fixed-speed rotation, disabled spindle override, Z-only motion, and the synchronized feed and reversal envelope. The toolpath preview shows nominal travel.
@@ -48,6 +52,8 @@ An optional `hello.rigid_tap` object exposes `max_rpm` (programmed rpm), `revers
 ## Version mismatch
 
 A hello with a different protocol version puts the panel in an incompatible connection state. It clears controller snapshots and ignores subsequent messages until a compatible hello arrives; fresh status is then required to show a live connection again. New commands are rejected locally with a result and an operator message.
+
+A `result` with `outcome: "rejected"` may include `refusal` with a catalog `key` and `params`, an object of named string arguments. Static refusals use an empty object. The existing English `reason` remains present. A panel that recognizes the key with all expected arguments translates by key. A panel that receives an unrecognized key, invalid arguments, or no `refusal` uses `reason`. Controller errors, operator messages, and saved alarm entries use their existing text format.
 
 Reconnect (`ready`), abort, jog-stop-all, held-jog release and software E-stop requests remain available as attempts. Their outcomes are not trusted while the protocol is incompatible, and unanswered attempts retain the normal timeout reporting. `set_machine: off` is not exempt: it can reset an E-stop, so it cannot be treated as an unconditional stop request here. Compatible protocol v1 behavior is unchanged.
 

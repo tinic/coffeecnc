@@ -1,5 +1,6 @@
 #include <coffeecnc/app/session.hpp>
 
+#include <coffeecnc/app/machine_data.hpp>
 #include <coffeecnc/app/offset_history.hpp>
 #include <coffeecnc/app/program_edit.hpp>
 
@@ -299,10 +300,10 @@ Session::Session(ControllerPort& port, const Limits& limits, const ProgramStore&
                  ToolModelService* tool_models, PreviewWorker* preview,
                  PreviewEngine* restart_engine, ProgramWriter* program_writer,
                  OffsetHistoryStore* history, DiagnosticsService* diagnostics,
-                 bool asynchronous_copies)
+                 bool asynchronous_copies, MachineDataService* machine_data)
     : port_(port), programs_(programs), tool_models_(tool_models), preview_(preview),
       restart_engine_(restart_engine), program_writer_(program_writer), history_(history),
-      diagnostics_(diagnostics), policy_(limits),
+      diagnostics_(diagnostics), machine_data_(machine_data), policy_(limits),
       asynchronous_copies_(asynchronous_copies) {}
 
 auto Session::reply(ActionResult result) -> Reply {
@@ -324,6 +325,9 @@ auto Session::reply(ActionResult result) -> Reply {
 }
 
 auto Session::answer(Reply reply) -> Stage { return {StageKind::reply, std::move(reply), {}}; }
+auto Session::refuse(std::string reason, RefusalMessage message) -> Stage {
+  return answer({CommandOutcome::rejected, std::move(reason), std::move(message)});
+}
 // `partial` says what was sent before the request was cancelled; empty when nothing was.
 auto Session::cancelled(std::string partial) -> Stage {
   return {StageKind::cancelled, {CommandOutcome::failed, std::move(partial)}, {}};
@@ -354,7 +358,16 @@ auto Session::begin_page(bool watch_frames, std::optional<Instant> frame_clock) 
     tool_models_->page_ended(PageToken{pages_});
   if (diagnostics_ != nullptr)
     diagnostics_->page_ended(PageToken{pages_});
-  return PageToken{++pages_};
+  const PageToken page{++pages_};
+  // A restore staged for a quit of the page this one replaces: the window drops that close (a
+  // close is for the page that asked), so no exit comes for it now, and a later exit must not
+  // write it. After the page changed and under the lock: a staging that ends before this is
+  // abandoned here, one that ends after it finds the page changed and abandons itself. The
+  // restore never takes this lock while it holds its own (lock order: this, then the
+  // restore's).
+  if (machine_data_ != nullptr)
+    machine_data_->abandon_restore();
+  return page;
 }
 
 void Session::end_page(PageToken page) {
@@ -459,8 +472,9 @@ auto Session::submit(PageToken page, std::string_view json, Instant now,
   auto& request = std::get<Request>(decoded);
   if (!in_order(request.id))
     return outcome;
-  const auto result = [&](CommandOutcome verdict, std::string_view reason) -> void {
-    outcome.messages.push_back(encode_result(request.id, verdict, reason));
+  const auto result = [&](CommandOutcome verdict, std::string_view reason,
+                          const std::optional<RefusalMessage>& refusal = {}) -> void {
+    outcome.messages.push_back(encode_result(request.id, verdict, reason, {}, {}, refusal));
     report(outcome, now.unix_time);
   };
   if (std::holds_alternative<Ready>(request.command)) {
@@ -470,7 +484,8 @@ auto Session::submit(PageToken page, std::string_view json, Instant now,
     return outcome;
   }
   if (!ready_) {
-    result(CommandOutcome::rejected, "Panel has not finished loading.");
+    result(CommandOutcome::rejected, "Panel has not finished loading.",
+           RefusalMessage{"messages.session.panelNotLoaded"});
     return outcome;
   }
   expire_panel_frame(now.monotonic);
@@ -479,7 +494,8 @@ auto Session::submit(PageToken page, std::string_view json, Instant now,
     const auto age = frame_age(now, rendered_at);
     if (!panel_recovered_at_ || rendered_at < *panel_recovered_at_ ||
         age >= panel_frame_timeout || age < -panel_clock_slop) {
-      result(CommandOutcome::rejected, panel_frame_reason);
+      result(CommandOutcome::rejected, panel_frame_reason,
+             RefusalMessage{"messages.session.panelFramesWaiting"});
       return outcome;
     }
   }
@@ -487,9 +503,10 @@ auto Session::submit(PageToken page, std::string_view json, Instant now,
   if (auto* settings = std::get_if<SetOperatorSettings>(&request.command)) {
     const auto decision = policy_.evaluate(request.command, status(now.monotonic));
     if (!decision.allowed)
-      result(CommandOutcome::rejected, decision.reason);
+      result(CommandOutcome::rejected, decision.reason, decision.refusal);
     else if (tool_models_ == nullptr)
-      result(CommandOutcome::rejected, "Operator settings storage is not part of this session.");
+      result(CommandOutcome::rejected, "Operator settings storage is not part of this session.",
+             RefusalMessage{"messages.session.noOperatorSettings"});
     else if (const auto refused =
                  tool_models_->submit_operator_settings(page, request.id, std::move(*settings)))
       result(CommandOutcome::rejected, *refused);
@@ -502,9 +519,10 @@ auto Session::submit(PageToken page, std::string_view json, Instant now,
       std::holds_alternative<LaunchHalTool>(request.command)) {
     const auto decision = policy_.evaluate(request.command, status(now.monotonic));
     if (!decision.allowed) {
-      result(CommandOutcome::rejected, decision.reason);
+      result(CommandOutcome::rejected, decision.reason, decision.refusal);
     } else if (diagnostics_ == nullptr) {
-      result(CommandOutcome::rejected, no_diagnostics_reason);
+      result(CommandOutcome::rejected, no_diagnostics_reason,
+             RefusalMessage{"messages.session.noDiagnostics"});
     } else if (const auto* watch = std::get_if<WatchDiagnostics>(&request.command)) {
       diagnostics_->watch(page, watch->on);
       result(CommandOutcome::accepted, "");
@@ -526,9 +544,10 @@ auto Session::submit(PageToken page, std::string_view json, Instant now,
     auto decision = policy_.evaluate(request.command, status(now.monotonic));
     auto models = tool_model_command(request.command);
     if (!decision.allowed || !models)
-      result(CommandOutcome::rejected, decision.reason);
+      result(CommandOutcome::rejected, decision.reason, decision.refusal);
     else if (tool_models_ == nullptr)
-      result(CommandOutcome::rejected, no_tool_models_reason);
+      result(CommandOutcome::rejected, no_tool_models_reason,
+             RefusalMessage{"messages.session.noToolModels"});
     else if (const auto refused = tool_models_->submit(page, request.id, std::move(*models)))
       result(CommandOutcome::rejected, *refused);
     return outcome;
@@ -537,9 +556,10 @@ auto Session::submit(PageToken page, std::string_view json, Instant now,
   if (auto* file = std::get_if<ManageProgramFile>(&request.command);
       file && file->operation == ProgramFileOperation::copy) {
     if (!asynchronous_copies_)
-      result(CommandOutcome::rejected, "Program file management is unavailable.");
+      result(CommandOutcome::rejected, "Program file management is unavailable.",
+             RefusalMessage{"backend.programFiles.unavailable"});
     else if (copy_ || copying_)
-      result(CommandOutcome::rejected, busy_reason);
+      result(CommandOutcome::rejected, busy_reason, RefusalMessage{"messages.session.busy"});
     else {
       copy_.emplace(ProgramCopy{page, request.id, std::move(*file)});
       work_ready_.notify_all();
@@ -553,11 +573,13 @@ auto Session::submit(PageToken page, std::string_view json, Instant now,
     request.command = Abort{};
   const bool stops = only_stops(request.command) && !requires_frame;
   if (setter_busy_ && !stops) {
-    result(CommandOutcome::rejected, "A fixed setter operation is in progress.");
+    result(CommandOutcome::rejected, "A fixed setter operation is in progress.",
+           RefusalMessage{"messages.session.setterBusy"});
     return outcome;
   }
   if (restart_busy_ && !stops) {
-    result(CommandOutcome::rejected, "A restart approach is in progress.");
+    result(CommandOutcome::rejected, "A restart approach is in progress.",
+           RefusalMessage{"messages.session.restartBusy"});
     return outcome;
   }
   bool stop_request = cancels_requests(request.command);
@@ -567,7 +589,8 @@ auto Session::submit(PageToken page, std::string_view json, Instant now,
       // A jog that was stopped for the operator is not started again by the refreshes of the
       // press that began it: only a press made after a release starts a jog.
       if (axis.latched) {
-        result(CommandOutcome::rejected, release_reason);
+        result(CommandOutcome::rejected, release_reason,
+               RefusalMessage{"messages.session.releaseJog"});
         return outcome;
       }
       const bool press = axis.pressed && axis.press_direction == asked->direction &&
@@ -589,17 +612,21 @@ auto Session::submit(PageToken page, std::string_view json, Instant now,
         // The observed state no longer allows the jog as it is: it ends here, not when its
         // lease expires, and not by starting it anew.
         stop_jogs();
-        result(CommandOutcome::rejected,
-               decision.allowed ? std::string(release_reason) : std::move(decision.reason));
+        if (decision.allowed)
+          result(CommandOutcome::rejected, release_reason,
+                 RefusalMessage{"messages.session.releaseJog"});
+        else
+          result(CommandOutcome::rejected, decision.reason, decision.refusal);
         return outcome;
       }
       if (axis.pressed || axis.running) {
         stop_jogs();
-        result(CommandOutcome::rejected, release_reason);
+        result(CommandOutcome::rejected, release_reason,
+               RefusalMessage{"messages.session.releaseJog"});
         return outcome;
       }
       if (requests_.size() >= max_queued) {
-        result(CommandOutcome::rejected, busy_reason);
+        result(CommandOutcome::rejected, busy_reason, RefusalMessage{"messages.session.busy"});
         return outcome;
       }
       // A press. Its lease runs from now: a start that has to wait is not sent once the lease
@@ -624,15 +651,16 @@ auto Session::submit(PageToken page, std::string_view json, Instant now,
     ++cancels_;
     for (const auto& waiting : requests_)
       if (!waiting.stop)
-        outcome.messages.push_back(
-            encode_result(waiting.id, waiting.sent ? CommandOutcome::failed : CommandOutcome::rejected,
-                          waiting.sent ? mode_changed_reason : cancelled_reason));
+        outcome.messages.push_back(encode_result(
+            waiting.id, waiting.sent ? CommandOutcome::failed : CommandOutcome::rejected,
+            waiting.sent ? mode_changed_reason : cancelled_reason, {}, {},
+            RefusalMessage{"messages.session.cancelled"}));
     drop_requests();
   }
   auto& queue = stop_request ? stops_ : requests_;
   if (queue.size() >= (stop_request ? max_queued_stops : max_queued)) {
     // The stop decision above stands; only the controller command is not queued again.
-    result(CommandOutcome::rejected, busy_reason);
+    result(CommandOutcome::rejected, busy_reason, RefusalMessage{"messages.session.busy"});
     return outcome;
   }
   queue.push_back({page, epoch_, cancels_, request.id, std::move(request.command), false, stops});
@@ -907,7 +935,7 @@ auto Session::run(Queued request, const Clock& clock) -> Work {
   if (fate == Fate::cancel) {
     step.kind = StageKind::cancelled;
   } else if (fate == Fate::stale) {
-    step = answer({CommandOutcome::rejected, stopped_reason});
+    step = refuse(stopped_reason, RefusalMessage{"messages.session.jogStoppedBeforeStart"});
   } else {
     const auto* setter = std::get_if<FixedSetterRequest>(&request.command);
     const auto* changed = std::get_if<ToolChanged>(&request.command);
@@ -940,7 +968,8 @@ auto Session::run(Queued request, const Clock& clock) -> Work {
     if (step.reply.reason.empty() && request.sent)
       step.reply.reason = mode_changed_reason;
     if (step.reply.reason.empty())
-      step.reply = {CommandOutcome::rejected, cancelled_reason};
+      step.reply = {CommandOutcome::rejected, cancelled_reason,
+                    RefusalMessage{"messages.session.cancelled"}};
   }
   // Stops decided meanwhile go out before anything else is taken up, except a stop request:
   // abort, E-stop and power off go out first, and a release stops its own axis.
@@ -951,16 +980,28 @@ auto Session::run(Queued request, const Clock& clock) -> Work {
   if (!stop_waits)
     flush_stops();
   const auto now = clock();
-  const std::scoped_lock lock{mutex_};
+  std::unique_lock lock{mutex_};
+  const bool shown = page_open_ && request.page == PageToken{pages_};
+  const bool quits =
+      shown && step.quit && current(request) && step.reply.outcome == CommandOutcome::accepted;
+  // A restore staged for an exit that does not come now (the page ended, a stop came first) is
+  // dropped: a later exit must not write it.
+  if (step.quit && !quits && machine_data_ != nullptr &&
+      std::holds_alternative<RestoreBackup>(request.command)) {
+    lock.unlock();
+    machine_data_->abandon_restore();
+    lock.lock();
+  }
   if (!page_open_)
     return result;
   result.outcome.page = PageToken{pages_};
   if (request.page == result.outcome.page) {
-    result.quit = step.quit && current(request) && step.reply.outcome == CommandOutcome::accepted;
+    result.quit = quits;
     for (auto& message : step.produced)
       result.outcome.messages.push_back(std::move(message));
-    result.outcome.messages.push_back(
-        encode_result(request.id, step.reply.outcome, step.reply.reason, step.setter, step.restart));
+    result.outcome.messages.push_back(encode_result(request.id, step.reply.outcome,
+                                                    step.reply.reason, step.setter, step.restart,
+                                                    step.reply.refusal));
   }
   report(result.outcome, now.unix_time);
   return result;
@@ -1091,7 +1132,8 @@ void Session::drop_requests() {
 auto Session::execute(Queued& request, const Clock& clock) -> Stage {
   const auto& command = request.command;
   if (std::holds_alternative<FixedSetterRequest>(command) && !port_.fixed_setter_available())
-    return answer({CommandOutcome::rejected, "The fixed setter is unavailable."});
+    return refuse("The fixed setter is unavailable.",
+                  RefusalMessage{"messages.session.setterUnavailable"});
   auto state = port_.snapshot();
   if (!wanted(request))
     return cancelled();
@@ -1108,7 +1150,8 @@ auto Session::execute(Queued& request, const Clock& clock) -> Stage {
       return answer(reply(port_.abort()));
     } else if (!only_stops(command) && !std::holds_alternative<ToolChanged>(command)) {
       reject_press(request);
-      return answer({CommandOutcome::rejected, "Finish or stop the restart tool change first."});
+      return refuse("Finish or stop the restart tool change first.",
+                    RefusalMessage{"messages.session.finishRestartToolChange"});
     }
   }
   if (restart_ && !restart_->tool_request && !std::holds_alternative<StartRestart>(command) &&
@@ -1130,7 +1173,11 @@ auto Session::execute(Queued& request, const Clock& clock) -> Stage {
     }
   } else if (decision.allowed) {
     if (const auto* run_command = std::get_if<Run>(&command); run_command && run_command->breakpoint)
-      decision = {false, {}, "A breakpoint needs a complete program check.", {}};
+      decision = {false,
+                  {},
+                  "A breakpoint needs a complete program check.",
+                  {},
+                  RefusalMessage{"messages.session.breakpointNeedsCheck"}};
   }
   if (decision.allowed) {
     if (auto reason = probe_block(command, state); !reason.empty())
@@ -1171,7 +1218,7 @@ auto Session::execute(Queued& request, const Clock& clock) -> Stage {
     reject_press(request);
     // After a mode change was sent this is not `rejected` (nothing sent) any more.
     return answer({request.sent ? CommandOutcome::failed : CommandOutcome::rejected,
-                   std::move(decision.reason)});
+                   std::move(decision.reason), std::move(decision.refusal)});
   }
   const bool fresh_run = state.interp == InterpState::idle &&
       (std::holds_alternative<Run>(command) || std::holds_alternative<Step>(command));
@@ -1267,7 +1314,8 @@ auto Session::plan_restart(Queued& request, PlanRestart command, const Controlle
     -> Stage {
   restart_.reset();
   if (preview_ == nullptr || restart_engine_ == nullptr)
-    return answer({CommandOutcome::rejected, "Restart planning is unavailable."});
+    return refuse("Restart planning is unavailable.",
+                  RefusalMessage{"messages.session.restartUnavailable"});
   const auto source = preview_->restart_source(command.preview_context);
   if (!source.inputs || !source.program_snapshot ||
       source.inputs->program_file != state.program_file) {
@@ -1276,7 +1324,8 @@ auto Session::plan_restart(Queued& request, PlanRestart command, const Controlle
       if (const auto& error = shown->error)
         return answer({CommandOutcome::rejected, error->text});
     }
-    return answer({CommandOutcome::rejected, "Wait for an up-to-date program preview."});
+    return refuse("Wait for an up-to-date program preview.",
+                  RefusalMessage{"messages.session.waitPreview"});
   }
   auto inputs = *source.inputs;
   inputs.restart_line = command.line;
@@ -1285,7 +1334,8 @@ auto Session::plan_restart(Queued& request, PlanRestart command, const Controlle
     return cancelled();
   if (!computed.program_snapshot || *computed.program_snapshot != *source.program_snapshot ||
       preview_->restart_source(command.preview_context).inputs != source.inputs)
-    return answer({CommandOutcome::rejected, "The program preview changed. Choose the line again."});
+    return refuse("The program preview changed. Choose the line again.",
+                  RefusalMessage{"messages.session.previewChanged"});
   const auto& outcome = computed.outcome;
   if (!outcome.restart || outcome.restart->line != command.line || !computed.files_changed)
     return answer({CommandOutcome::rejected,
@@ -1294,7 +1344,8 @@ auto Session::plan_restart(Queued& request, PlanRestart command, const Controlle
                                    : "No verified motion is available at that line."});
   auto point = *outcome.restart;
   if (tool_models_ != nullptr && tool_models_->touch_probe_loaded(point.tool) != false)
-    return answer({CommandOutcome::rejected, "Restart requires a tool verified for machining."});
+    return refuse("Restart requires a tool verified for machining.",
+                  RefusalMessage{"messages.session.restartNeedsTool"});
   if (auto reason = port_.validate_restart(point, inputs); !reason.empty())
     return answer({CommandOutcome::rejected, std::move(reason)});
   if (!wanted(request))
@@ -1314,12 +1365,14 @@ auto Session::send_restart(const Queued& request, const PreparedRestart& restart
     return tool_models_ == nullptr || tool_models_->touch_probe_loaded(restart.plan.point.tool) == false;
   };
   if (!cutting_tool())
-    return answer({CommandOutcome::rejected, "Restart requires a tool verified for machining."});
+    return refuse("Restart requires a tool verified for machining.",
+                  RefusalMessage{"messages.session.restartNeedsTool"});
   const auto current_files = [&] {
     return still() && cutting_tool() && !restart.files_changed([&] { return !still(); });
   };
   if (!current_files())
-    return answer({CommandOutcome::rejected, "The restart was cancelled or the program changed."});
+    return refuse("The restart was cancelled or the program changed.",
+                  RefusalMessage{"messages.session.restartCancelled"});
   {
     const std::scoped_lock lock{mutex_};
     restart_busy_ = true;
@@ -1337,17 +1390,20 @@ auto Session::send_restart(const Queued& request, const PreparedRestart& restart
 auto Session::start_restart(const Queued& request, StartRestart command) -> Stage {
   if (!restart_ || restart_->tool_request || restart_->plan.plan_id != command.plan_id ||
       !wanted(restart_->owner))
-    return answer({CommandOutcome::rejected, "Choose a line and review the restart plan again."});
+    return refuse("Choose a line and review the restart plan again.",
+                  RefusalMessage{"messages.session.reviewRestartPlan"});
   auto restart = std::move(*restart_);
   restart_.reset();
   if (preview_->restart_source(restart.context).inputs != restart.source.inputs)
-    return answer({CommandOutcome::rejected, "The program preview changed. Choose the line again."});
+    return refuse("The program preview changed. Choose the line again.",
+                  RefusalMessage{"messages.session.previewChanged"});
   auto check = restart.plan.point;
   check.clearance_z = restart.programmed_clearance;
   if (auto reason = port_.validate_restart(check, *restart.source.inputs); !reason.empty())
     return answer({CommandOutcome::rejected, std::move(reason)});
   if (check.clearance_z > restart.plan.point.clearance_z + 1e-6)
-    return answer({CommandOutcome::rejected, "The required clearance changed. Review a new plan."});
+    return refuse("The required clearance changed. Review a new plan.",
+                  RefusalMessage{"messages.session.clearanceChanged"});
   cancel_jogs(nullptr);
   if (!wanted(request))
     return cancelled();
@@ -1373,7 +1429,8 @@ auto Session::resume_restart(const Queued& request, const ControllerState& state
   auto restart = std::exchange(restart_, std::nullopt);
   if (!restart || restart->tool_request != state.tool_request ||
       restart->plan.point.tool != state.requested_tool || !wanted(restart->owner))
-    return answer({CommandOutcome::rejected, "The restart tool change is no longer pending."});
+    return refuse("The restart tool change is no longer pending.",
+                  RefusalMessage{"messages.session.restartToolChangeGone"});
   const auto still = token(request);
   if (tool_models_ != nullptr && tool_models_->touch_probe_loaded(restart->plan.point.tool) != false) {
     static_cast<void>(port_.abort());
@@ -1678,7 +1735,8 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
           return step;
         } else if constexpr (std::is_same_v<T, ManageProgramFile>) {
           if (program_writer_ == nullptr)
-            return answer({CommandOutcome::rejected, "Program file management is unavailable."});
+            return refuse("Program file management is unavailable.",
+                          RefusalMessage{"backend.programFiles.unavailable"});
           const auto observed = loaded_program();
           const auto result = program_writer_->manage(c, observed.empty() ? state.program_file : observed);
           return answer(result ? Reply{CommandOutcome::accepted, ""}
@@ -1691,6 +1749,29 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
           if (c.state != MachineState::on)
             cancel_jogs(nullptr);
           return result;
+        } else if constexpr (std::is_same_v<T, Backup> || std::is_same_v<T, CheckRestore> ||
+                             std::is_same_v<T, RestoreBackup>) {
+          if (machine_data_ == nullptr)
+            return answer({CommandOutcome::rejected, "This CoffeeCNC cannot back up or restore."});
+          MachineDataAnswer done;
+          if constexpr (std::is_same_v<T, Backup>) {
+            done = machine_data_->backup(c.directory);
+          } else if constexpr (std::is_same_v<T, CheckRestore>) {
+            done = machine_data_->check_restore(c.path);
+          } else {
+            // The machine as it is now, just before anything is staged.
+            done =
+                machine_data_->restore(c.path, c.token, request.page.value, [&]() -> std::string {
+                  const auto recheck = policy_.evaluate(request.command, port_.snapshot());
+                  return recheck.allowed ? std::string{} : recheck.reason;
+                });
+          }
+          Stage step;
+          step.reply.outcome = done.outcome;
+          step.reply.reason = std::move(done.reason);
+          step.produced = std::move(done.messages);
+          step.quit = done.quit;
+          return step;
         } else if constexpr (std::is_same_v<T, Quit>) {
           // Power off when on; an E-stop or a machine already off stays as it is (no reset).
           if (state.machine == MachineState::on) {
@@ -1746,13 +1827,15 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
           });
         } else if constexpr (std::is_same_v<T, EditProgram>) {
           if (program_writer_ == nullptr)
-            return answer({CommandOutcome::rejected, "This CoffeeCNC cannot edit programs."});
+            return refuse("This CoffeeCNC cannot edit programs.",
+                          RefusalMessage{"messages.session.cannotEdit"});
           const auto file = programs_.resolve_program(c.path);
           if (!file)
             return answer({CommandOutcome::rejected, file.error()});
           const auto loaded = programs_.resolve_program(state.program_file);
           if (!loaded || *file != *loaded)
-            return answer({CommandOutcome::rejected, "Only the loaded program can be edited."});
+            return refuse("Only the loaded program can be edited.",
+                          RefusalMessage{"messages.session.onlyLoadedEditable"});
           return act(request, [&](const Wanted& still) -> ActionResult {
             auto written = program_writer_->replace_line(*file, c.line, c.before, c.after);
             if (!written)
@@ -1762,14 +1845,16 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
           });
         } else if constexpr (std::is_same_v<T, SaveProgram>) {
           if (program_writer_ == nullptr)
-            return answer({CommandOutcome::rejected, "This CoffeeCNC cannot save programs."});
+            return refuse("This CoffeeCNC cannot save programs.",
+                          RefusalMessage{"messages.session.cannotSave"});
           if (c.stamp) {
             const auto file = programs_.resolve_program(c.path);
             if (!file)
               return answer({CommandOutcome::rejected, file.error()});
             const auto loaded = programs_.resolve_program(state.program_file);
             if (!loaded || *file != *loaded)
-              return answer({CommandOutcome::rejected, "Only the loaded program can be edited."});
+              return refuse("Only the loaded program can be edited.",
+                            RefusalMessage{"messages.session.onlyLoadedEditable"});
             return act(request, [&](const Wanted& still) -> ActionResult {
               const auto check_controller = [&]() -> std::string {
                 if (!still())
@@ -1799,8 +1884,8 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
             if (target && target->exists &&
                 (target->path == state.program_file ||
                  (loaded && programs_.resolve_program(target->path).value_or("") == *loaded)))
-              return answer({CommandOutcome::rejected,
-                             "The loaded program is not replaced. Choose another name."});
+              return refuse("The loaded program is not replaced. Choose another name.",
+                            RefusalMessage{"messages.session.loadedNotReplaced"});
           }
           auto written = program_writer_->create(c.path, c.text, c.replace);
           if (!written)
@@ -1859,8 +1944,8 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
           });
         } else if constexpr (std::is_same_v<T, SelectWcs>) {
           if (c.wcs < 1 || static_cast<std::size_t>(c.wcs) > wcs_words.size())
-            return answer(
-                {CommandOutcome::rejected, "Work coordinate system must be G54 through G59.3."});
+            return refuse("Work coordinate system must be G54 through G59.3.",
+                          RefusalMessage{"messages.policy.wcsRange"});
           return mdi(request, std::string(wcs_words[static_cast<std::size_t>(c.wcs) - 1]));
         } else if constexpr (std::is_same_v<T, SetWorkOffset>) {
           // An explicit P index: editing an inactive system must not select it.
@@ -1941,7 +2026,7 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
               std::is_same_v<T, LaunchHalTool>;
           static_assert(served_in_submit, "Every command needs an action.");
           // `submit` hands these to the tool-model or diagnostics service: none is ever queued.
-          return answer({CommandOutcome::rejected, no_tool_models_reason});
+          return refuse(no_tool_models_reason, RefusalMessage{"messages.session.noToolModels"});
         }
       },
       request.command);
@@ -1953,15 +2038,18 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
 auto Session::restore_offset(const Queued& request, const RestoreOffset& command,
                              const ControllerState& state, const Clock& clock) -> Stage {
   if (history_ == nullptr)
-    return answer({CommandOutcome::rejected, "This CoffeeCNC keeps no offset history."});
+    return refuse("This CoffeeCNC keeps no offset history.",
+                  RefusalMessage{"messages.session.noOffsetHistory"});
   const auto entry = history_->entry(command.entry);
   if (!entry)
-    return answer({CommandOutcome::rejected, "That history entry is no longer kept."});
+    return refuse("That history entry is no longer kept.",
+                  RefusalMessage{"messages.session.historyEntryGone"});
   std::string words;
   std::array<std::optional<double>, 4> values{};
   for (const auto& change : entry->changes) {
     if (!change.before || !change.after)
-      return answer({CommandOutcome::rejected, "This entry has no earlier value to restore."});
+      return refuse("This entry has no earlier value to restore.",
+                    RefusalMessage{"messages.session.noEarlierValue"});
     const auto value = *change.before;
     switch (change.field) {
     case HistoryField::x:
@@ -2050,13 +2138,13 @@ auto Session::restore_offset(const Queued& request, const RestoreOffset& command
 auto Session::jog_step(Queued& request, const JogStep& command, const Decision& decision) -> Stage {
   const auto index = axis_index(command.axis);
   if (!decision.jog_space || !index)
-    return answer({CommandOutcome::rejected, "Jog space is undecided."});
+    return refuse("Jog space is undecided.", RefusalMessage{"messages.session.jogSpaceUndecided"});
   {
     // An increment does not wait for a jog stop to finish: it is refused.
     const std::scoped_lock lock{mutex_};
     if (hold_ || low_periods_ < settled_periods || !reconciled())
-      return answer(
-          {request.sent ? CommandOutcome::failed : CommandOutcome::rejected, hold_reason});
+      return answer({request.sent ? CommandOutcome::failed : CommandOutcome::rejected, hold_reason,
+                     RefusalMessage{"messages.session.jogStopInProgress"}});
   }
   if (auto gate = start_gate(request, *index, false))
     return std::move(*gate);
@@ -2118,7 +2206,7 @@ auto Session::jog(Queued& request, const Jog& command, const Decision& decision,
     const std::scoped_lock lock{mutex_};
     jog_.at(*index).in_flight = false;
     return request.epoch != epoch_ && current(request)
-               ? answer({CommandOutcome::rejected, stopped_reason})
+               ? refuse(stopped_reason, RefusalMessage{"messages.session.jogStoppedBeforeStart"})
                : cancelled();
   }
   std::optional<std::uint64_t> late_in;
@@ -2230,7 +2318,8 @@ auto Session::list_directory(const ListDirectory& request, Stage& step) -> Reply
 
 auto Session::mdi(const Queued& request, const std::string& text) const -> Stage {
   if (text.size() > max_mdi_bytes)
-    return answer({CommandOutcome::rejected, "MDI requires one block of at most 254 bytes."});
+    return refuse("MDI requires one block of at most 254 bytes.",
+                  RefusalMessage{"messages.session.mdiTooLong"});
   return act(request, [&](const Wanted& still) -> ActionResult { return port_.mdi(text, still); });
 }
 

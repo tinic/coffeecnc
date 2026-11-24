@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <expected>
+#include <format>
 #include <functional>
 #include <map>
 #include <optional>
@@ -23,6 +24,13 @@ struct FakeDisk {
   std::set<std::string> directories{"/"};
   std::map<std::string, unsigned> modes; // of directories; 0700 where none is given
   std::set<std::string> locked;          // directories whose lock is held
+  // Symbolic links: path, the absolute path it points to. A link to a directory makes every
+  // path below it a path below the target.
+  std::map<std::string, std::string> links;
+  std::map<std::string, unsigned> file_modes; // 0644 where none is given
+  std::map<std::string, unsigned> groups;     // 1000 where none is given
+  // Groups the user is not in: a file is not given one of them (EPERM), and keeps 1000.
+  std::set<unsigned> foreign_groups;
 };
 
 // The tool-model writer's file system in memory. Every step can be made to fail, and a hook
@@ -133,6 +141,92 @@ public:
     return {};
   }
 
+  // Beneath `root`: a link on the way is refused, the last component is followed for reading.
+  // Steps: read_beneath, replace (before the rename), replace_sync (after it), remove,
+  // folder_exists, relink.
+  auto read_beneath(const std::string& root, const std::string& relative, std::size_t limit)
+      -> std::expected<std::optional<Found>, std::string> override {
+    const auto path = root + '/' + relative;
+    if (begin("read_beneath", path))
+      return std::unexpected(path + " cannot be read: Input/output error");
+    if (auto linked = through_link(root, relative))
+      return std::unexpected(*linked);
+    const auto linked = disk.links.find(path);
+    const auto actual = linked == disk.links.end() ? path : linked->second;
+    const auto file = disk.files.find(actual);
+    if (file == disk.files.end())
+      return std::optional<Found>{};
+    const auto mode = disk.file_modes.find(actual);
+    const auto group = disk.groups.find(actual);
+    return Found{{file->second.substr(0, limit), file->second.size() > limit},
+                 linked != disk.links.end(),
+                 linked == disk.links.end() ? std::string{} : linked->second,
+                 mode == disk.file_modes.end() ? 0644U : mode->second,
+                 group == disk.groups.end() ? 1000U : group->second};
+  }
+  auto replace_beneath(const std::string& root, const std::string& relative,
+                       std::string_view bytes, unsigned mode, std::optional<unsigned> group)
+      -> Replaced override {
+    const auto path = root + '/' + relative;
+    if (begin("replace", path))
+      return std::unexpected(ReplaceError{false, path + " cannot be replaced: No space left on device"});
+    if (auto linked = through_link(root, relative))
+      return std::unexpected(ReplaceError{false, *linked});
+    disk.links.erase(path); // the link is replaced, not followed
+    disk.files[path] = std::string(bytes);
+    disk.file_modes[path] = mode;
+    Written kept;
+    if (group && disk.foreign_groups.contains(*group))
+      kept.group_kept = false;
+    if (group && kept.group_kept)
+      disk.groups[path] = *group;
+    else
+      disk.groups.erase(path);
+    if (begin("replace_sync", path))
+      return std::unexpected(
+          ReplaceError{true, path + " was replaced, but its folder cannot be synchronised: "
+                                    "Input/output error"});
+    return kept;
+  }
+  // A folder exists when it was made or holds a file or a link.
+  auto folder_exists_beneath(const std::string& root, const std::string& relative)
+      -> std::expected<bool, std::string> override {
+    const auto path = root + '/' + relative;
+    if (begin("folder_exists", path))
+      return std::unexpected(path + " cannot be read: Input/output error");
+    if (auto linked = through_link(root, relative))
+      return std::unexpected(*linked);
+    const auto folder = path.substr(0, path.rfind('/'));
+    const auto below = [&](const auto& entries) {
+      return std::ranges::any_of(
+          entries, [&](const auto& entry) { return entry.first.starts_with(folder + '/'); });
+    };
+    return disk.directories.contains(folder) || below(disk.files) || below(disk.links);
+  }
+  auto link_beneath(const std::string& root, const std::string& relative, const std::string& target)
+      -> Done override {
+    const auto path = root + '/' + relative;
+    if (begin("relink", path))
+      return std::unexpected(path + " cannot be made a link again: Read-only file system");
+    if (auto linked = through_link(root, relative))
+      return std::unexpected(*linked);
+    disk.files.erase(path);
+    disk.file_modes.erase(path);
+    disk.groups.erase(path);
+    disk.links[path] = target;
+    return {};
+  }
+  auto remove_beneath(const std::string& root, const std::string& relative) -> Done override {
+    const auto path = root + '/' + relative;
+    if (begin("remove", path))
+      return std::unexpected(path + " cannot be removed: Read-only file system");
+    if (auto linked = through_link(root, relative))
+      return std::unexpected(*linked);
+    disk.links.erase(path);
+    disk.files.erase(path);
+    return {};
+  }
+
   // Calls of this step so far.
   [[nodiscard]] auto count(std::string_view step) const -> std::size_t {
     return static_cast<std::size_t>(std::ranges::count_if(calls, [&](const auto& call) -> bool {
@@ -154,6 +248,25 @@ private:
       }
     }
     return false;
+  }
+  // Why `relative` is not beneath `root`: a component on the way is a link, or not plain.
+  [[nodiscard]] auto through_link(const std::string& root, const std::string& relative) const
+      -> std::optional<std::string> {
+    std::string at = root;
+    std::string_view rest{relative};
+    while (!rest.empty()) {
+      const auto slash = rest.find('/');
+      const auto part = rest.substr(0, slash);
+      if (part.empty() || part == "." || part == "..")
+        return std::format("{}/{} is not a plain path", root, relative);
+      rest.remove_prefix(slash == std::string_view::npos ? rest.size() : slash + 1);
+      at += '/';
+      at += part;
+      if (slash != std::string_view::npos && disk.links.contains(at))
+        return std::format("{}/{} is reached through a symbolic link or is not beneath {}", root,
+                           relative, root);
+    }
+    return std::nullopt;
   }
   void release() {
     if (!held_.empty())

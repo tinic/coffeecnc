@@ -213,12 +213,12 @@ function restartSection(index: number): void {
   restartAt.value = { line: section.first, section: sectionName(index) }
 }
 // Changing one feed or speed number of the loaded program; the machine saves and reopens it.
-const editing = ref<{ line: number; text: string; word: RateWord; error: string } | null>(null)
+const editing = ref<{ line: number; text: string; word: RateWord; error: (() => string) | null } | null>(null)
 let editRequest: CommandBody | null = null
 function editRate(line: number, offset: number): void {
   const text = program.value?.lines[line - 1]
   const word = text === undefined ? undefined : rateWords(text).find((candidate) => candidate.end > offset)
-  if (text !== undefined && word !== undefined) editing.value = { line, text, word, error: '' }
+  if (text !== undefined && word !== undefined) editing.value = { line, text, word, error: null }
 }
 const rateUnit = computed(() => {
   if (editing.value?.word.letter === 'S') return 'rpm'
@@ -230,7 +230,7 @@ function saveRate(value: number): void {
   if (edit === null || !file || editRequest !== null) return
   const after = withRate(edit.text, edit.word, value)
   if (after === null) {
-    edit.error = t('program.tab.badNumber')
+    edit.error = (): string => t('program.tab.badNumber')
     return
   }
   editRequest = { type: 'edit_program', path: file, line: edit.line, old_text: edit.text, new_text: after }
@@ -240,7 +240,7 @@ const removeEditListener = onResult((command, result) => {
   if (command !== editRequest) return
   editRequest = null
   if (result.outcome === 'accepted') editing.value = null
-  else if (editing.value !== null) editing.value.error = result.reason ? translateMessage(result.reason) : t('program.tab.notSaved')
+  else if (editing.value !== null) editing.value.error = (): string => translateMessage(result.reason, result.refusal) || t('program.tab.notSaved')
 })
 onBeforeUnmount(removeEditListener)
 
@@ -361,7 +361,7 @@ async function showFailure(): Promise<void> {
       :title="editing.word.letter === 'F' ? t('program.tab.editFeed', { line: editing.line }) : t('program.tab.editSpeed', { line: editing.line })"
       :effect="t('program.tab.editEffect')"
       :label="editing.word.letter === 'F' ? t('program.tab.feedLabel') : t('program.tab.speedLabel')" :unit="rateUnit" :initial="String(editing.word.value)"
-      :action="t('program.tab.saveProgram')" :error="editing.error" @confirm="saveRate" @close="editing = null"
+      :action="t('program.tab.saveProgram')" :error="editing.error?.() ?? ''" @confirm="saveRate" @close="editing = null"
     />
     <RestartDialog v-if="restartAt" :line="restartAt.line" :section="restartAt.section" @close="restartAt = null" />
     <ProgramCheckDialog v-if="checkOpen" :check="check" :unit="panel.unit" :max-rpm="panel.hello?.max_spindle_rpm" @close="checkOpen = false" />

@@ -4,6 +4,9 @@
 if(NOT TARGET coffeecnc_shell OR NOT TARGET coffeecnc_linuxcnc)
   return()
 endif()
+if(NOT TARGET coffeecnc_backup)
+  message(FATAL_ERROR "The coffeecnc executable needs libarchive (Debian: libarchive-dev) for backup and restore.")
+endif()
 
 # GCC warns under ThreadSanitizer (-Wtsan, an error with -Werror) that it does not model
 # std::atomic_thread_fence, which Boost.Asio calls in detail/std_fenced_block.hpp and
@@ -40,8 +43,8 @@ endif()
 if(TARGET coffeecnc_preview)
   add_dependencies(coffeecnc_application coffeecnc_preview)
 endif()
-target_link_libraries(coffeecnc_application PUBLIC coffeecnc_app coffeecnc_linuxcnc coffeecnc_shell
-  PRIVATE coffeecnc_project_options resolv)
+target_link_libraries(coffeecnc_application PUBLIC coffeecnc_app coffeecnc_backup coffeecnc_linuxcnc
+  coffeecnc_shell PRIVATE coffeecnc_project_options resolv)
 coffeecnc_enable_analyzers(coffeecnc_application)
 
 # COFFEECNC_SANITIZER_SUPPRESSIONS: set in src/shell, a source of every program that opens the window.

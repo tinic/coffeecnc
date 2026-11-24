@@ -1,4 +1,4 @@
-import type { LengthUnit, Vec3 } from './protocol'
+import type { LengthUnit, MessageKey, Vec3 } from './protocol'
 import { decodeLanguage, type Language } from './i18n'
 import { validMachineId } from './tool-model-settings'
 
@@ -102,6 +102,7 @@ export type OperatorSettings = {
   machine_id: string | null
   revision: number
   reason: string
+  localization?: MessageKey
 } & ({ availability: 'available'; machine_id: string; document: OperatorPreferences }
   | { availability: 'session_only' | 'unavailable'; document: null })
 
@@ -144,16 +145,22 @@ export function decodeOperatorSettings(value: unknown): OperatorSettings | null 
   const v = value as Record<string, unknown>
   if (v['type'] !== 'operator_settings' || typeof v['reason'] !== 'string' ||
       typeof v['revision'] !== 'number' || !Number.isSafeInteger(v['revision']) || v['revision'] < 0) return null
+  const candidate = v['localization']
+  const localized = typeof candidate === 'object' && candidate !== null &&
+    'key' in candidate && typeof candidate.key === 'string' && 'params' in candidate &&
+    typeof candidate.params === 'object' && candidate.params !== null && !Array.isArray(candidate.params) &&
+    Object.values(candidate.params).every((argument) => typeof argument === 'string')
+    ? { localization: { key: candidate.key, params: candidate.params as Record<string, string> } } : {}
   if (v['availability'] === 'available') {
     const document = decodeOperatorPreferences(v['document'])
     if (!validMachineId(v['machine_id']) || !document) return null
     return { type: 'operator_settings', availability: 'available', machine_id: v['machine_id'],
-      revision: v['revision'], reason: v['reason'], document }
+      revision: v['revision'], reason: v['reason'], document, ...localized }
   }
   if (!['session_only', 'unavailable'].includes(String(v['availability'])) || v['revision'] !== 0 ||
       v['document'] !== null || !(v['machine_id'] === null || validMachineId(v['machine_id']))) return null
   return { type: 'operator_settings', availability: v['availability'] as 'session_only' | 'unavailable',
-    machine_id: v['machine_id'], revision: 0, reason: v['reason'], document: null }
+    machine_id: v['machine_id'], revision: 0, reason: v['reason'], document: null, ...localized }
 }
 
 /** Active system stays visible even if a program selects one omitted from shortcuts. */

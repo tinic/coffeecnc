@@ -6,7 +6,7 @@ import { hello, SimMachine } from '../src/sim/machine'
 import { answerTimeoutMs, createPanel, type PanelState } from '../src/store'
 import { decodeOperatorPreferences, defaultOperatorPreferences, visibleWorkSystems, withRecentProgram, type OperatorPreferences, type ProgramLayout, type PanelTheme } from '../src/operator-settings'
 import { createOperatorSettingsState, type OperatorSettingsController } from '../src/operator-settings-state'
-import type { Language } from '../src/i18n'
+import { setLanguage, t, type Language } from '../src/i18n'
 
 const disposals: (() => void)[] = []
 afterEach(() => { for (const dispose of disposals.splice(0)) dispose() })
@@ -373,5 +373,28 @@ describe('work-system overflow', () => {
   })
   it('shows an active system even when its shortcut is disabled, without showing other disabled systems', () => {
     expect(visibleWorkSystems([1, 2], 8)).toEqual({ primary: [1, 2, 8], more: [] })
+  })
+})
+
+describe('operator settings localization', () => {
+  it('keeps a keyed storage reason live across language changes', async () => {
+    const native = rig(false)
+    native.connect()
+    const key = 'backend.operatorSettingsStore.fileTooLarge'
+    const params = { file: '/mill/operator-settings.json' }
+    const snapshot = { type: 'operator_settings', machine_id: 'G0759', availability: 'unavailable',
+      revision: 0, reason: 'Older fallback.', document: null } as const
+    try {
+      await setLanguage('de')
+      native.receive({ ...snapshot, localization: { key, params } })
+      expect(native.settings.block(native.settings.context())).toBe(t(key, params))
+      await setLanguage('fr')
+      expect(native.settings.state.reason).toBe(t(key, params))
+
+      native.receive({ ...snapshot, localization: { key, params: {} } })
+      expect(native.settings.state.reason).toBe(snapshot.reason)
+    } finally {
+      await setLanguage('en')
+    }
   })
 })

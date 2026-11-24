@@ -189,7 +189,7 @@ async function save(): Promise<void> {
     </div>
     <template #footer>
       <button class="btn templates" type="button" :disabled="settings.state.saving" @click="templates = true">{{ t('status.settings.templates') }}</button>
-      <div class="save-state"><span>{{ storageLabel }}</span><p v-if="settings.state.error || blocked || invalid" role="status">{{ translateMessage(settings.state.error || blocked || invalid || '') }}</p><p v-else-if="settings.state.storage === 'session_only'">{{ translateMessage(settings.state.reason) }}</p></div>
+      <div class="save-state"><span>{{ storageLabel }}</span><p v-if="settings.state.error || blocked || invalid" role="status">{{ settings.state.error || blocked || invalid }}</p><p v-else-if="settings.state.storage === 'session_only'">{{ settings.state.reason }}</p></div>
       <button class="btn" type="button" @click="emit('close')">{{ t('common.cancel') }}</button>
       <button class="btn primary" type="button" :disabled="blocked !== null || invalid !== null" @click="save">{{ settings.state.saving ? t('common.saving') : settings.state.storage === 'session_only' ? t('common.apply') : t('status.settings.saveSettings') }}</button>
     </template>

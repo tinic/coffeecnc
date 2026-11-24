@@ -709,11 +709,11 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
         [&window](PageToken page, std::vector<std::string> messages) -> void {
           window.post(page, std::move(messages));
         },
-        [store = models.get()]() -> std::optional<std::string> {
-          const auto held = store->held_location();
+        [store = models.get()]() -> std::optional<LocalizedReason> {
+          auto held = store->held_location();
           if (held.availability == ToolModelAvailability::available)
             return std::nullopt;
-          return held.reason;
+          return LocalizedReason{std::move(held.reason), std::move(held.localization)};
         });
     progress = std::make_unique<ProgramProgress>(progress_files, location.directory);
     // Next to the program progress, in the machine's data directory; without one, for this

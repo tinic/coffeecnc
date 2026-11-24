@@ -191,8 +191,7 @@ auto AlarmLog::path(std::string_view name) const -> std::string {
 auto AlarmLog::locked() -> bool {
   std::optional<LocalizedReason> problem;
   if (lock_) {
-    if (auto detail = lock_())
-      problem = LocalizedReason{std::move(*detail)};
+    problem = lock_();
   } else if (const auto taken = files_.lock(directory_); !taken) {
     if (taken.error().in_use)
       problem = {"it is in use by another CoffeeCNC.", MessageKey{"backend.alarmLog.inUse"}};

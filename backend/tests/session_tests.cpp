@@ -2322,6 +2322,37 @@ void no_start_over_an_unconfirmed_stop() {
   rig.acted({}, "The tick does not stop the new jog");
 }
 
+void unconfirmed_stop_retains_the_controller_key() {
+  for (const bool same_axis : {true, false}) {
+    Rig rig;
+    rig.accepted(hold_x);
+    rig.port.script["stop_jog"] = {{ActionStatus::timed_out, ""}, {ActionStatus::timed_out, ""}};
+    rig.expect(release_x, "timed_out", "LinuxCNC did not answer.");
+    rig.port.calls.clear();
+
+    const auto denied = rig.result(same_axis ? hold_x : hold_y);
+    const auto axis = same_axis ? "this axis" : "X";
+    const auto key =
+        same_axis ? "messages.session.previousStopThisAxis" : "messages.session.previousStopAxis";
+    auto params = Json{{"detail", "LinuxCNC did not answer."}};
+    if (!same_axis)
+      params["axis"] = "X";
+    require(denied.at("outcome") == "timed_out" &&
+                denied.at("reason") ==
+                    std::format(
+                        "The previous jog stop on {} is not confirmed: LinuxCNC did not answer.",
+                        axis) &&
+                denied.at("localization") == Json{{"key", key},
+                                                  {"params", params},
+                                                  {"params_localization",
+                                                   {{"detail",
+                                                     {{"key", "messages.session.linuxcncNoAnswer"},
+                                                      {"params", Json::object()}}}}}},
+            "A new jog refusal retains the controller timeout detail.");
+    rig.acted({"stop_jog x"}, "The previous stop is retried and no jog starts.");
+  }
+}
+
 void failed_stop_survives_the_page_and_is_retried() {
   Rig rig;
   rig.accepted(hold_x);
@@ -3189,6 +3220,7 @@ auto main(int argc, char** argv) -> int {
     failed_stop_survives_the_page_and_is_retried();
     explicit_stop_failures_are_retried();
     no_start_over_an_unconfirmed_stop();
+    unconfirmed_stop_retains_the_controller_key();
     outside_changes_stop_held_jogs();
     stopped_jogs_need_a_release();
     stale_requests_send_nothing();

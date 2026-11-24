@@ -1207,7 +1207,10 @@ const examples = [
     "reason": "The previous jog stop on X is not confirmed: LinuxCNC did not answer.",
     "localization": {
       "key": "messages.session.previousStopAxis",
-      "params": { "axis": "X", "detail": "LinuxCNC did not answer." }
+      "params": { "axis": "X", "detail": "LinuxCNC did not answer." },
+      "params_localization": {
+        "detail": { "key": "messages.session.linuxcncNoAnswer", "params": {} }
+      }
     }
   },
   {

@@ -382,7 +382,8 @@ auto encoded_messages() -> std::vector<EncodedMessage> {
       56, CommandOutcome::timed_out,
       "The previous jog stop on X is not confirmed: LinuxCNC did not answer.", {}, {}, {},
       MessageKey{"messages.session.previousStopAxis",
-                 {{"axis", "X"}, {"detail", "LinuxCNC did not answer."}}}));
+                 {{"axis", "X"}, {"detail", "LinuxCNC did not answer."}},
+                 {{"detail", {"messages.session.linuxcncNoAnswer"}}}}));
   messages.emplace_back(encode_result(47, CommandOutcome::timed_out, "LinuxCNC did not answer.", {},
                                       {}, {}, MessageKey{"messages.session.linuxcncNoAnswer"}));
   messages.emplace_back(

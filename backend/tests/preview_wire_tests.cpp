@@ -13,6 +13,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <variant>
 #include <vector>
 
 using namespace coffeecnc;
@@ -161,7 +162,7 @@ void preview_stop_codes() {
   }
   require(
       write_preview_stop(4, wcs, {}, "1", 9) == "stop 4 " + wcs_text + '\n' &&
-          write_preview_stop(4, wcs, {}, "5", 9) == "stop 4 " + wcs_text + '\n' &&
+          write_preview_stop(4, wcs, {}, "6", 9) == "stop 4 " + wcs_text + '\n' &&
           write_preview_stop(3, probe, {}, "2") == "stop_known 3 2\n",
       "Older or unknown versions get text for the numbered stop, and version 2 keeps fixed codes");
   const auto numbered_source =
@@ -263,6 +264,74 @@ void interpreter_stop_code_ids() {
                                          std::string("#<a name>"));
   require(spaced.starts_with("stop 5 reads #<a name>,"),
           "Arguments that do not fit the coded record retain the original text");
+}
+
+void block_refusal_code_ids() {
+  struct Case {
+    PreviewStopReason stop;
+    unsigned id;
+    std::string text;
+    MessageKey key;
+  };
+  const std::array cases{
+      Case{{KnownPreviewStop::task_parameter},
+           17,
+           "reads the _task parameter, which is 1 on the machine and 0 in the preview: "
+           "the program can act differently in each",
+           {"backend.previewEngine.stopTask"}},
+      Case{
+          {KnownPreviewStop::ini_or_hal_parameter},
+          18,
+          "reads an INI or HAL value (#<_ini[...]>, #<_hal[...]>), which the preview does not have",
+          {"backend.previewEngine.stopIniHal", {{"names", "#<_ini[...]>, #<_hal[...]>"}}}},
+      Case{{KnownPreviewStop::global_parameter_exists},
+           19,
+           "asks whether a global parameter (#<_...>) exists: on the machine it can exist from an "
+           "earlier program or MDI block, which the preview does not know",
+           {"backend.previewEngine.stopExists", {{"name", "#<_...>"}}}},
+      Case{{KnownPreviewStop::computed_o_word},
+           20,
+           "a computed O word: programs with computed names are not previewed",
+           {"backend.previewEngine.stopComputedOword"}},
+      Case{{KnownPreviewStop::computed_g_word},
+           21,
+           "a computed G word: which code runs is not known before it does",
+           {"backend.previewEngine.stopComputedGword"}},
+      Case{{KnownPreviewStop::restore_g92},
+           22,
+           "G92.3 restores an offset saved in the parameter file",
+           {"backend.previewEngine.stopG92Restore"}},
+      Case{{KnownPreviewStop::python_line},
+           23,
+           "a `;py,` line runs Python in the interpreter",
+           {"backend.previewEngine.stopPythonLine"}},
+      Case{{KnownPreviewStop::python_comment, std::string("py,")},
+           24,
+           "a (py,...) comment runs Python in the interpreter",
+           {"backend.previewEngine.stopPythonComment", {{"word", "py,"}}}},
+      Case{{KnownPreviewStop::file_writing_comment, std::string("log,")},
+           25,
+           "a (log,...) comment writes a file",
+           {"backend.previewEngine.stopFileWritingComment", {{"word", "log,"}}}},
+      Case{{KnownPreviewStop::unsafe_o_word_name},
+           26,
+           "an O word whose name is computed or is not plainly a name "
+           "(letters, digits, `_`, `-`, `.`): the interpreter would look for a file by it",
+           {"backend.previewEngine.stopOwordName"}}};
+  for (const auto& row : cases) {
+    const auto* token = std::get_if<std::string>(&row.stop.argument);
+    const auto wire = token ? std::format("stop_known 5 {} {}\n", row.id, *token)
+                            : std::format("stop_known 5 {}\n", row.id);
+    require(write_preview_stop(5, row.stop.reason, {}, "5", row.stop.argument) == wire,
+            std::format("Block refusal {} keeps its wire ID", row.id));
+    const auto parsed = parse_output(wire + "end stop\n");
+    require(parsed.defect.empty() && parsed.end == HelperEnd::stop &&
+                parsed.problem == PreviewError{5, row.text, row.key},
+            std::format("Block refusal {} keeps its text and key", row.id));
+    require(write_preview_stop(5, row.stop.reason, {}, "4", row.stop.argument) ==
+                "stop 5 " + row.text + '\n',
+            std::format("Version 4 keeps the text for block refusal {}", row.id));
+  }
 }
 
 void fixed_preview_stop_code_ids() {
@@ -561,7 +630,7 @@ void blocks_refused_by_their_text() {
   const auto unsafe = first_forbidden_line("G1 X1\no<ok> call\no<~/x> sub\n");
   const auto last_line = first_forbidden_line("\n\n;py,x");
   require(unsafe && unsafe->line == 3 &&
-              unsafe->reason.localization == MessageKey{"backend.previewEngine.stopOwordName"} &&
+              unsafe->stop == PreviewStopReason{KnownPreviewStop::unsafe_o_word_name} &&
               first_forbidden_line("o#1 call\n") && first_forbidden_line("(c) o<$a> endsub\n") &&
               !first_forbidden_line("o<ok> call\no100 if [1]\nG1 X1 (o</etc/x> call)\n"),
           "An O word that is not plainly a name is forbidden wherever it stands");
@@ -624,6 +693,7 @@ auto main() -> int {
     preview_stop_codes();
     fixed_preview_stop_code_ids();
     interpreter_stop_code_ids();
+    block_refusal_code_ids();
     restart_refusal_codes();
     hostile_results();
     blocks_refused_by_their_text();

@@ -95,6 +95,7 @@ using coffeecnc::Bounds;
 using coffeecnc::HelperRequest;
 using coffeecnc::KnownPreviewStop;
 using coffeecnc::PreviewStopArgument;
+using coffeecnc::PreviewStopReason;
 using coffeecnc::PreviewStopSource;
 using coffeecnc::ProgramFrameCheck;
 using coffeecnc::ProgramRange;
@@ -109,11 +110,6 @@ auto tooldata_find_index_for_tool(int number) -> int;
 namespace {
 
 enum class Halt : std::uint8_t { none, error, stop, cut };
-
-struct InterpreterStop {
-  KnownPreviewStop reason;
-  PreviewStopArgument argument{};
-};
 
 struct Canon {
   HelperRequest request;
@@ -171,7 +167,7 @@ struct Canon {
   Halt halt{Halt::none};
   // Why the line being executed must not have an effect, if it must not: it read a value the
   // preview does not know. The preview ends at the line's first canonical call.
-  std::optional<InterpreterStop> pending;
+  std::optional<PreviewStopReason> pending;
   // UPDATE_TAG calls while the line is executed: one at least when it was executed.
   int tags{};
 };
@@ -1064,17 +1060,17 @@ struct Definition {
 
 // Why a line reads a value the preview does not know, if it does.
 auto unknown_read(const coffeecnc::ParameterUse& use, const ParameterTrack& parameters, int level,
-                  bool returned) -> std::optional<InterpreterStop> {
+                  bool returned) -> std::optional<PreviewStopReason> {
   if (use.computed)
-    return InterpreterStop{KnownPreviewStop::computed_parameter};
+    return PreviewStopReason{KnownPreviewStop::computed_parameter};
   if (use.returned && !returned)
-    return InterpreterStop{KnownPreviewStop::prior_return_value};
+    return PreviewStopReason{KnownPreviewStop::prior_return_value};
   if (level == 0 && !use.exists.empty())
-    return InterpreterStop{KnownPreviewStop::parameter_exists, use.exists};
+    return PreviewStopReason{KnownPreviewStop::parameter_exists, use.exists};
   const auto found = std::ranges::find_if(
       use.reads, [&](int number) { return !parameters.known(number, level); });
   if (found != use.reads.end())
-    return InterpreterStop{KnownPreviewStop::undefined_parameter, std::format("#{}", *found)};
+    return PreviewStopReason{KnownPreviewStop::undefined_parameter, std::format("#{}", *found)};
   return {};
 }
 
@@ -1145,7 +1141,7 @@ auto run(const HelperRequest& request) -> int {
         canon.line = found->line;
       else
         canon.stop_source = PreviewStopSource{file.filename().string(), found->line};
-      halt(Halt::stop, found->reason.text);
+      halt(found->stop.reason, found->stop.argument);
       put("end stop\n");
       std::fflush(sink);
       return 0;
@@ -1223,7 +1219,7 @@ auto run(const HelperRequest& request) -> int {
         halt(KnownPreviewStop::inherited_motion, inherited);
       else if (const auto reason = coffeecnc::refused_block(text.data()))
         // `#<_hal[...]>` is not defined here: the reason is that it is a HAL value.
-        halt(Halt::stop, *reason);
+        halt(reason->reason, reason->argument);
       else if (const auto unknown =
                    unknown_read(coffeecnc::parameter_use(text.data()), parameters, line_level,
                                 returned || line_level < last_level))
@@ -1260,7 +1256,7 @@ auto run(const HelperRequest& request) -> int {
     if (request.restart_line && coffeecnc::o_word_name(text.data()))
       canon.subroutine = true;
     if (const auto reason = coffeecnc::refused_block(text.data())) {
-      halt(Halt::stop, *reason);
+      halt(reason->reason, reason->argument);
       break;
     }
     if (const auto code = coffeecnc::remapped_use(text.data(), request.remapped)) {

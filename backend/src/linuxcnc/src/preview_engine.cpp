@@ -205,13 +205,14 @@ auto take_snapshot(const PreviewSettings& settings, const std::string& program,
   // Nothing with a comment that runs Python or writes a file, or with an O word that is not
   // plainly a name, is given to the interpreter: it acts on some of them while it reads,
   // also in lines it never executes.
-  if (const auto found = first_forbidden_line(*bytes))
-    return refused(
-        found->line,
-        std::format("The preview ends at line {}: {}.", found->line, found->reason.text),
-        MessageKey{"backend.previewEngine.endsAtLine",
-                   {{"line", std::to_string(found->line)}, {"detail", found->reason.text}},
-                   parameter_localization("detail", found->reason.localization)});
+  if (const auto found = first_forbidden_line(*bytes)) {
+    const auto reason = preview_stop_message(found->stop.reason, found->stop.argument);
+    return refused(found->line,
+                   std::format("The preview ends at line {}: {}.", found->line, reason.text),
+                   MessageKey{"backend.previewEngine.endsAtLine",
+                              {{"line", std::to_string(found->line)}, {"detail", reason.text}},
+                              parameter_localization("detail", reason.localization)});
+  }
   std::size_t total = bytes->size();
   manifest.program = {program, "program.ngc", std::move(*bytes)};
   std::set<std::string> seen;
@@ -256,16 +257,16 @@ auto take_snapshot(const PreviewSettings& settings, const std::string& program,
       }
       if (auto tap = unconfigured_tapping(settings, *text, name, cancelled))
         return std::unexpected(std::move(*tap));
-      if (const auto forbidden = first_forbidden_line(*text))
+      if (const auto forbidden = first_forbidden_line(*text)) {
+        const auto reason = preview_stop_message(forbidden->stop.reason, forbidden->stop.argument);
         return refused(
-            0,
-            std::format("No preview: {}.ngc line {}: {}.", name, forbidden->line,
-                        forbidden->reason.text),
+            0, std::format("No preview: {}.ngc line {}: {}.", name, forbidden->line, reason.text),
             MessageKey{"backend.previewEngine.subroutineForbidden",
                        {{"name", name},
                         {"line", std::to_string(forbidden->line)},
-                        {"detail", forbidden->reason.text}},
-                       parameter_localization("detail", forbidden->reason.localization)});
+                        {"detail", reason.text}},
+                       parameter_localization("detail", reason.localization)});
+      }
       total += text->size();
       manifest.subroutines.push_back({std::move(found), name + ".ngc", std::move(*text)});
     }

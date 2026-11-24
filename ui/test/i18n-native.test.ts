@@ -31,7 +31,6 @@ const adapter = import.meta.glob<string>([
   '../../backend/src/app/src/diagnostics_feed.cpp',
   '../../backend/src/linuxcnc/src/preview_engine.cpp',
   '../../backend/src/linuxcnc/src/preview_wire.cpp',
-  '../../backend/src/linuxcnc/src/preview_wire.cpp',
   '../../backend/src/app/src/machine_data.cpp',
   '../../backend/src/app/src/backup_archive.cpp',
   '../../backend/src/app/src/restore_helper.cpp',
@@ -211,13 +210,11 @@ describe('native and store sentences', () => {
   }
 
   it('catalogues the file reader reasons embedded in preview diagnostics', () => {
-    const comments = programWatch.slice(programWatch.indexOf('auto comment_refusal('),
-      programWatch.indexOf('auto bare_block('))
-    const names = programWatch.slice(programWatch.indexOf('auto first_forbidden_line('),
-      programWatch.indexOf('// The words of a block'))
-    const phrases = cppLiterals(comments + names).map(({ text }) => text)
+    const wire = adapter['../../backend/src/linuxcnc/src/preview_wire.cpp'] ?? ''
+    const refusals = body(wire, 'case KnownPreviewStop::python_line:', 'auto valid_stop_source(')
+    const phrases = cppLiterals(refusals).map(({ text }) => text)
       .filter((text) => /^(?:a|an) /.test(text))
-    const keys = [...(comments + names).matchAll(/MessageKey\{\s*"([^"]+)"/g)].map((match) => match[1])
+    const keys = [...refusals.matchAll(/MessageKey\{\s*"([^"]+)"/g)].map((match) => match[1])
     expect(keys).toEqual([
       'backend.previewEngine.stopPythonLine', 'backend.previewEngine.stopPythonComment',
       'backend.previewEngine.stopFileWritingComment', 'backend.previewEngine.stopOwordName',
@@ -371,6 +368,16 @@ describe('translateMessage', () => {
     expect(translateMessage(fallback, {
       ...localization, params_localization: { detail: { ...detail, params: {} } },
     })).toBe('Anfrage der Bedienoberfläche ignoriert: Bad packet.')
+  })
+
+  it('translates the refusal to preview a saved offset restore', async () => {
+    await setLanguage('fr')
+    const detail = 'G92.3 restores an offset saved in the parameter file'
+    expect(translateMessage(`The preview ends at line 3: ${detail}.`, {
+      key: 'backend.previewEngine.endsAtLine',
+      params: { line: '3', detail },
+      params_localization: { detail: { key: 'backend.previewEngine.stopG92Restore', params: {} } },
+    })).toBe('L’aperçu s’arrête à la ligne 3 : G92.3 restaure un décalage enregistré dans le fichier de paramètres.')
   })
 
   it('translates a remap stop and retains the code', async () => {

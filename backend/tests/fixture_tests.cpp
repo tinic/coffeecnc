@@ -355,6 +355,17 @@ auto encoded_messages() -> std::vector<EncodedMessage> {
                  {{"detail", {"backend.previewEngine.stopRemapped", {{"code", "G88.1"}}}}}}};
   messages.push_back(encode_preview(remap_stop));
 
+  Preview offset_restore;
+  offset_restore.context = 4821346;
+  offset_restore.state = PreviewState::failed;
+  offset_restore.error = PreviewError{
+      3, "The preview ends at line 3: G92.3 restores an offset saved in the parameter file.",
+      MessageKey{
+          "backend.previewEngine.endsAtLine",
+          {{"line", "3"}, {"detail", "G92.3 restores an offset saved in the parameter file"}},
+          {{"detail", {"backend.previewEngine.stopG92Restore"}}}}};
+  messages.push_back(encode_preview(offset_restore));
+
   const PreviewSegment approach{4, MoveKind::rapid, 3, {{0, 0, 10}, {0, 0, 2}}};
   const PreviewSegment cut{
       5, MoveKind::feed, 3, {{0, 0, 2}, {0, 0, -1.5}, {30, 0, -1.5}, {30, 20.5, -1.5}}, 450};

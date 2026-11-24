@@ -89,7 +89,7 @@ export interface PanelState {
   silentFor: number
   toolTable: ToolTable | null
   /** Null until a valid snapshot arrives for the current hello. Never implies an empty file. */
-  toolModels: ToolModels | null
+  toolModels: (ToolModels & { localization?: MessageKey }) | null
   operatorSettings: OperatorSettings | null
   preferences: OperatorPreferences
   /** Startup preset only; never a controller command. */
@@ -451,6 +451,14 @@ export function createPanel(options: PanelOptions): Panel {
         } else if (state.toolModels === null || decoded.availability !== 'available' ||
           state.toolModels.availability !== 'available' || decoded.revision >= state.toolModels.revision) {
           state.toolModels = decoded
+        }
+        break
+      }
+      case 'tool_models_reason': {
+        const snapshot = state.toolModels
+        if (snapshot !== null && snapshot.machine_id === message.machine_id &&
+          snapshot.revision === message.revision && snapshot.reason === message.reason) {
+          state.toolModels = { ...snapshot, localization: message.localization }
         }
         break
       }

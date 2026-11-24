@@ -29,7 +29,7 @@ All wire lengths are in millimetres. The reference tool teaches the setter. Anot
 
 ## Tool-model preferences
 
-`hello.machine_id` is an explicit configured identity or null. The optional `hello.tool_model_storage: 1` capability enables the `tool_models` snapshot and the `set_tool_model_defaults` / `set_tool_model_assignment` commands. An older peer without that capability receives no new commands; native visual preferences then remain session-only. No machine name, pathname or display unit supplies a fallback identity.
+`hello.machine_id` is an explicit configured identity or null. The optional `hello.tool_model_storage: 1` capability enables the `tool_models` snapshot and the `set_tool_model_defaults` / `set_tool_model_assignment` commands. An older peer without that capability receives no new commands; native visual preferences then remain session-only. No machine name, pathname or display unit supplies a fallback identity. A `tool_models_reason` message can follow a snapshot with a nonempty reason. It carries the same `machine_id`, `revision` and English `reason`, plus `localization`. A panel applies it only to the matching snapshot. Older panels ignore it and still receive the exact `tool_models` v1 shape.
 
 The [storage contract](../docs/design/native-tool-model-storage.md) defines document validation, size limits, matching tool-table rows, compare-and-swap revisions and durability. Snapshots precede the result of a save. A waiting snapshot is not an empty saved document; a timeout is not cancellation. The panel validates documents and current hello identity before using a revision or restoring an assignment. Browser demonstration preferences remain separate from native settings.
 

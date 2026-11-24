@@ -275,6 +275,15 @@ export type ToolModels = {
   document: null
 })
 
+/** Localization paired with a tool_models snapshot. Legacy panels ignore this message. */
+export interface ToolModelsReason {
+  type: 'tool_models_reason'
+  machine_id: string | null
+  revision: number
+  reason: string
+  localization: MessageKey
+}
+
 export interface ProgramText {
   type: 'program'
   revision: number
@@ -686,6 +695,7 @@ export type FromMachine =
   | Status
   | ToolTable
   | ToolModels
+  | ToolModelsReason
   | ProgramText
   | Preview
   | WorkOffsets

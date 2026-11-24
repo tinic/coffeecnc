@@ -125,6 +125,7 @@
       "tooManyAssignments": "There are more than 1001 tool model assignments.",
       "unknownHolder": "Unknown tool holder.",
       "assignedTwice": "It is assigned more than once.",
+      "familyProblem": "{family}: {detail}",
       "toolProblem": "Tool {tool}: {detail}",
       "overridesEmpty": "Overrides must be empty when the assignment is removed.",
       "chooseHolder": "Choose a supported holder for a tool model assignment.",
@@ -571,7 +572,11 @@
       "stopExistsNamed": "asks whether {name} exists outside a subroutine: on the machine it can exist from an earlier program or MDI block, which the preview does not know",
       "stopComputedParameter": "reads a parameter whose number is computed (#[...], ##): which one it is, and whether the program has set it, is not known to the preview",
       "stopReturnValue": "reads {name} or {other} before a subroutine of the program has returned: its value from an earlier program or MDI block is not known to the preview",
-      "stopDefinitionBlock": "an O word in a subroutine definition belongs to a block outside it: which lines run is not known to the preview"
+      "stopDefinitionBlock": "an O word in a subroutine definition belongs to a block outside it: which lines run is not known to the preview",
+      "stopPythonLine": "a `;py,` line runs Python in the interpreter",
+      "stopPythonComment": "a ({word}...) comment runs Python in the interpreter",
+      "stopFileWritingComment": "a ({word}...) comment writes a file",
+      "stopOwordName": "an O word whose name is computed or is not plainly a name (letters, digits, `_`, `-`, `.`): the interpreter would look for a file by it"
     },
     "nmlStatus": {
       "pauseFirst": "Pause a running program before jogging Z.",

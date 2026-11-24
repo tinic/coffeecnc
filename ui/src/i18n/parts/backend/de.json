@@ -125,6 +125,7 @@
       "tooManyAssignments": "Es gibt mehr als 1001 Werkzeugmodell-Zuordnungen.",
       "unknownHolder": "Unbekannte Werkzeugaufnahme.",
       "assignedTwice": "Sie ist mehrfach zugeordnet.",
+      "familyProblem": "{family}: {detail}",
       "toolProblem": "Werkzeug {tool}: {detail}",
       "overridesEmpty": "„overrides“ muss leer sein, wenn die Zuordnung entfernt wird.",
       "chooseHolder": "Wählen Sie eine unterstützte Werkzeugaufnahme für die Werkzeugmodell-Zuordnung.",
@@ -571,7 +572,11 @@
       "stopExistsNamed": "fragt außerhalb eines Unterprogramms, ob {name} existiert: Auf der Maschine kann er aus einem früheren Programm oder MDI-Satz existieren, was die Vorschau nicht weiß",
       "stopComputedParameter": "liest einen Parameter, dessen Nummer berechnet wird (#[...], ##): Welcher es ist und ob das Programm ihn gesetzt hat, ist der Vorschau nicht bekannt",
       "stopReturnValue": "liest {name} oder {other}, bevor ein Unterprogramm des Programms zurückgekehrt ist: Sein Wert aus einem früheren Programm oder MDI-Satz ist der Vorschau nicht bekannt",
-      "stopDefinitionBlock": "ein O-Wort in einer Unterprogrammdefinition gehört zu einem Block außerhalb davon: Welche Zeilen laufen, ist der Vorschau nicht bekannt"
+      "stopDefinitionBlock": "ein O-Wort in einer Unterprogrammdefinition gehört zu einem Block außerhalb davon: Welche Zeilen laufen, ist der Vorschau nicht bekannt",
+      "stopPythonLine": "eine `;py,`-Zeile führt Python im Interpreter aus",
+      "stopPythonComment": "ein Kommentar ({word}...) führt Python im Interpreter aus",
+      "stopFileWritingComment": "ein Kommentar ({word}...) schreibt eine Datei",
+      "stopOwordName": "ein O-Wort, dessen Name berechnet wird oder kein einfacher Name ist (Buchstaben, Ziffern, `_`, `-`, `.`): Der Interpreter würde eine Datei mit diesem Namen suchen"
     },
     "nmlStatus": {
       "pauseFirst": "Pausieren Sie ein laufendes Programm, bevor Sie Z tippen.",

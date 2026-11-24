@@ -284,7 +284,7 @@ public:
 
   // A disk worker has already written and synchronized a temporary program. Send only its
   // atomic publication through the controller worker, serialized against program start.
-  using Publication = std::function<std::expected<void, std::string>()>;
+  using Publication = std::function<std::expected<void, LocalizedReason>()>;
   [[nodiscard]] auto publish_program(std::string path, Publication publish)
       -> std::future<std::expected<void, LocalizedReason>>;
 

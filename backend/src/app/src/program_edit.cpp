@@ -323,13 +323,7 @@ auto ProgramWriter::write_new(ProgramStore::NewProgram target, std::string_view 
     step = files_.sync();
   auto written = std::move(step);
   if (written)
-    written = publish ? publish(target.path,
-                                [&] {
-                                  return commit().transform_error([](LocalizedReason reason) {
-                                    return std::move(reason.text);
-                                  });
-                                })
-                      : commit();
+    written = publish ? publish(target.path, commit) : commit();
   if (!written && !committed) {
     files_.discard(temporary);
     return std::unexpected(LocalizedReason{

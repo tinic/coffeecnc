@@ -3203,12 +3203,13 @@ void uploads_do_not_replace_the_running_program() {
   const auto clock = [] { return at(0ms); };
   int published = 0;
   const auto publish = [&](std::string path, bool starts_running = false) {
-    auto queued = session.publish_program(std::move(path), [&]() -> std::expected<void, std::string> {
-      ++published;
-      if (starts_running)
-        port.state.interp = InterpState::reading;
-      return {};
-    });
+    auto queued =
+        session.publish_program(std::move(path), [&]() -> std::expected<void, LocalizedReason> {
+          ++published;
+          if (starts_running)
+            port.state.interp = InterpState::reading;
+          return {};
+        });
     require(session.work(clock).status == WorkStatus::done, "The worker takes up publication");
     return queued.get();
   };
@@ -3249,6 +3250,18 @@ void uploads_do_not_replace_the_running_program() {
                              parameter_localization("detail", cannot_read)},
           "A successful publication retains the keyed reason that reopening failed");
   port.calls.clear();
+  const LocalizedReason replace_failure{
+      "the file cannot be replaced: Read-only file system",
+      MessageKey{"backend.toolModelStore.fileNotReplaced", {{"osError", "Read-only file system"}}}};
+  auto rejected_commit =
+      session.publish_program(part, [&replace_failure]() -> std::expected<void, LocalizedReason> {
+        return std::unexpected(replace_failure);
+      });
+  require(session.work(clock).status == WorkStatus::done, "The worker takes up a failing upload");
+  const auto result = rejected_commit.get();
+  require(!result && result.error() == replace_failure && port.calls.empty(),
+          "An atomic replacement failure retains its key and never reopens the program");
+
   const auto started = publish(part, true);
   require(!started && published == 5 && port.calls.empty() &&
               started.error().text == "Saved on disk, but not reopened. The program is running." &&

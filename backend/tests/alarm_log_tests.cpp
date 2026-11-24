@@ -584,16 +584,30 @@ void writes_only_under_the_lock() {
   }
   require(writes(files) == 0 && !disk.files.contains(file),
           "Nothing is written in a directory another CoffeeCNC holds");
-  other.unlock();
   {
-    AlarmLog log{files, directory, {}, noop, [] {
-                   return std::optional<std::string>{"the tool models could not lock it"};
-                 }};
+    FakeToolModelFiles blocked_files{disk};
+    ToolModelStore blocked{
+        blocked_files, ToolModelLocation{"G0759", ToolModelAvailability::available, "", directory},
+        noop};
+    const LocalizedReason refused{
+        std::format("Tool model settings in {} are already in use by another CoffeeCNC. Tool "
+                    "models are not saved.",
+                    directory),
+        MessageKey{"backend.toolModelStore.inUse", {{"path", directory}}}};
+    AlarmLog log{files, directory, {}, noop, [&blocked] { return blocked.shared_lock_failure(); }};
     log.posted(page, std::vector{encode_message(MessageLevel::error, "not saved", epoch)}, epoch);
     log.settle();
-    require(!log.view().saved && writes(files) == 0 && files.count("lock") == 1,
+    const auto view = log.view();
+    require(!view.saved && writes(files) == 0 && files.count("lock") == 1,
             "A lock that the caller does not hold is not taken over, and nothing is written");
+    require(view.reason.ends_with(refused.text) &&
+                view.localization ==
+                    MessageKey{"backend.alarmLog.keptForRun",
+                               {{"directory", directory}, {"detail", refused.text}},
+                               parameter_localization("detail", refused.localization)},
+            "The alarm log retains the shared lock refusal key and fallback");
   }
+  other.unlock();
   // The application's case: the tool models hold the lock for the alarm log.
   FakeToolModelFiles store_files{disk};
   bool appended_unlocked = false;
@@ -605,12 +619,7 @@ void writes_only_under_the_lock() {
     ToolModelStore store{
         store_files, ToolModelLocation{"G0759", ToolModelAvailability::available, "", directory},
         [](PageToken, const std::vector<std::string>&) {}};
-    AlarmLog log{files, directory, {}, noop, [&store]() -> std::optional<std::string> {
-                   const auto held = store.held_location();
-                   if (held.availability == ToolModelAvailability::available)
-                     return std::nullopt;
-                   return held.reason;
-                 }};
+    AlarmLog log{files, directory, {}, noop, [&store] { return store.shared_lock_failure(); }};
     log.posted(page, std::vector{encode_message(MessageLevel::error, "saved", epoch)}, epoch);
     log.settle();
     require(log.view().saved && saved_text(disk, "saved"), "Under the lock it is saved");

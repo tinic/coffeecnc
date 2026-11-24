@@ -197,7 +197,7 @@ export interface SimOptions {
   /** Replaces the built-in program directory. */
   files?: Map<string, string>
   /** Policy-only test configuration; this does not model another machine's mechanics. */
-  capabilities?: Partial<Pick<Hello, 'max_jog_velocity' | 'axis_max_jog_velocity' | 'homing_required'>>
+  capabilities?: Partial<Pick<Hello, 'max_jog_velocity' | 'axis_max_jog_velocity' | 'homing_required' | 'max_spindle_rpm'>>
 }
 
 export class SimMachine {
@@ -1235,7 +1235,10 @@ export class SimMachine {
           if (this.preview.context !== command.preview_context || this.preview.state === 'pending')
             return reject('The program check changed. Review the current results.')
           const check = this.preview.check
-          if (check?.errors[0]) return reject(check.errors[0])
+          if (check?.errors[0]) {
+            const refusal = check.errors_localization?.[0]
+            return reject(check.errors[0], refusal?.key, refusal?.params)
+          }
           const warnings = !check || check.warnings.length > 0 ||
             check.units.some((unit) => command.display_units !== undefined && unit !== command.display_units)
           if (warnings && !command.confirmed) return reject('Review the program check warnings before starting.')

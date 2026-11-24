@@ -1,0 +1,29 @@
+# Every control of the panel in every view and theme, in the browser simulator: no outline at rest,
+# a fill of its own, readable labels (ui/scripts/check-controls.js). It takes 15 to 20 minutes, so
+# it runs beside the UI job: on pull requests that change the panel, and on every push to main.
+name: Controls
+
+on:
+  pull_request:
+    paths: ['ui/**', '.github/workflows/controls.yml']
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  controls:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - name: Control sweep
+        working-directory: ui
+        run: |
+          npm ci
+          npm run check:controls

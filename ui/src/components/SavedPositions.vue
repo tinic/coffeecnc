@@ -282,7 +282,6 @@ const steps = computed(() => {
 .line { display: flex; align-items: center; gap: 10px; }
 .name-field { min-height: 48px; }
 .line .hint { margin-left: auto; font-size: 12px; }
-.btn[aria-disabled="true"] { opacity: .68; }
 .coordinate { margin: 0; font-size: 18px; white-space: pre; }
 p { margin: 0; }
 .steps { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 6px; font-size: 16px; }

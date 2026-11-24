@@ -373,6 +373,16 @@ describe('translateMessage', () => {
     })).toBe('Anfrage der Bedienoberfläche ignoriert: Bad packet.')
   })
 
+  it('translates a remap stop and retains the code', async () => {
+    await setLanguage('fr')
+    const detail = 'G88.1 is remapped on this machine ([RS274NGC] REMAP): what it does is not known to the preview'
+    expect(translateMessage(`The preview ends at line 3: ${detail}.`, {
+      key: 'backend.previewEngine.endsAtLine',
+      params: { line: '3', detail },
+      params_localization: { detail: { key: 'backend.previewEngine.stopRemapped', params: { code: 'G88.1' } } },
+    })).toBe('L’aperçu s’arrête à la ligne 3 : G88.1 est remappé sur cette machine ([RS274NGC] REMAP) : l’aperçu ne sait pas ce qu’il fait.')
+  })
+
   it('translates a coded subroutine stop and keeps both line numbers', async () => {
     await setLanguage('fr')
     const detail = 'a probe move (G38): where it ends depends on the machine'

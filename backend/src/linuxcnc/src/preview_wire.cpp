@@ -59,14 +59,40 @@ auto rest(std::string_view text) -> std::string {
   return std::string(text);
 }
 
-auto stop_takes_number(KnownPreviewStop reason) -> bool {
-  return reason == KnownPreviewStop::unknown_work_system ||
-         reason == KnownPreviewStop::machine_m_code;
+enum class StopArgumentKind : std::uint8_t { none, number, token };
+
+auto stop_argument_kind(KnownPreviewStop reason) -> StopArgumentKind {
+  switch (reason) {
+  case KnownPreviewStop::unknown_work_system:
+  case KnownPreviewStop::machine_m_code:
+    return StopArgumentKind::number;
+  case KnownPreviewStop::undefined_parameter:
+  case KnownPreviewStop::parameter_exists:
+  case KnownPreviewStop::inherited_motion:
+  case KnownPreviewStop::remapped_code:
+    return StopArgumentKind::token;
+  default:
+    return StopArgumentKind::none;
+  }
 }
 
-auto preview_stop_message(KnownPreviewStop reason, std::optional<int> argument) -> LocalizedReason {
-  if (argument.has_value() != stop_takes_number(reason))
+auto valid_stop_token(std::string_view token) -> bool {
+  return !token.empty() && token.size() <= 255 && std::ranges::all_of(token, [](char c) {
+    const auto byte = static_cast<unsigned char>(c);
+    return byte > 0x20 && byte != 0x7f;
+  });
+}
+
+auto preview_stop_message(KnownPreviewStop reason, const PreviewStopArgument& argument)
+    -> LocalizedReason {
+  const auto* number = std::get_if<int>(&argument);
+  const auto* token = std::get_if<std::string>(&argument);
+  const auto kind = stop_argument_kind(reason);
+  if ((kind == StopArgumentKind::number) != (number != nullptr) ||
+      (kind == StopArgumentKind::token) != (token != nullptr))
     return {};
+  const int number_value = number ? *number : -1;
+  const std::string text = token ? *token : std::string{};
   switch (reason) {
   case KnownPreviewStop::nurbs:
     return {"a NURBS move (G5.2, G5.3): not computed by the preview",
@@ -93,7 +119,7 @@ auto preview_stop_message(KnownPreviewStop reason, std::optional<int> argument) 
   }
   case KnownPreviewStop::unknown_work_system: {
     constexpr std::array names{"G54", "G55", "G56", "G57", "G58", "G59", "G59.1", "G59.2", "G59.3"};
-    const int index = argument.value_or(-1);
+    const int index = number_value;
     if (index == 0)
       return {"moves in another work system, whose offsets are not in the machine's parameter file",
               MessageKey{"backend.previewEngine.stopOtherSystem"}};
@@ -104,15 +130,52 @@ auto preview_stop_message(KnownPreviewStop reason, std::optional<int> argument) 
             MessageKey{"backend.previewEngine.stopUnknownSystem", {{"wcs", wcs}}}};
   }
   case KnownPreviewStop::machine_m_code: {
-    const int number = argument.value_or(-1);
-    if (number < 100 || number > 199)
+    if (number_value < 100 || number_value > 199)
       return {};
-    const auto code = std::to_string(number);
+    const auto code = std::to_string(number_value);
     return {std::format("M{} runs a program of the machine's own: what it does is not known to "
                         "the preview",
                         code),
             MessageKey{"backend.previewEngine.stopMachineMCode", {{"code", code}}}};
   }
+  case KnownPreviewStop::computed_parameter:
+    return {"reads a parameter whose number is computed (#[...], ##): which one it is, and "
+            "whether the program has set it, is not known to the preview",
+            MessageKey{"backend.previewEngine.stopComputedParameter"}};
+  case KnownPreviewStop::prior_return_value: {
+    const std::string name = "#<_value>";
+    const std::string other = "#<_value_returned>";
+    return {
+        std::format("reads {} or {} before a subroutine of the program has returned: its "
+                    "value from an earlier program or MDI block is not known to the preview",
+                    name, other),
+        MessageKey{"backend.previewEngine.stopReturnValue", {{"name", name}, {"other", other}}}};
+  }
+  case KnownPreviewStop::undefined_parameter:
+    return {std::format("reads {}, which the program does not set: its value from an earlier "
+                        "program or MDI block is not known to the preview",
+                        text),
+            MessageKey{"backend.previewEngine.stopUndefinedParameter", {{"name", text}}}};
+  case KnownPreviewStop::parameter_exists:
+    return {
+        std::format("asks whether {} exists outside a subroutine: on the machine it can "
+                    "exist from an earlier program or MDI block, which the preview does not know",
+                    text),
+        MessageKey{"backend.previewEngine.stopExistsNamed", {{"name", text}}}};
+  case KnownPreviewStop::inherited_motion:
+    return {std::format("moves by the motion mode {} that was active before the program, which "
+                        "the preview does not take over",
+                        text),
+            MessageKey{"backend.previewEngine.stopInheritedMotion", {{"mode", text}}}};
+  case KnownPreviewStop::remapped_code:
+    return {std::format("{} is remapped on this machine ([RS274NGC] REMAP): what it does is not "
+                        "known to the preview",
+                        text),
+            MessageKey{"backend.previewEngine.stopRemapped", {{"code", text}}}};
+  case KnownPreviewStop::cross_scope_o_word:
+    return {"an O word in a subroutine definition belongs to a block outside it: which lines "
+            "run is not known to the preview",
+            MessageKey{"backend.previewEngine.stopDefinitionBlock"}};
   }
   return {};
 }
@@ -133,12 +196,24 @@ auto read_preview_stop(std::string_view line) -> std::optional<CodedStop> {
   if (!number(line, id) || !std::in_range<std::uint8_t>(id))
     return {};
   const auto reason = static_cast<KnownPreviewStop>(id);
-  std::optional<int> argument;
-  if (stop_takes_number(reason)) {
+  PreviewStopArgument argument;
+  switch (stop_argument_kind(reason)) {
+  case StopArgumentKind::none:
+    break;
+  case StopArgumentKind::number: {
     int value = 0;
     if (!number(line, value))
       return {};
     argument = value;
+    break;
+  }
+  case StopArgumentKind::token: {
+    const auto token = word(line);
+    if (!valid_stop_token(token))
+      return {};
+    argument = std::string(token);
+    break;
+  }
   }
   auto localized = preview_stop_message(reason, argument);
   if (localized.empty())
@@ -478,16 +553,24 @@ auto preview_stop_prefix(const std::optional<PreviewStopSource>& source) -> std:
 
 auto write_preview_stop(int line, KnownPreviewStop reason,
                         const std::optional<PreviewStopSource>& source, std::string_view version,
-                        std::optional<int> argument) -> std::string {
-  const bool coded = version == preview_stop_codes_version ||
-                     (!source && (version == "2" || (version == "1" && !argument)));
-  if (!coded || (source && !valid_stop_source(*source)))
-    return std::format("stop {} {}{}\n", line, preview_stop_prefix(source),
-                       preview_stop_message(reason, argument).text);
+                        const PreviewStopArgument& argument) -> std::string {
+  const auto* number = std::get_if<int>(&argument);
+  const auto* token = std::get_if<std::string>(&argument);
+  const bool earlier =
+      reason <= KnownPreviewStop::machine_m_code &&
+      (version == "3" || (!source && (version == "2" || (version == "1" && !number))));
+  const bool coded = version == preview_stop_codes_version || earlier;
+  if (!coded || (source && !valid_stop_source(*source)) || (token && !valid_stop_token(*token))) {
+    auto text = preview_stop_message(reason, argument).text;
+    std::ranges::replace_if(text, [](char c) { return c == '\n' || c == '\r'; }, ' ');
+    return std::format("stop {} {}{}\n", line, preview_stop_prefix(source), text);
+  }
 
   auto out = std::format("stop_known {} {}", line, static_cast<unsigned>(reason));
-  if (argument)
-    out += std::format(" {}", *argument);
+  if (number)
+    out += std::format(" {}", *number);
+  if (token)
+    out += std::format(" {}", *token);
   if (source)
     out += std::format(" {} {}", source->line, source->file);
   out += '\n';

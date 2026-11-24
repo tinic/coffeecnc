@@ -621,6 +621,7 @@
       "stopG30ToolChange": "un changement d’outil qui va à la position G30 ([EMCIO] TOOL_CHANGE_AT_G30), absente du fichier de paramètres de la machine",
       "stopUndefinedParameter": "lit {name}, que le programme ne définit pas : sa valeur issue d’un programme ou d’un bloc MDI antérieur n’est pas connue de l’aperçu",
       "stopRemapped": "{code} est remappé sur cette machine ([RS274NGC] REMAP) : l’aperçu ne sait pas ce qu’il fait",
+      "stopInheritedMotion": "se déplace selon le mode de mouvement {mode} actif avant le programme, que l’aperçu ne reprend pas",
       "stopSavedPosition": "G{code} va à une position absente du fichier de paramètres de la machine",
       "stopTask": "lit le paramètre _task, qui vaut 1 sur la machine et 0 dans l’aperçu : le programme peut agir différemment dans chacun",
       "randomToolChanger": "Cette machine a un changeur d’outils aléatoire : aucun aperçu n’est calculé.",

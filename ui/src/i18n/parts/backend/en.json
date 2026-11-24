@@ -621,6 +621,7 @@
       "stopG30ToolChange": "a tool change that moves to the G30 position ([EMCIO] TOOL_CHANGE_AT_G30), which is not in the machine's parameter file",
       "stopUndefinedParameter": "reads {name}, which the program does not set: its value from an earlier program or MDI block is not known to the preview",
       "stopRemapped": "{code} is remapped on this machine ([RS274NGC] REMAP): what it does is not known to the preview",
+      "stopInheritedMotion": "moves by the motion mode {mode} that was active before the program, which the preview does not take over",
       "stopSavedPosition": "G{code} moves to a position that is not in the machine's parameter file",
       "stopTask": "reads the _task parameter, which is 1 on the machine and 0 in the preview: the program can act differently in each",
       "randomToolChanger": "This machine has a random tool changer: no preview is computed.",

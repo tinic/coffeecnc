@@ -156,7 +156,7 @@ void preview_stop_codes() {
   }
   require(
       write_preview_stop(4, wcs, {}, "1", 9) == "stop 4 " + wcs_text + '\n' &&
-          write_preview_stop(4, wcs, {}, "4", 9) == "stop 4 " + wcs_text + '\n' &&
+          write_preview_stop(4, wcs, {}, "5", 9) == "stop 4 " + wcs_text + '\n' &&
           write_preview_stop(3, probe, {}, "2") == "stop_known 3 2\n",
       "Older or unknown versions get text for the numbered stop, and version 2 keeps fixed codes");
   const auto numbered_source =
@@ -179,6 +179,84 @@ void preview_stop_codes() {
   require(unknown.defect.localization == MessageKey{"backend.previewWire.invalidStopCode"} &&
               unknown.segments.size() == 1 && unknown.end == HelperEnd::missing,
           "An unknown ID retains the path before the rejected record");
+}
+
+void interpreter_stop_code_ids() {
+  struct Case {
+    KnownPreviewStop reason;
+    unsigned id;
+    std::string token;
+    std::string text;
+    MessageKey key;
+  };
+  const std::array cases{
+      Case{KnownPreviewStop::computed_parameter,
+           10,
+           {},
+           "reads a parameter whose number is computed (#[...], ##): which one it is, and "
+           "whether the program has set it, is not known to the preview",
+           {"backend.previewEngine.stopComputedParameter"}},
+      Case{KnownPreviewStop::prior_return_value,
+           11,
+           {},
+           "reads #<_value> or #<_value_returned> before a subroutine of the program has "
+           "returned: its value from an earlier program or MDI block is not known to the preview",
+           {"backend.previewEngine.stopReturnValue",
+            {{"name", "#<_value>"}, {"other", "#<_value_returned>"}}}},
+      Case{KnownPreviewStop::undefined_parameter,
+           12,
+           "#3000",
+           "reads #3000, which the program does not set: its value from an earlier program "
+           "or MDI block is not known to the preview",
+           {"backend.previewEngine.stopUndefinedParameter", {{"name", "#3000"}}}},
+      Case{KnownPreviewStop::parameter_exists,
+           13,
+           "#<depth>",
+           "asks whether #<depth> exists outside a subroutine: on the machine it can exist "
+           "from an earlier program or MDI block, which the preview does not know",
+           {"backend.previewEngine.stopExistsNamed", {{"name", "#<depth>"}}}},
+      Case{KnownPreviewStop::inherited_motion,
+           14,
+           "G84",
+           "moves by the motion mode G84 that was active before the program, which the preview "
+           "does not take over",
+           {"backend.previewEngine.stopInheritedMotion", {{"mode", "G84"}}}},
+      Case{KnownPreviewStop::remapped_code,
+           15,
+           "G88.1",
+           "G88.1 is remapped on this machine ([RS274NGC] REMAP): what it does is not known to the "
+           "preview",
+           {"backend.previewEngine.stopRemapped", {{"code", "G88.1"}}}},
+      Case{KnownPreviewStop::cross_scope_o_word,
+           16,
+           {},
+           "an O word in a subroutine definition belongs to a block outside it: which lines "
+           "run is not known to the preview",
+           {"backend.previewEngine.stopDefinitionBlock"}}};
+  for (const auto& row : cases) {
+    const auto wire = row.token.empty() ? std::format("stop_known 5 {}\n", row.id)
+                                        : std::format("stop_known 5 {} {}\n", row.id, row.token);
+    const PreviewStopArgument argument = row.token.empty() ? PreviewStopArgument{} : row.token;
+    require(write_preview_stop(5, row.reason, {}, "4", argument) == wire,
+            std::format("Interpreter stop {} keeps its ID and argument", row.id));
+    const auto parsed = parse_output(wire + "end stop\n");
+    require(parsed.defect.empty() && parsed.end == HelperEnd::stop &&
+                parsed.problem == PreviewError{5, row.text, row.key},
+            std::format("Interpreter stop {} keeps its language key and fallback", row.id));
+    require(write_preview_stop(5, row.reason, {}, "3", argument) == "stop 5 " + row.text + '\n',
+            std::format("A version 3 reader gets the fallback for interpreter stop {}", row.id));
+  }
+  const auto location_wire =
+      write_preview_stop(5, KnownPreviewStop::remapped_code, PreviewStopSource{"inner.ngc", 3}, "4",
+                         std::string("G88.1"));
+  require(location_wire == "stop_known 5 15 G88.1 3 inner.ngc\n" &&
+              parse_output(location_wire + "end stop\n").stop_source ==
+                  PreviewStopSource{"inner.ngc", 3},
+          "A token argument can be followed by a source location");
+  const auto spaced = write_preview_stop(5, KnownPreviewStop::undefined_parameter, {}, "4",
+                                         std::string("#<a name>"));
+  require(spaced.starts_with("stop 5 reads #<a name>,"),
+          "Arguments that do not fit the coded record retain the original text");
 }
 
 void fixed_preview_stop_code_ids() {
@@ -539,6 +617,7 @@ auto main() -> int {
     wire_formats();
     preview_stop_codes();
     fixed_preview_stop_code_ids();
+    interpreter_stop_code_ids();
     restart_refusal_codes();
     hostile_results();
     blocks_refused_by_their_text();

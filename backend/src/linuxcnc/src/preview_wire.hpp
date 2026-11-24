@@ -9,6 +9,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <variant>
 #include <vector>
 
 namespace coffeecnc {
@@ -85,8 +86,8 @@ struct HelperRequest {
 //                                                       coordinates, mm
 //   error <line> <text>     the interpreter's error; nothing follows but `end`
 //   stop <line> <text>      the path after this line depends on the machine
-//   stop_known <line> <id> [number] [source-line file]
-//                          a stop code, with its argument from v2 and source from v3
+//   stop_known <line> <id> [argument] [source-line file]
+//                          a stop code, with a number (v2), source (v3), or token (v4)
 //   cut <line> <text>       a limit was reached
 //   restart_refused <id>   a CoffeeCNC restart refusal; old helpers send restart_blocked <text>
 //   end ok|error|stop|cut   the last line of a helper that ended by itself
@@ -135,10 +136,18 @@ enum class KnownPreviewStop : std::uint8_t {
   saved_g30 = 7,
   unknown_work_system = 8,
   machine_m_code = 9,
+  computed_parameter = 10,
+  prior_return_value = 11,
+  undefined_parameter = 12,
+  parameter_exists = 13,
+  inherited_motion = 14,
+  remapped_code = 15,
+  cross_scope_o_word = 16,
 };
-// Version 1 supports fixed reasons, version 2 adds their numbers, and version 3 adds a source.
+using PreviewStopArgument = std::variant<std::monostate, int, std::string>;
+// Opt in to the stop formats by version. Callers without the relevant version receive text.
 inline constexpr char preview_stop_codes_env[] = "COFFEECNC_PREVIEW_STOP_CODES";
-inline constexpr std::string_view preview_stop_codes_version = "3";
+inline constexpr std::string_view preview_stop_codes_version = "4";
 
 struct PreviewStopSource {
   std::string file;
@@ -151,8 +160,8 @@ struct PreviewStopSource {
     -> std::string;
 [[nodiscard]] auto write_preview_stop(int line, KnownPreviewStop reason,
                                       const std::optional<PreviewStopSource>& source,
-                                      std::string_view version, std::optional<int> argument = {})
-    -> std::string;
+                                      std::string_view version,
+                                      const PreviewStopArgument& argument = {}) -> std::string;
 
 struct HelperOutput {
   std::vector<PreviewSegment> segments;

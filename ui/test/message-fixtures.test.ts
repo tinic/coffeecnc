@@ -977,6 +977,28 @@ const examples = [
   },
   {
     "type": "preview",
+    "context": 4821345,
+    "state": "failed",
+    "error": {
+      "line": 3,
+      "text": "The preview ends at line 3: G88.1 is remapped on this machine ([RS274NGC] REMAP): what it does is not known to the preview.",
+      "localization": {
+        "key": "backend.previewEngine.endsAtLine",
+        "params": {
+          "line": "3",
+          "detail": "G88.1 is remapped on this machine ([RS274NGC] REMAP): what it does is not known to the preview"
+        },
+        "params_localization": {
+          "detail": { "key": "backend.previewEngine.stopRemapped", "params": { "code": "G88.1" } }
+        }
+      }
+    },
+    "segments": [],
+    "bounds": null,
+    "dwells": []
+  },
+  {
+    "type": "preview",
     "context": 4821337,
     "state": "pending",
     "error": null,

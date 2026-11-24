@@ -24,7 +24,7 @@
 /* global document, window, getComputedStyle, PointerEvent -- the page functions below run in the browser */
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
 
@@ -48,13 +48,15 @@ const entries = [
 ]
 
 // Entry states reached by something other than a control: a touched numeric field opens the
-// keypad; a tapped line number opens the line bar of the code view.
+// keypad; a tap or drag on line numbers opens the line bar of the code view.
 const specials = [
   ['?scene=manual&tab=manual', '@touch:input[inputmode=none]'],
   ['?scene=manual&tab=tools&dialog=tool', '@touch:[role=dialog] input[inputmode=none]'],
   ['?scene=loaded&tab=program&dialog=operation', '@touch:[role=dialog] input[inputmode=none]'],
   ['?scene=loaded&tab=program&layout=text', '@el:.row .number'],
   ['?scene=loaded&tab=program&layout=split', '@el:.row .number'],
+  ['?scene=loaded&tab=program&layout=text', '@range'],
+  ['?scene=loaded&tab=program&layout=split', '@range'],
   ['?scene=paused&tab=program&layout=text', '@el:.row .number'],
 ]
 
@@ -62,7 +64,7 @@ const specials = [
 // checked for outlines and for a hover tone, not for a fill at rest.
 const allowed = [
   ['input[type=checkbox], input[type=radio], input[type=range], input[type=file], input[type=color]', 'native input', 'skip'],
-  ['.nc, .editor', 'code view content: the lines, not the line bar', 'skip'],
+  ['textarea.editor, .editor textarea', 'the program text editor uses its content area as the field', 'skip'],
   ['.axis', 'DRO readout: the coordinate is the touch-off target', 'row'],
   ['.list-row', 'list row: a file, a program run, an MDI history line, a disclosure', 'row'],
   ['.tool-number', 'tool table cell: the whole row takes the hover tone', 'skip'],
@@ -272,6 +274,45 @@ async function cdp(port) {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
+async function dragLineRange(page) {
+  const points = await page.run(() => {
+    const lines = document.querySelectorAll('.row .number.range-target')
+    if (lines.length < 8) return null
+    return [lines[3], lines[5], lines[7]].map((el) => {
+      const box = el.getBoundingClientRect()
+      return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+    })
+  })
+  if (!points) return false
+  const [first, middle, last] = points
+  await page.call('Input.dispatchMouseEvent', { type: 'mouseMoved', ...first })
+  await page.call('Input.dispatchMouseEvent', { type: 'mousePressed', button: 'left', buttons: 1, clickCount: 1, ...first })
+  await page.call('Input.dispatchMouseEvent', { type: 'mouseMoved', buttons: 1, ...middle })
+  await page.call('Input.dispatchMouseEvent', { type: 'mouseMoved', buttons: 1, ...last })
+  await page.call('Input.dispatchMouseEvent', { type: 'mouseReleased', button: 'left', clickCount: 1, ...last })
+  for (let i = 0; i < 10; i++) {
+    if (await page.run(() => Boolean(document.querySelector('.line-actions .range-label')))) return true
+    await sleep(50)
+  }
+  return false
+}
+
+// The rest of the sweep can use background tabs. A drag needs a live, foreground simulator
+// from the press to the release. Serialize the gestures so another tab cannot interrupt one.
+let rangeInput = Promise.resolve()
+function selectLineRange(page) {
+  const gesture = rangeInput.then(async () => {
+    await page.call('Page.bringToFront')
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (await dragLineRange(page)) return
+      await sleep(250)
+    }
+    throw new Error('Dragging line numbers did not open the multi-selection toolbar')
+  })
+  rangeInput = gesture.catch(() => undefined)
+  return gesture
+}
+
 async function open(page, base, entry, path) {
   await page.call('Page.navigate', { url: `${base}${entry.startsWith('?') ? entry + '&theme=light&lang=en' : entry}` })
   for (let i = 0; i < 50 && !(await page.run(() => document.querySelector('#app')?.childElementCount > 0)); i++) await sleep(100)
@@ -291,6 +332,8 @@ async function open(page, base, entry, path) {
         return true
       }, step.slice(7))
       if (!touched) return false
+    } else if (step === '@range') {
+      await selectLineRange(page)
     } else if (step.startsWith('@el:')) {
       const clicked = await page.run((selector) => {
         const el = [...document.querySelectorAll(selector)].find((c) => c.checkVisibility())
@@ -320,9 +363,14 @@ async function main() {
   const server = await createServer({ root, configFile: `${root}vite.config.ts`, logLevel: 'error', server: { port: 5390, strictPort: false, host: '127.0.0.1' } })
   await server.listen()
   const base = server.resolvedUrls.local[0]
-  const profile = `${scratch}profile`
+  const profile = await mkdtemp(`${scratch}profile-`)
   const linux = process.platform === 'linux' ? ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'] : []
-  const chrome = spawn(chromePath(), ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--hide-scrollbars', '--no-first-run', ...linux, 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] })
+  const chrome = spawn(chromePath(), [
+    '--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--hide-scrollbars', '--no-first-run',
+    // The parallel tabs must keep the simulator's status heartbeat running in the background.
+    '--disable-background-timer-throttling', '--disable-renderer-backgrounding',
+    ...linux, 'about:blank',
+  ], { stdio: ['ignore', 'ignore', 'pipe'] })
   let chromeLog = ''
   chrome.stderr.on('data', (chunk) => { chromeLog = (chromeLog + String(chunk)).slice(-4000) })
   let port = null

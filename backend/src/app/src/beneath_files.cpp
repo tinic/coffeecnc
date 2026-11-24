@@ -227,62 +227,100 @@ auto LocalToolModelFiles::read_beneath(const std::string& root, const std::strin
 auto LocalToolModelFiles::replace_beneath(const std::string& root, const std::string& relative,
                                           std::string_view bytes, unsigned mode,
                                           std::optional<unsigned> group) -> Replaced {
-  const auto fail = [&](std::string reason, bool renamed = false) -> Replaced {
+  const auto fail = [](LocalizedReason reason, bool renamed = false) -> Replaced {
     return std::unexpected(ReplaceError{renamed, std::move(reason)});
   };
   auto parent = parent_beneath(root, relative);
   if (!parent)
-    return fail(std::move(parent.error().reason.text));
+    return fail(std::move(parent.error().reason));
   const auto shown = root + '/' + relative;
   const int directory = parent->directory.get();
   const auto temporary = parent->name + std::string(temporary_suffix);
   static_cast<void>(::unlinkat(directory, temporary.c_str(), 0)); // what a crash left
   Descriptor file{::openat(directory, temporary.c_str(),
                            O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600)};
-  if (!file.valid())
-    return fail(
-        std::format("{} cannot be made: {}", shown + std::string(temporary_suffix), said(errno)));
+  if (!file.valid()) {
+    const auto detail = said(errno);
+    const auto path = shown + std::string(temporary_suffix);
+    return fail({std::format("{} cannot be made: {}", path, detail),
+                 MessageKey{"backend.machineData.configTempNotMade",
+                            {{"path", path}, {"detail", detail}}}});
+  }
   Written kept;
-  const auto written = [&]() -> std::string {
+  auto written = [&]() -> LocalizedReason {
     while (!bytes.empty()) {
       const auto done = ::write(file.get(), bytes.data(), bytes.size());
       if (done < 0 && errno == EINTR)
         continue;
-      if (done < 0)
-        return std::format("{} cannot be written: {}", shown, said(errno));
+      if (done < 0) {
+        const auto detail = said(errno);
+        return {std::format("{} cannot be written: {}", shown, detail),
+                MessageKey{"backend.machineData.configNotWritten",
+                           {{"path", shown}, {"detail", detail}}}};
+      }
       bytes.remove_prefix(static_cast<std::size_t>(done));
     }
     struct stat made{};
-    if (::fstat(file.get(), &made) != 0)
-      return std::format("{} cannot be read back: {}", shown, said(errno));
+    if (::fstat(file.get(), &made) != 0) {
+      const auto detail = said(errno);
+      return {std::format("{} cannot be read back: {}", shown, detail),
+              MessageKey{"backend.machineData.configNotReadBack",
+                         {{"path", shown}, {"detail", detail}}}};
+    }
     // Only a group that differs is set: a user who is not in the file's group may not set it,
     // even to the group the new file already has. A group the user may not give is not kept.
     if (group && made.st_gid != *group &&
         ::fchown(file.get(), static_cast<uid_t>(-1), static_cast<gid_t>(*group)) != 0) {
-      if (errno != EPERM)
-        return std::format("{} cannot keep its group {}: {}", shown, *group, said(errno));
+      if (errno != EPERM) {
+        const auto detail = said(errno);
+        const auto id = std::to_string(*group);
+        return {std::format("{} cannot keep its group {}: {}", shown, id, detail),
+                MessageKey{"backend.machineData.configGroupNotKept",
+                           {{"path", shown}, {"group", id}, {"detail", detail}}}};
+      }
       kept.group_kept = false;
     }
-    if (::fchmod(file.get(), mode & 07777U) != 0)
-      return std::format("{} cannot keep its mode {:o}: {}", shown, mode, said(errno));
-    if (::fsync(file.get()) != 0)
-      return std::format("{} cannot be synchronised: {}", shown, said(errno));
-    if (!file.close())
-      return std::format("{} cannot be closed: {}", shown, said(errno));
+    if (::fchmod(file.get(), mode & 07777U) != 0) {
+      const auto detail = said(errno);
+      const auto permission = std::format("{:o}", mode);
+      return {std::format("{} cannot keep its mode {}: {}", shown, permission, detail),
+              MessageKey{"backend.machineData.configModeNotKept",
+                         {{"path", shown}, {"mode", permission}, {"detail", detail}}}};
+    }
+    if (::fsync(file.get()) != 0) {
+      const auto detail = said(errno);
+      return {
+          std::format("{} cannot be synchronised: {}", shown, detail),
+          MessageKey{"backend.machineData.configNotSynced", {{"path", shown}, {"detail", detail}}}};
+    }
+    if (!file.close()) {
+      const auto detail = said(errno);
+      return {
+          std::format("{} cannot be closed: {}", shown, detail),
+          MessageKey{"backend.machineData.configNotClosed", {{"path", shown}, {"detail", detail}}}};
+    }
     return {};
   }();
   if (written.empty() &&
       ::renameat(directory, temporary.c_str(), directory, parent->name.c_str()) == 0) {
-    if (::fsync(directory) != 0)
-      return fail(std::format("{} was replaced, but its folder cannot be synchronised: {}", shown,
-                              said(errno)),
-                  true);
+    if (::fsync(directory) != 0) {
+      const auto detail = said(errno);
+      return fail(
+          {std::format("{} was replaced, but its folder cannot be synchronised: {}", shown, detail),
+           MessageKey{"backend.machineData.configFolderNotSynced",
+                      {{"path", shown}, {"detail", detail}}}},
+          true);
+    }
     return kept;
   }
-  const auto reason =
-      written.empty() ? std::format("{} cannot be replaced: {}", shown, said(errno)) : written;
+  if (written.empty()) {
+    const auto detail = said(errno);
+    written = {
+        std::format("{} cannot be replaced: {}", shown, detail),
+        MessageKey{"backend.machineData.configNotReplaced", {{"path", shown}, {"detail", detail}}}};
+  }
   static_cast<void>(::unlinkat(directory, temporary.c_str(), 0));
-  return fail(reason);
+  return fail(std::move(written));
 }
 
 auto LocalToolModelFiles::remove_beneath(const std::string& root, const std::string& relative)

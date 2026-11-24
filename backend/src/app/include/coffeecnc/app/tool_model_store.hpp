@@ -132,7 +132,7 @@ public:
   };
   struct ReplaceError {
     bool renamed{}; // the new file has the name: only the fsync of its directory failed
-    std::string reason;
+    LocalizedReason reason;
   };
   using Replaced = std::expected<Written, ReplaceError>;
   // The first `limit` bytes of that file. No value: there is no such file (or a symbolic link
@@ -168,7 +168,10 @@ public:
     static_cast<void>(bytes);
     static_cast<void>(mode);
     static_cast<void>(group);
-    return std::unexpected(ReplaceError{false, root + " cannot be written here"});
+    return std::unexpected(
+        ReplaceError{false,
+                     {std::format("{} cannot be written here", root),
+                      MessageKey{"backend.machineData.writeHere", {{"path", root}}}}});
   }
   // Removes that file (a missing one is not a failure) and fsyncs its directory.
   [[nodiscard]] virtual auto remove_beneath(const std::string& root, const std::string& relative)

@@ -318,6 +318,17 @@ auto encoded_messages() -> std::vector<EncodedMessage> {
   messages.emplace_back(encode_message(MessageLevel::info, "T1 restored in the spindle.",
                                        1700000001000ms,
                                        MessageKey{"backend.nmlPort.restored", {{"tool", "1"}}}));
+  messages.emplace_back(encode_message(
+      MessageLevel::error,
+      "The restore was not completed: /home/cnc/mill.ini was replaced, but its folder cannot be "
+      "synchronised: Input/output error The files are as they were.",
+      1700000001800ms,
+      MessageKey{"backend.machineData.notCompleted",
+                 {{"detail", "/home/cnc/mill.ini was replaced, but its folder cannot be "
+                             "synchronised: Input/output error"}},
+                 {{"detail",
+                   {"backend.machineData.configFolderNotSynced",
+                    {{"path", "/home/cnc/mill.ini"}, {"detail", "Input/output error"}}}}}}));
   messages.emplace_back(encode_message(MessageLevel::info, "Jog stopped: probe contact",
                                        1700000001100ms,
                                        MessageKey{"backend.jogStop.probeContact"}));

@@ -1050,6 +1050,22 @@ const examples = [
   },
   {
     "type": "message",
+    "level": "error",
+    "text": "The restore was not completed: /home/cnc/mill.ini was replaced, but its folder cannot be synchronised: Input/output error The files are as they were.",
+    "time": 1700000001800,
+    "localization": {
+      "key": "backend.machineData.notCompleted",
+      "params": { "detail": "/home/cnc/mill.ini was replaced, but its folder cannot be synchronised: Input/output error" },
+      "params_localization": {
+        "detail": {
+          "key": "backend.machineData.configFolderNotSynced",
+          "params": { "path": "/home/cnc/mill.ini", "detail": "Input/output error" }
+        }
+      }
+    }
+  },
+  {
+    "type": "message",
     "level": "info",
     "text": "Jog stopped: probe contact",
     "time": 1700000001100,

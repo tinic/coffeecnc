@@ -114,6 +114,7 @@ export function probeGuide(target: ProbeGuideTarget, limits: FixedSetterLimits |
     return {
       ...guide,
       title: target.kind === 'bore' ? t('probe.guide.titleBore') : target.kind === 'boss' ? t('probe.guide.titleBoss') : guide.title,
+      setup: target.kind === 'bore' ? t('probe.guide.setupBore') : target.kind === 'boss' ? t('probe.guide.setupBoss') : guide.setup,
       result: t('probe.guide.resultCircleCheck'),
     }
   }

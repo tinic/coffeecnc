@@ -2729,7 +2729,7 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
   if (primary == 3)
     std::ranges::copy(request.angles_deg, headings.begin());
   if (request.check_angle_deg) {
-    const double extra = *request.check_angle_deg;
+    const double extra = std::remainder(*request.check_angle_deg, 360.0);
     if (!std::isfinite(extra) ||
         std::ranges::any_of(std::span{headings}.first(primary), [&](double heading) {
           return std::abs(std::remainder(extra - heading, 360.0)) < arc_min_separation_deg;

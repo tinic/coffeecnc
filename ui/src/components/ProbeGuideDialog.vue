@@ -34,7 +34,10 @@ const canCheck = computed(() => props.limits?.circle_check === true &&
   ['bore', 'boss', 'bore_arc', 'boss_arc'].includes(props.target.kind))
 const checking = ref(false)
 const checkText = ref('45')
-const checkAngle = computed(() => parseNumericExpression(checkText.value, '°'))
+const checkAngle = computed(() => {
+  const angle = parseNumericExpression(checkText.value, '°')
+  return angle === null ? null : angle % 360
+})
 const checkValid = computed(() => checkAngle.value !== null &&
   checkAngleValid(checkAngle.value, arcTarget.value ? arcAngles.value ?? defaultArcAngles : circleRays))
 const enabledCheck = computed(() => canCheck.value && checking.value)
@@ -121,19 +124,19 @@ function start(): void {
           />
           <small>{{ input.signed ? t('probe.guideDialog.rangeSigned', { min: input.min, max: input.max }) : t('probe.guideDialog.range', { min: input.min, max: input.max }) }}</small>
         </label>
-        <template v-if="canCheck">
-          <button class="btn check-circle" type="button" :aria-pressed="checking" @click="checking = !checking">
+        <div v-if="canCheck" class="check-circle">
+          <button class="btn" type="button" :aria-pressed="checking" @click="checking = !checking">
             {{ t('probe.guideDialog.checkCircle') }}
           </button>
-          <label v-if="checking" class="dimension">
-            <span>{{ t('probe.guideDialog.checkAngle') }}</span>
+          <div v-if="checking" class="check-angle">
             <input
               v-model="checkText" v-numeric type="text" class="field mono" inputmode="decimal" autocomplete="off"
-              data-numeric-unit="°" :data-numeric-action="t('probe.guideDialog.setValue')"
+              :aria-label="t('probe.guideDialog.checkAngle')" data-numeric-unit="°" :data-numeric-action="t('probe.guideDialog.setValue')"
             />
-            <small v-if="!checkValid">{{ t('probe.guideDialog.checkAngleRange', { separation: arcMinSeparation }) }}</small>
-          </label>
-        </template>
+            <span aria-hidden="true">°</span>
+          </div>
+          <small v-if="checking && !checkValid">{{ t('probe.guideDialog.checkAngleRange', { separation: arcMinSeparation }) }}</small>
+        </div>
         <dl v-if="travel || limits" class="limits">
           <template v-if="travel"><dt>{{ t('probe.guideDialog.searchTravel') }}</dt><dd>{{ t('probe.guideDialog.travelMax', { value: travel }) }}</dd></template>
           <template v-if="limits"><dt>{{ t('probe.guideDialog.searchFeed') }}</dt><dd>{{ t('probe.guideDialog.feedValue', { value: limits.feed_mm_min }) }}</dd></template>
@@ -176,7 +179,12 @@ h3 { margin: 0 0 6px; font-size: 13px; font-weight: 650; }
 p { margin: 0; line-height: 1.42; font-size: 13px; }
 .edge-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .edge-choice button { min-height: 44px; padding-inline: 5px; }
-.check-circle { min-height: 44px; align-self: start; }
+.check-circle { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.check-circle button { min-height: 44px; flex: auto; }
+.check-circle small { flex: 1 0 100%; color: var(--text-dim); }
+.check-angle { position: relative; width: 82px; }
+.check-angle input { width: 100%; min-height: 44px; padding-right: 20px; }
+.check-angle span { position: absolute; inset: 0 8px 0 auto; display: grid; align-items: center; pointer-events: none; color: var(--text-dim); }
 .dimension { display: grid; grid-template-columns: auto 92px; gap: 3px 8px; align-items: center; font-size: 12px; }
 .dimension input { height: 44px; min-width: 0; padding-inline: 8px; }
 .dimension small { grid-column: 1 / -1; color: var(--text-dim); }

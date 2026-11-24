@@ -506,7 +506,7 @@ export class SimProbe {
       const primary = 'angles' in command ? command.angles : circleRays
       if ('angles' in command && !arcAnglesValid(command.angles))
         return 'Enter three probe angles at least 10° apart that cover at least 90° of the circle.'
-      const check = command.check_angle
+      const check = command.check_angle === undefined ? undefined : command.check_angle % 360
       if (check !== undefined && !checkAngleValid(check, primary))
         return 'Choose a check angle at least 10° from the other contacts.'
       const headings = check === undefined ? primary : [...primary, check]

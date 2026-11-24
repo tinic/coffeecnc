@@ -297,7 +297,17 @@ const examples = [
       "M4"
     ],
     "program_units": "mm",
-    "probe_input": false
+    "probe_input": false,
+    "paused_z": {
+      "offset": 0,
+      "max_lift": 20,
+      "displaced": false,
+      "reason": "Pause a running program before jogging Z.",
+      "localization": {
+        "key": "backend.nmlStatus.pauseFirst",
+        "params": {}
+      }
+    }
   },
   {
     "type": "status",

@@ -3479,7 +3479,7 @@ auto NmlPort::move_paused_z(double distance, bool returning, const Wanted& wante
     return failed("The paused spindle state changed. Review the controls and try again.",
                   MessageKey{"messages.policy.pausedSpindleChanged"});
   if (!stop_spindle && !z->reason.empty())
-    return failed(z->reason);
+    return failed(z->reason, z->localization);
   if (!std::isfinite(distance) ||
       (!returning && (distance == 0 || std::abs(distance) > limits->lift_mm)))
     return failed("The paused Z jog distance is out of range.",

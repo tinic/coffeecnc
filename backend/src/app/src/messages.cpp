@@ -409,6 +409,8 @@ auto encode_status(const Status& status, std::uint64_t seq) -> Encoded {
                            {"max_lift", fields.real(z->max_lift, "paused_z.max_lift")},
                            {"displaced", z->displaced},
                            {"reason", z->reason}};
+    if (const auto& key = z->localization)
+      message["paused_z"]["localization"] = {{"key", key->key}, {"params", key->params}};
     switch (z->spindle) {
     case PausedSpindle::can_stop:
       message["paused_z"]["spindle"] = "can_stop";

@@ -227,6 +227,7 @@ export interface Status {
     max_lift: number
     displaced: boolean
     reason: string
+    localization?: MessageKey
     spindle?: 'can_stop' | 'stopping' | 'restore' | 'recover'
   }
   tool: {

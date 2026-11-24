@@ -130,6 +130,8 @@ Directory paths and parents are canonical paths within the configured program ro
 
 The optional `status.program.cycle` reports `running` during a cutting cycle (including pauses), `completed` after a verified finish, and `idle` otherwise. It is independent of `restart_hint`, which may arrive after Stop once the preview is ready.
 
+A `status.paused_z` record may include `localization` for its `reason`. It uses the same catalog metadata as a rejected paused-Z jog. The English reason remains available for older panels.
+
 ## Application shutdown
 
 `hello.quit_supported: true` enables the additive v1 `quit` command. Absent or

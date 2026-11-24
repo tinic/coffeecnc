@@ -20,6 +20,7 @@ const native = import.meta.glob<string>([
 ], { query: '?raw', import: 'default', eager: true })
 const adapter = import.meta.glob<string>([
   '../../backend/src/core/include/coffeecnc/core/controller_port.hpp',
+  '../../backend/src/app/src/alarm_log.cpp',
   '../../backend/src/core/include/coffeecnc/core/jog_stop_report.hpp',
   '../../backend/src/linuxcnc/src/nml_port.cpp',
   '../../backend/src/linuxcnc/src/nml_panel_source.cpp',

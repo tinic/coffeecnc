@@ -1485,6 +1485,18 @@
   },
   {
     "type": "alarm_log",
+    "storage": "saved",
+    "reason": "The alarm log could not be saved: No space left on device",
+    "session": 3,
+    "skipped": 0,
+    "entries": [],
+    "localization": {
+      "key": "backend.alarmLog.notSaved",
+      "params": { "detail": "No space left on device" }
+    }
+  },
+  {
+    "type": "alarm_log",
     "storage": "session_only",
     "reason": "No machine identity configured",
     "session": 1,

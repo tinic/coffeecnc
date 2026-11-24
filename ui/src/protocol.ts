@@ -477,6 +477,7 @@ export interface AlarmLog {
   storage: 'saved' | 'session_only'
   /** Why the log is not saved, or what went wrong reading or writing it; empty otherwise. */
   reason: string
+  localization?: MessageKey
   /** This run's session number. */
   session: number
   /** Lines of the saved log that could not be read. */

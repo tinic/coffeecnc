@@ -2387,7 +2387,7 @@ void Session::flush_stops() {
       const auto axis = std::string(1, letter(axes.at(i)));
       const auto detail = reply(stopped).reason;
       problems_.push_back(
-          {true, "Jog stop failed on " + axis + ": " + detail,
+          {true, std::format("Jog stop failed on {}: {}", axis, detail),
            MessageKey{"messages.session.jogStopFailed", {{"axis", axis}, {"detail", detail}}}});
     }
   }

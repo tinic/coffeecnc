@@ -125,6 +125,7 @@
       "tooManyAssignments": "刀具模型分配超过 1001 个。",
       "unknownHolder": "未知刀柄。",
       "assignedTwice": "被分配了多次。",
+      "familyProblem": "{family}: {detail}",
       "toolProblem": "刀具 {tool}：{detail}",
       "overridesEmpty": "删除分配时，overrides 必须为空。",
       "chooseHolder": "请为刀具模型分配选择支持的刀柄。",
@@ -569,7 +570,11 @@
       "stopExistsNamed": "在子程序之外询问 {name} 是否存在：在机床上它可能来自先前程序或 MDI 程序段，预览不知道这一点",
       "stopComputedParameter": "读取编号为计算所得的参数（#[...]、##）：预览不知道是哪一个参数，也不知道程序是否已设置它",
       "stopReturnValue": "在程序的子程序返回之前读取 {name} 或 {other}：预览不知道其来自先前程序或 MDI 程序段的值",
-      "stopDefinitionBlock": "子程序定义中的 O 字属于定义之外的程序块：预览不知道哪些行会运行"
+      "stopDefinitionBlock": "子程序定义中的 O 字属于定义之外的程序块：预览不知道哪些行会运行",
+      "stopPythonLine": "`;py,` 行会在解释器中运行 Python",
+      "stopPythonComment": "注释 ({word}...) 会在解释器中运行 Python",
+      "stopFileWritingComment": "注释 ({word}...) 会写入文件",
+      "stopOwordName": "O 字的名称由计算得出，或不是仅由字母、数字、`_`、`-`、`.` 组成的简单名称：解释器会按该名称查找文件"
     },
     "nmlStatus": {
       "pauseFirst": "点动 Z 前请先暂停正在运行的程序。",

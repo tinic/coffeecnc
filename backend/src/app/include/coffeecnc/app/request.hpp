@@ -34,6 +34,7 @@ struct DecodeError {
   // The app can reject that ID; otherwise it must emit an operator message, not invent an ID.
   std::optional<RequestId> id;
   std::string reason;
+  std::optional<MessageKey> localization{};
 };
 
 using DecodedRequest = std::variant<Request, DecodeError>;

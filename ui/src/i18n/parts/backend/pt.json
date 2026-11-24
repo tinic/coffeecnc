@@ -125,6 +125,7 @@
       "tooManyAssignments": "Há mais de 1001 atribuições de modelo da ferramenta.",
       "unknownHolder": "Porta-ferramentas desconhecido.",
       "assignedTwice": "Está atribuído mais de uma vez.",
+      "familyProblem": "{family}: {detail}",
       "toolProblem": "Ferramenta {tool}: {detail}",
       "overridesEmpty": "Os ajustes têm de estar vazios quando a atribuição é removida.",
       "chooseHolder": "Escolha um porta-ferramentas suportado para a atribuição do modelo da ferramenta.",
@@ -569,7 +570,11 @@
       "stopExistsNamed": "pergunta fora de uma sub-rotina se existe {name}: na máquina pode existir de um programa ou bloco MDI anterior, o que a pré-visualização não sabe",
       "stopComputedParameter": "lê um parâmetro cujo número é calculado (#[...], ##): a pré-visualização não sabe qual é nem se o programa o definiu",
       "stopReturnValue": "lê {name} ou {other} antes de uma sub-rotina do programa ter retornado: a pré-visualização não conhece o seu valor de um programa ou bloco MDI anterior",
-      "stopDefinitionBlock": "uma palavra O numa definição de sub-rotina pertence a um bloco fora dela: a pré-visualização não sabe que linhas são executadas"
+      "stopDefinitionBlock": "uma palavra O numa definição de sub-rotina pertence a um bloco fora dela: a pré-visualização não sabe que linhas são executadas",
+      "stopPythonLine": "uma linha `;py,` executa Python no interpretador",
+      "stopPythonComment": "um comentário ({word}...) executa Python no interpretador",
+      "stopFileWritingComment": "um comentário ({word}...) escreve um ficheiro",
+      "stopOwordName": "uma palavra O tem um nome calculado ou que não é um nome simples (letras, algarismos, `_`, `-`, `.`): o interpretador procuraria um ficheiro com esse nome"
     },
     "nmlStatus": {
       "pauseFirst": "Coloque em pausa um programa em execução antes do jog de Z.",

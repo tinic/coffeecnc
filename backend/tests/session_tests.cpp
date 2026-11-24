@@ -516,9 +516,9 @@ public:
   std::optional<int> probe;
 
   auto submit(PageToken page, RequestId id, ToolModelCommand command)
-      -> std::optional<std::string> override {
+      -> std::optional<LocalizedReason> override {
     submitted.push_back({page, id, std::move(command)});
-    return refusal;
+    return refusal.transform([](const auto& text) -> LocalizedReason { return {text}; });
   }
   void page_ended(PageToken page) override { ended.push_back(page.value); }
   auto touch_probe_loaded(int number) -> std::optional<bool> override { return probe == number; }

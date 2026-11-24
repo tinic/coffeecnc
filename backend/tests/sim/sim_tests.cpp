@@ -3389,7 +3389,7 @@ void tool_models(Rig& rig, const std::string& ini_file) {
         on_disk && on_disk->machine_id == "G0759-sim" && on_disk->revision == 2 &&
             on_disk->document.assignments.size() == 1 &&
             !std::filesystem::exists(saved_file + ".tmp"),
-        on_disk ? std::format("bytes={}", file_text(saved_file).size()) : on_disk.error());
+        on_disk ? std::format("bytes={}", file_text(saved_file).size()) : on_disk.error().text);
 
   // The process that saved has let go: another process is shown what it saved.
   const auto restarted = other_process();
@@ -6222,8 +6222,8 @@ void machine_moves(Rig& rig) {
 
 class InterlockProbeTool final : public ToolModelService {
 public:
-  auto submit(PageToken, RequestId, ToolModelCommand) -> std::optional<std::string> override {
-    return "This fixture uses a fixed probe tool.";
+  auto submit(PageToken, RequestId, ToolModelCommand) -> std::optional<LocalizedReason> override {
+    return LocalizedReason{"This fixture uses a fixed probe tool."};
   }
   void page_ended(PageToken) override {}
   auto touch_probe_loaded(int number) -> std::optional<bool> override { return number == 2; }

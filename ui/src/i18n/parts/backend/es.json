@@ -125,6 +125,7 @@
       "tooManyAssignments": "Hay más de 1001 asignaciones de modelo de herramienta.",
       "unknownHolder": "Portaherramientas desconocido.",
       "assignedTwice": "Está asignado más de una vez.",
+      "familyProblem": "{family}: {detail}",
       "toolProblem": "Herramienta {tool}: {detail}",
       "overridesEmpty": "Overrides debe estar vacío cuando se elimina la asignación.",
       "chooseHolder": "Elija un portaherramientas compatible para la asignación de modelo de herramienta.",
@@ -569,7 +570,11 @@
       "stopExistsNamed": "pregunta fuera de una subrutina si existe {name}: en la máquina puede existir de un programa o bloque MDI anterior, lo que la vista previa no sabe",
       "stopComputedParameter": "lee un parámetro cuyo número se calcula (#[...], ##): la vista previa no sabe cuál es ni si el programa lo ha asignado",
       "stopReturnValue": "lee {name} o {other} antes de que haya retornado una subrutina del programa: la vista previa no conoce su valor de un programa o bloque MDI anterior",
-      "stopDefinitionBlock": "una palabra O en una definición de subrutina pertenece a un bloque fuera de ella: la vista previa no sabe qué líneas se ejecutan"
+      "stopDefinitionBlock": "una palabra O en una definición de subrutina pertenece a un bloque fuera de ella: la vista previa no sabe qué líneas se ejecutan",
+      "stopPythonLine": "una línea `;py,` ejecuta Python en el intérprete",
+      "stopPythonComment": "un comentario ({word}...) ejecuta Python en el intérprete",
+      "stopFileWritingComment": "un comentario ({word}...) escribe un archivo",
+      "stopOwordName": "una palabra O tiene un nombre calculado o que no es un nombre simple (letras, dígitos, `_`, `-`, `.`): el intérprete buscaría un archivo con ese nombre"
     },
     "nmlStatus": {
       "pauseFirst": "Ponga en pausa el programa en ejecución antes de hacer jog en Z.",

@@ -1630,7 +1630,7 @@ void height_map_scenarios(NmlPort& port, HalShared& shared, double scale, double
     mdi("G21 G10 L20 P0 Z8"); // Z0 at machine Z 12.
     mdi(scale == 1 ? "G21 G91" : "G20 G91");
   };
-  const auto map_request = [&](std::array<double, 4> grid, double step, double clearance) {
+  const auto map_request = [&](const std::array<double, 4>& grid, double step, double clearance) {
     FixedSetterRequest request{.action = SetterAction::height_map, .tool = 99, .start = machine()};
     request.grid_mm = grid;
     request.step_mm = step;

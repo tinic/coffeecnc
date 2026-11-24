@@ -277,7 +277,6 @@
       "commandOpenProgram": "プログラムを開く処理",
       "commandOther": "別のコマンド",
       "cancelledBeforeSent": "送信前にキャンセルされました。",
-      "homeBeforeJogging": "{axis} をジョグする前に原点復帰してください。この軸は {motors} 台のモーターで駆動されています。",
       "two": "2",
       "spindleToolNotSaved": "次回起動用に主軸の工具を保存できませんでした。",
       "breakpointPauseNotSaved": "アプリ復旧用にブレークポイントでの一時停止を保存できませんでした。",

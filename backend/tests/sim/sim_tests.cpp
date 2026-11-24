@@ -5244,7 +5244,7 @@ void gantry(Rig& rig) {
             step.reason == y_refusal && joint_positions() == before,
         std::format("{} {} {}", held.text(), step.text(), joint_positions()));
   rig.direct([&]() -> void {
-    const MessageKey expected{"backend.nmlPort.homeBeforeJogging",
+    const MessageKey expected{"messages.policy.homeBeforeGantryJog",
                               {{"axis", "Y"}, {"motors", "two"}}};
     const auto forced = rig.port.start_jog(Axis::y, 1, 600, JogSpace::joint, always());
     rig.direct_pump(200ms);

@@ -389,8 +389,8 @@ describe('translateMessage', () => {
     expect(translateResult({
       type: 'result', id: 59, outcome: 'failed',
       reason: 'Home the machine before jogging Y: two motors drive it.',
-      localization: { key: 'backend.nmlPort.homeBeforeJogging', params: { axis: 'Y', motors: 'two' } },
-    })).toBe('Référencez la machine avant de jogger Y : deux moteurs l’entraînent.')
+      localization: { key: 'messages.policy.homeBeforeGantryJog', params: { axis: 'Y', motors: 'two' } },
+    })).toBe('Référencez la machine avant de faire un jog de Y : deux moteurs l’entraînent.')
   })
 
   it('translates the known parts of a composed sentence', async () => {

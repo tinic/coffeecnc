@@ -1617,7 +1617,7 @@ const examples = [
     "outcome": "failed",
     "reason": "Home the machine before jogging Y: two motors drive it.",
     "localization": {
-      "key": "backend.nmlPort.homeBeforeJogging",
+      "key": "messages.policy.homeBeforeGantryJog",
       "params": { "axis": "Y", "motors": "two" }
     }
   }

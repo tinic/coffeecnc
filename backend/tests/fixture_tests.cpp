@@ -541,7 +541,7 @@ auto encoded_messages() -> std::vector<Encoded> {
                                       {}, {}, MessageKey{"backend.nmlPort.toolChangeGone"}));
   messages.emplace_back(encode_result(
       59, CommandOutcome::failed, "Home the machine before jogging Y: two motors drive it.",
-      {}, {}, {}, MessageKey{"backend.nmlPort.homeBeforeJogging", {{"axis", "Y"}, {"motors", "two"}}}));
+      {}, {}, {}, MessageKey{"messages.policy.homeBeforeGantryJog", {{"axis", "Y"}, {"motors", "two"}}}));
   return messages;
 }
 

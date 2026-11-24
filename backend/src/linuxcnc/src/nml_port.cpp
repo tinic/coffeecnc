@@ -260,7 +260,7 @@ auto joint_jog_refusal(const MachineConfig& config, Axis axis) -> LocalizedReaso
   const auto motor_count = motors == 2 ? "two" : std::to_string(motors);
   return {std::format("Home the machine before jogging {}: {} motors drive it.", axis_name,
                       motor_count),
-          MessageKey{"backend.nmlPort.homeBeforeJogging",
+          MessageKey{"messages.policy.homeBeforeGantryJog",
                      {{"axis", axis_name}, {"motors", motor_count}}}};
 }
 

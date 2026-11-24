@@ -277,7 +277,6 @@
       "commandOpenProgram": "a abertura do programa",
       "commandOther": "outro comando",
       "cancelledBeforeSent": "Cancelado antes de ser enviado.",
-      "homeBeforeJogging": "Referencie a máquina antes do jog em {axis}: é acionado por {motors} motores.",
       "two": "dois",
       "spindleToolNotSaved": "Não foi possível guardar a ferramenta da árvore para o próximo arranque.",
       "breakpointPauseNotSaved": "Não foi possível guardar a pausa no ponto de paragem para a recuperação da aplicação.",

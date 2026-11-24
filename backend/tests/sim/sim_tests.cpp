@@ -5042,7 +5042,7 @@ void whole_job(Rig& rig) {
     progress.observe(reading, time);
     const auto messages = composer.compose(reading, rig.page, false, 0ms);
     if (!messages)
-      throw std::runtime_error(messages.error());
+      throw std::runtime_error(messages.error().text);
     for (const auto& message : *messages) {
       auto packet = Json::parse(message);
       if (packet.at("type") == "status") {
@@ -6372,7 +6372,7 @@ void macros(Rig& rig, const MachineConfig& config) {
                                     {"Corner", "O<Coffeecnc_Macro> call"}};
   check("macros_config", loaded && loaded->macros == expected,
         loaded ? std::format("macros={}", loaded->macros.size()) : word(loaded.error()));
-  const auto hello = loaded ? encode_hello(to_hello(*loaded)) : Encoded{};
+  const auto hello = loaded ? encode_hello(to_hello(*loaded)) : EncodedMessage{};
   const auto wire = hello ? Json::parse(*hello).value("macros", Json()) : Json();
   check("macros_hello",
         wire == Json::parse(R"([{"label":"Park Z","mdi":"G53 G0 Z-5"},

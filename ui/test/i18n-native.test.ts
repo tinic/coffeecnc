@@ -13,7 +13,6 @@ const native = import.meta.glob<string>([
   '../../backend/src/app/src/session.cpp',
   '../../backend/src/app/src/request.cpp',
   '../../backend/src/app/src/response.cpp',
-  '../../backend/src/app/src/messages.cpp',
   '../../backend/src/app/src/panel_feed.cpp',
   '../../backend/src/app/include/coffeecnc/app/session.hpp',
   '../../backend/src/app/include/coffeecnc/app/panel_feed.hpp',
@@ -44,6 +43,7 @@ const adapter = import.meta.glob<string>([
   '../../backend/src/app/include/coffeecnc/app/tool_model_store.hpp',
   '../../backend/src/app/src/program_store.cpp',
   '../../backend/src/app/src/program_edit.cpp',
+  '../../backend/src/app/src/messages.cpp',
 ], { query: '?raw', import: 'default', eager: true })
 /** Panel modules whose English reaches the operator as run-time text (a result reason, an import error). */
 const modules = import.meta.glob<string>(['../src/bridge.ts', '../src/step.worker.ts', '../src/step-model.ts'],
@@ -165,8 +165,6 @@ function nativeSentences(path: string, source: string): string[] {
   }
   for (const literal of Object.keys(composed).filter((key) => key.startsWith(' ')))
     if (source.includes(`"${literal}"`)) sentences.push(composed[literal] ?? literal)
-  // messages.cpp: Fields::fail(field, problem) reports "<field> <problem>.".
-  for (const match of source.matchAll(/\bfail\([^,()]+,\s*"([^"]+)"\)/g)) sentences.push(`max_jog_velocity ${match[1] ?? ''}.`)
   return sentences
 }
 
@@ -198,7 +196,7 @@ describe('native and store sentences', () => {
   const files = Object.entries(native)
 
   it('reads every source file', () => {
-    expect(files.length).toBe(8)
+    expect(files.length).toBe(7)
     expect(store).toContain('export function describeCommand')
   })
 

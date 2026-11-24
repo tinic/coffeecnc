@@ -1072,6 +1072,19 @@ const examples = [
     }
   },
   {
+    "type": "message",
+    "level": "error",
+    "text": "The machine status cannot be shown: status: motion.velocity is not a finite number.",
+    "time": 1700000001300,
+    "localization": {
+      "key": "messages.panelFeed.statusCannotShow",
+      "params": { "detail": "status: motion.velocity is not a finite number." },
+      "params_localization": {
+        "detail": { "key": "messages.wire.notFinite", "params": { "field": "status: motion.velocity" } }
+      }
+    }
+  },
+  {
     "type": "result",
     "id": 41,
     "outcome": "accepted",

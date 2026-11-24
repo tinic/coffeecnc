@@ -46,12 +46,16 @@ auto PreviewContext::update(const PreviewInputs& inputs, bool running) -> std::u
 
 auto StatusPublisher::publish(const PanelState& state, bool snapshots,
                               std::vector<PanelRecord>* records)
-    -> std::expected<std::vector<std::string>, std::string> {
+    -> std::expected<std::vector<std::string>, LocalizedReason> {
   std::vector<std::string> messages;
-  std::string error;
-  const auto add = [&](PanelRecord record, std::string_view type, Encoded encoded) -> bool {
+  LocalizedReason error;
+  const auto add = [&](PanelRecord record, std::string_view type, EncodedMessage encoded) -> bool {
     if (!encoded) {
-      error = std::string(type) + ": " + encoded.error();
+      error = std::move(encoded.error());
+      const auto prefix = std::string(type) + ": ";
+      error.text.insert(0, prefix);
+      if (error.localization && error.localization->params.contains("field"))
+        error.localization->params.at("field").insert(0, prefix);
       return false;
     }
     messages.push_back(std::move(*encoded));

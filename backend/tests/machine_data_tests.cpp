@@ -120,7 +120,7 @@ struct Fixture {
   // Stages a restore of the backup at `path`; it must quit.
   void stage(const std::string& path) {
     const auto done =
-        machine->restore(path, summary(path)["token"], 7, [] { return std::string{}; });
+        machine->restore(path, summary(path)["token"], 7, [] { return LocalizedReason{}; });
     require(done.outcome == CommandOutcome::accepted && done.quit && machine->staged(),
             "A restore is staged: " + done.reason);
   }
@@ -129,7 +129,7 @@ struct Fixture {
   }
 };
 
-const auto allow = []() -> std::string { return {}; };
+const auto allow = []() -> LocalizedReason { return {}; };
 
 void archive_round_trip() {
   const std::vector<ArchiveEntry> entries{
@@ -182,7 +182,10 @@ void backup_contents() {
   require(written["files"] == 8, std::format("Eight files are in it: {}", written["files"].dump()));
   require(written["not_included"].size() == 2 &&
               written["not_included"][0]["path"] == "LIB:basic_sim.tcl" &&
-              written["not_included"][1]["path"] == "../elsewhere.hal",
+              written["not_included"][1]["path"] == "../elsewhere.hal" &&
+              written["not_included"][0]["localization"]["key"] == "backend.machineData.libHal" &&
+              written["not_included"][1]["localization"]["key"] ==
+                  "backend.machineData.outsideConfig",
           "HAL files outside the configuration folder are listed as not included");
   const auto entries = read_archive(f.disk.files.at(path));
   require(entries.has_value(), "The archive reads");
@@ -202,12 +205,17 @@ void backup_contents() {
   require(manifest["format"] == "coffeecnc-backup" && manifest["version"] == 1 &&
               manifest["machine_id"] == "G0759" && manifest["files"].size() == 8,
           "The manifest lists every file");
+  require(!manifest["not_included"][0].contains("localization") &&
+              manifest["not_included"][0]["reason"] == written["not_included"][0]["reason"],
+          "The archive retains the plain migration-compatible omission reason");
   require(f.disk.files.at(path).size() == written["bytes"].get<std::size_t>(), "Its size is said");
   require(!f.disk.files.contains(path + ".coffeecnc-tmp"), "No temporary file is left");
   // A folder that cannot be written: failed, nothing left.
   f.files.failures["rename"] = 1;
   const auto failed = f.machine->backup(usb);
-  require(failed.outcome == CommandOutcome::failed && failed.messages.empty(),
+  require(failed.outcome == CommandOutcome::failed && failed.messages.empty() &&
+              failed.localization && failed.localization->key == "backend.machineData.notWritten",
+
           "A backup that cannot be written fails");
 }
 
@@ -276,7 +284,9 @@ void check_and_changes() {
   f.open(paths("BENCH"));
   const auto other = f.check(path);
   require(other.outcome == CommandOutcome::rejected &&
-              other.reason == "This backup is of machine G0759; this machine is BENCH.",
+              other.reason == "This backup is of machine G0759; this machine is BENCH." &&
+              other.localization == MessageKey{"backend.machineData.otherMachine",
+                                               {{"backup", "G0759"}, {"machine", "BENCH"}}},
           "Another machine's backup is refused: " + other.reason);
   // No data folder: nothing to stage in.
   auto bare = paths();
@@ -471,8 +481,13 @@ void refusal_states() {
   const std::string path = f.backup()["path"];
   f.disk.files[tools] = "changed\n";
   const std::string token = f.summary(path)["token"];
-  auto done = f.machine->restore(path, token, 1, [] { return std::string("Machine is on"); });
-  require(done.outcome == CommandOutcome::rejected && done.reason == "Machine is on" &&
+  auto done = f.machine->restore(path, token, 1, [] {
+    return LocalizedReason{"Switch the machine off or press E-stop before a restore.",
+                           MessageKey{"messages.policy.restoreMachineOn"}};
+  });
+  require(done.outcome == CommandOutcome::rejected &&
+              done.reason == "Switch the machine off or press E-stop before a restore." &&
+              done.localization == MessageKey{"messages.policy.restoreMachineOn"} &&
               !f.machine->staged(),
           "The recheck just before staging refuses");
   f.disk.files[path] += "x"; // the file changed after the check
@@ -522,9 +537,11 @@ void restore_and_apply() {
   require(apply_staged_restore(f.files, data, now).value_or(99) == 0, "A second run does nothing");
   f.open();
   const auto notice = f.machine->take_notice();
-  require(notice && notice->first == MessageLevel::info &&
-              notice->second.find("3 files were written") != std::string::npos &&
-              notice->second.find(copy) != std::string::npos,
+  require(notice && !notice->error &&
+              notice->localization ==
+                  MessageKey{"backend.machineData.restored", {{"count", "3"}, {"path", copy}}} &&
+              notice->text.find("3 files were written") != std::string::npos &&
+              notice->text.find(copy) != std::string::npos,
           "The next run says what was restored");
   require(!f.machine->take_notice(), "Once");
   // The pre-restore copy is a backup the panel can restore.
@@ -538,7 +555,8 @@ void restore_and_apply() {
   f.open(bare);
   const std::string again = f.backup()["path"];
   const auto same = f.machine->restore(again, f.summary(again)["token"], 1, allow);
-  require(same.outcome == CommandOutcome::accepted && !same.quit && !f.machine->staged(),
+  require(same.outcome == CommandOutcome::accepted && !same.quit && !f.machine->staged() &&
+              same.localization == MessageKey{"backend.machineData.nothing"},
           "A restore that changes nothing does not quit");
 }
 
@@ -564,9 +582,9 @@ void var_decided_after_exit() {
   require(untouched && *untouched == 0, "A .var that is the backup's at exit is not written");
   f.open();
   const auto notice = f.machine->take_notice();
-  require(notice && notice->second == "The backup was restored: every file already held what "
-                                      "the backup holds.",
-          "and the next start says so: " + (notice ? notice->second : std::string{}));
+  require(notice && notice->text == "The backup was restored: every file already held what "
+                                    "the backup holds.",
+          "and the next start says so: " + (notice ? notice->text : std::string{}));
 }
 
 // Review #274, 3: a restore whose quit was not delivered stayed staged, and the next normal exit
@@ -618,15 +636,14 @@ void partial_write_failure() {
   require(!f.disk.files.contains(in_staging("plan.json")), "The plan is not tried again");
   f.open();
   const auto notice = f.machine->take_notice();
-  require(notice && notice->first == MessageLevel::error &&
-              notice->second.starts_with("The restore was not completed:") &&
-              notice->second.ends_with("The files are as they were."),
+  require(notice && notice->error && notice->text.starts_with("The restore was not completed:") &&
+              notice->text.ends_with("The files are as they were."),
           "The next run says it failed");
   // A plan the helper never got to.
   f.stage(path);
   f.open();
   const auto left = f.machine->take_notice();
-  require(left && left->second.starts_with("A restore was prepared but not written"),
+  require(left && left->text.starts_with("A restore was prepared but not written"),
           "A plan left at the next start is reported and discarded");
   require(!f.disk.files.contains(in_staging("plan.json")) &&
               !f.disk.files.contains(in_staging("0.staged")),
@@ -654,7 +671,7 @@ void rollback_counts_renamed_files() {
           "The renamed file is put back too");
   f.open();
   auto notice = f.machine->take_notice();
-  require(notice && notice->second.ends_with("The files are as they were."),
+  require(notice && notice->text.ends_with("The files are as they were."),
           "Every file was put back: the notice says so");
   // The second fails, and the first cannot be put back.
   f.stage(path);
@@ -671,13 +688,13 @@ void rollback_counts_renamed_files() {
   f.open();
   notice = f.machine->take_notice();
   const auto copy = in_data("pre-restore-20261118-110740.tar.gz");
-  require(notice && notice->first == MessageLevel::error &&
-              notice->second.find("These files could not be put back: " + target(0)) !=
+  require(notice && notice->error &&
+              notice->text.find("These files could not be put back: " + target(0)) !=
                   std::string::npos &&
-              notice->second.find(copy) != std::string::npos &&
-              notice->second.find("as they were") == std::string::npos,
+              notice->text.find(copy) != std::string::npos &&
+              notice->text.find("as they were") == std::string::npos,
           "The notice names what was not put back and the copy: " +
-              (notice ? notice->second : std::string{}));
+              (notice ? notice->text : std::string{}));
 }
 
 struct Crash {};
@@ -723,11 +740,11 @@ void crash_points() {
     const auto notice = f.machine->take_notice();
     const auto at = std::format("crash at call {}", crash_at);
     require(notice.has_value(), at + ": the next start says what came of it");
-    require(!changed || notice->second.find("Nothing was changed") == std::string::npos,
-            at + ": files changed, and the notice does not say otherwise: " + notice->second);
-    if (notice->second.starts_with("A restore was interrupted")) {
+    require(!changed || notice->text.find("Nothing was changed") == std::string::npos,
+            at + ": files changed, and the notice does not say otherwise: " + notice->text);
+    if (notice->text.starts_with("A restore was interrupted")) {
       const auto copy = in_data("pre-restore-20261118-110740.tar.gz");
-      require(notice->second.find(copy) != std::string::npos && f.disk.files.contains(copy),
+      require(notice->text.find(copy) != std::string::npos && f.disk.files.contains(copy),
               at + ": the notice names the copy from before the restore");
       require(f.summary(copy)["files"].size() >= 1, at + ": and it can be restored");
     }
@@ -751,8 +768,8 @@ void start_check_under_lock() {
   f.open();
   const auto notice = f.machine->take_notice();
   require(f.pauses > 0 && notice &&
-              notice->second == "The data folder is in use: what came of the last restore is "
-                                "shown at the next start.",
+              notice->text == "The data folder is in use: what came of the last restore is "
+                              "shown at the next start.",
           "The start waits for the lock, then says it is in use");
   require(f.disk.files.contains(in_staging("plan.json")), "and leaves the helper's files alone");
   helper.unlock();
@@ -878,10 +895,9 @@ void stale_plan_refused() {
   require(!f.disk.files.contains(in_staging("plan.json")), "and the plan is not tried again");
   f.open();
   const auto notice = f.machine->take_notice();
-  require(notice && notice->first == MessageLevel::error &&
-              notice->second.find("more than 120 s") != std::string::npos &&
-              notice->second.ends_with("The files are as they were."),
-          "The next start says so: " + (notice ? notice->second : std::string{}));
+  require(notice && notice->error && notice->text.find("more than 120 s") != std::string::npos &&
+              notice->text.ends_with("The files are as they were."),
+          "The next start says so: " + (notice ? notice->text : std::string{}));
   // The run ended at once, and LinuxCNC took long to stop: the end of the run counts.
   f.stage(path);
   hooks.ended = BootTime{"boot-1", 1h + 5s};
@@ -1013,8 +1029,8 @@ void links_and_groups() {
           "The tool table is the same link again");
   f.open();
   auto notice = f.machine->take_notice();
-  require(notice && notice->second.ends_with("The files are as they were."),
-          "and the notice can say so: " + (notice ? notice->second : std::string{}));
+  require(notice && notice->text.ends_with("The files are as they were."),
+          "and the notice can say so: " + (notice ? notice->text : std::string{}));
   // The link cannot be made again: the notice says so.
   f.stage(path);
   f.files.failures["replace " + target(1)] = 1;
@@ -1023,11 +1039,10 @@ void links_and_groups() {
   f.open();
   notice = f.machine->take_notice();
   require(notice &&
-              notice->second.find("These files could not be put back: " + std::string(tools) +
-                                  " cannot be made a link again") != std::string::npos &&
-              notice->second.find("as they were") == std::string::npos,
-          "The notice names the link that is not back: " +
-              (notice ? notice->second : std::string{}));
+              notice->text.find("These files could not be put back: " + std::string(tools) +
+                                " cannot be made a link again") != std::string::npos &&
+              notice->text.find("as they were") == std::string::npos,
+          "The notice names the link that is not back: " + (notice ? notice->text : std::string{}));
   // A group the user is not in: written with the user's group, and said.
   Fixture g;
   const std::string again = g.backup()["path"];
@@ -1042,12 +1057,12 @@ void links_and_groups() {
               (applied ? std::string{} : applied.error()));
   g.open();
   notice = g.machine->take_notice();
-  require(notice && notice->first == MessageLevel::info &&
-              notice->second.ends_with("These files did not keep their group, which this user is "
-                                       "not in: " +
-                                       std::string(tools) + "."),
+  require(notice && !notice->error &&
+              notice->text.ends_with("These files did not keep their group, which this user is "
+                                     "not in: " +
+                                     std::string(tools) + "."),
           "The next start says which files did not keep their group: " +
-              (notice ? notice->second : std::string{}));
+              (notice ? notice->text : std::string{}));
 }
 
 // Re-review #274, 5: a LinuxCNC started between the last check and the last write read mixed

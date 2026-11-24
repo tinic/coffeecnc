@@ -1807,7 +1807,10 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
         } else if constexpr (std::is_same_v<T, Backup> || std::is_same_v<T, CheckRestore> ||
                              std::is_same_v<T, RestoreBackup>) {
           if (machine_data_ == nullptr)
-            return answer({CommandOutcome::rejected, "This CoffeeCNC cannot back up or restore."});
+            return answer({CommandOutcome::rejected,
+                           "This CoffeeCNC cannot back up or restore.",
+                           {},
+                           MessageKey{"messages.session.noBackup"}});
           MachineDataAnswer done;
           if constexpr (std::is_same_v<T, Backup>) {
             done = machine_data_->backup(c.directory);
@@ -1815,15 +1818,18 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
             done = machine_data_->check_restore(c.path);
           } else {
             // The machine as it is now, just before anything is staged.
-            done =
-                machine_data_->restore(c.path, c.token, request.page.value, [&]() -> std::string {
-                  const auto recheck = policy_.evaluate(request.command, port_.snapshot());
-                  return recheck.allowed ? std::string{} : recheck.reason;
+            done = machine_data_->restore(
+                c.path, c.token, request.page.value, [&]() -> LocalizedReason {
+                  auto recheck = policy_.evaluate(request.command, port_.snapshot());
+                  return recheck.allowed ? LocalizedReason{}
+                                         : LocalizedReason{std::move(recheck.reason),
+                                                           std::move(recheck.refusal)};
                 });
           }
           Stage step;
           step.reply.outcome = done.outcome;
           step.reply.reason = std::move(done.reason);
+          step.reply.localization = std::move(done.localization);
           step.produced = std::move(done.messages);
           step.quit = done.quit;
           return step;

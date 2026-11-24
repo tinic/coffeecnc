@@ -67,7 +67,8 @@ void save_failure_recovers(const fs::path& directory) {
   moves_on_line(sample, 3);
   progress.observe(sample, now);
   constexpr auto detail = "the temporary file cannot be made: Permission denied";
-  require(sample.messages.size() == 1 && sample.messages.front().error &&
+  require(files.failures.at("open_temporary") == 1 && sample.messages.size() == 1 &&
+              sample.messages.front().error &&
               sample.messages.front().text ==
                   std::string("Program progress could not be saved. ") + detail &&
               sample.messages.front().localization ==
@@ -76,7 +77,8 @@ void save_failure_recovers(const fs::path& directory) {
 
   sample.messages.clear();
   progress.observe(sample, now + 1s);
-  require(sample.messages.empty(), "An identical retry failure does not duplicate the notice.");
+  require(files.failures.at("open_temporary") == 0 && sample.messages.empty(),
+          "An identical retry failure does not duplicate the notice.");
   progress.observe(sample, now + 2s);
   require(disk.files.contains((directory / "program-progress.json").string()),
           "The dirty record is saved once the storage recovers.");
@@ -84,7 +86,8 @@ void save_failure_recovers(const fs::path& directory) {
   files.failures["open_temporary"] = 1;
   moves_on_line(sample, 4);
   progress.observe(sample, now + 3s);
-  require(sample.messages.size() == 1, "The same failure after recovery is reported again.");
+  require(files.failures.at("open_temporary") == 0 && sample.messages.size() == 1,
+          "The same failure after recovery is reported again.");
 }
 
 void stops_and_reloads(const fs::path& directory) {

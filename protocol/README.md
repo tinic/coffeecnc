@@ -189,6 +189,8 @@ the verified rotation in `setter.edge_angle`.
 
 `hello.diagnostics: true` enables two additive v1 commands and one message. Absent or false: the panel offers no diagnostics view. The LAN screen's hello never carries it.
 
+The LAN viewer's optional `POST /program-upload` route replies with JSON. The `reason` field holds the English fallback or is empty on success. A reply may include `localization` with the same `key` and `params` fields as a command result. Existing HTTP statuses and request fields apply.
+
 | Command | Fields | Answer |
 | --- | --- | --- |
 | `watch_diagnostics` | `on` (boolean) | `accepted` at once, in every machine state. While `on`, the page is sent `diagnostics` about ten times a second; `on: false` or the end of the page stops it. One page at a time |

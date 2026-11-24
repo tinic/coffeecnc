@@ -28,6 +28,8 @@ namespace http = beast::http;
 namespace websocket = beast::websocket;
 using net::ip::tcp;
 using Json = nlohmann::json;
+using coffeecnc::LocalizedReason;
+using coffeecnc::MessageKey;
 using coffeecnc::PanelRecord;
 using coffeecnc::RemoteServer;
 using namespace std::chrono_literals;
@@ -64,7 +66,7 @@ using Viewer = websocket::stream<tcp::socket>;
 
 auto upload(net::io_context& io, std::uint16_t port, const std::string& host,
             const std::string& origin, const std::string& name, bool replace = false)
-    -> http::status {
+    -> http::response<http::string_body> {
   tcp::socket socket{io};
   socket.connect({net::ip::address_v4::loopback(), port});
   http::request<http::string_body> request{http::verb::post, "/program-upload", 11};
@@ -79,33 +81,50 @@ auto upload(net::io_context& io, std::uint16_t port, const std::string& host,
   beast::flat_buffer buffer;
   http::response_parser<http::string_body> parser;
   http::read(socket, buffer, parser);
-  return parser.get().result();
+  return parser.release();
 }
 
 void program_uploads(const std::string& assets) {
   std::atomic<int> calls{};
-  RemoteServer server{assets, 0, {}, [&](std::string_view name, std::string_view bytes, bool replace)
-      -> std::expected<void, std::string> {
-    ++calls;
-    if (name != "Plate 2.ngc" || bytes != "G21\r\nM2\r\n" || replace)
-      return std::unexpected("The upload was refused.");
-    return {};
-  }};
+  RemoteServer server{assets,
+                      0,
+                      {},
+                      [&](std::string_view name, std::string_view bytes,
+                          bool replace) -> std::expected<void, LocalizedReason> {
+                        ++calls;
+                        if (name != "Plate 2.ngc" || bytes != "G21\r\nM2\r\n" || replace)
+                          return std::unexpected(LocalizedReason{
+                              "A program named Plate 2.ngc exists already.",
+                              MessageKey{"backend.programEdit.exists", {{"name", "Plate 2.ngc"}}}});
+                        return {};
+                      }};
   const auto host = "127.0.0.1:" + std::to_string(server.port());
   net::io_context io;
-  require(upload(io, server.port(), host, "http://other.example", "Plate%202.ngc") ==
-              http::status::forbidden &&
-          upload(io, server.port(), "other.example", "http://other.example", "Plate%202.ngc") ==
-              http::status::forbidden,
+  const auto forbidden = upload(io, server.port(), host, "http://other.example", "Plate%202.ngc");
+  require(forbidden.result() == http::status::forbidden &&
+              upload(io, server.port(), "other.example", "http://other.example", "Plate%202.ngc")
+                      .result() == http::status::forbidden,
           "Foreign origins and hosts cannot post a program");
-  require(upload(io, server.port(), host, "http://" + host, "..%2Fpart.ngc") ==
-              http::status::bad_request && calls == 0,
+  require(Json::parse(forbidden.body()) ==
+              Json{{"reason", "Upload from the CoffeeCNC LAN screen."},
+                   {"localization",
+                    {{"key", "backend.programFiles.sameOrigin"}, {"params", Json::object()}}}},
+          "The upload refusal retains its English reason and catalog key");
+  require(upload(io, server.port(), host, "http://" + host, "..%2Fpart.ngc").result() ==
+                  http::status::bad_request &&
+              calls == 0,
           "An uploaded filename cannot name a path");
-  require(upload(io, server.port(), host, "http://" + host, "Plate%202.ngc") ==
-              http::status::created && calls == 1,
+  const auto success = upload(io, server.port(), host, "http://" + host, "Plate%202.ngc");
+  require(success.result() == http::status::created &&
+              Json::parse(success.body()) == Json{{"reason", ""}} && calls == 1,
           "The opted-in route sends the original bytes and decoded name to the disk writer");
-  require(upload(io, server.port(), host, "http://" + host, "Plate%202.ngc", true) ==
-              http::status::conflict && calls == 2,
+  const auto conflict = upload(io, server.port(), host, "http://" + host, "Plate%202.ngc", true);
+  require(conflict.result() == http::status::conflict && calls == 2 &&
+              Json::parse(conflict.body()) ==
+                  Json{{"reason", "A program named Plate 2.ngc exists already."},
+                       {"localization",
+                        {{"key", "backend.programEdit.exists"},
+                         {"params", {{"name", "Plate 2.ngc"}}}}}},
           "A writer refusal is reported to the browser");
 }
 
@@ -249,7 +268,8 @@ void test(const std::filesystem::path& root, std::string_view discovered,
   const auto host = "127.0.0.1" + suffix;
   const auto alias = aliases.front() + suffix;
   net::io_context io;
-  require(upload(io, port, host, "http://" + host, "sample.ngc") == http::status::method_not_allowed,
+  require(upload(io, port, host, "http://" + host, "sample.ngc").result() ==
+              http::status::method_not_allowed,
           "The default viewer has no upload route");
   const auto ipv6 = net::ip::address_v6::loopback();
   const auto host6 = "[::1]" + suffix;

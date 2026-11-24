@@ -2,6 +2,7 @@
 #define COFFEECNC_REMOTE_SERVER_HPP
 
 #include <coffeecnc/app/status_publisher.hpp>
+#include <coffeecnc/core/message_key.hpp>
 
 #include <cstdint>
 #include <expected>
@@ -17,8 +18,8 @@ namespace coffeecnc {
 // worker through the supplied callback.
 class RemoteServer {
 public:
-  using Upload = std::function<std::expected<void, std::string>(std::string_view, std::string_view,
-                                                               bool)>;
+  using Upload =
+      std::function<std::expected<void, LocalizedReason>(std::string_view, std::string_view, bool)>;
   RemoteServer(const std::string& ui_directory, std::uint16_t port,
                std::span<const std::string> aliases = {}, Upload upload = {});
   ~RemoteServer();

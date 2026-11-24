@@ -3029,7 +3029,10 @@ void uploads_do_not_replace_the_running_program() {
   port.script["open_program"].push_back({ActionStatus::failed, "LinuxCNC refused the open."});
   const auto failed = publish(part);
   require(!failed && published == 3 &&
-              failed.error() == "Saved on disk, but not reopened. LinuxCNC refused the open.",
+              failed.error().text ==
+                  "Saved on disk, but not reopened. LinuxCNC refused the open." &&
+              failed.error().localization == MessageKey{"messages.session.savedNotReopened",
+                                                        {{"detail", "LinuxCNC refused the open."}}},
           "A failed reopen reports the successful disk publication");
 }
 

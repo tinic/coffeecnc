@@ -71,7 +71,7 @@ auto Runtime::submit(PageToken page, std::string_view json, std::chrono::millise
 auto Runtime::loaded_program() const -> std::string { return session_.loaded_program(); }
 
 auto Runtime::publish_program(const std::string& path, const Session::Publication& publish)
-    -> std::expected<void, std::string> {
+    -> std::expected<void, LocalizedReason> {
   return session_.publish_program(path, publish).get();
 }
 

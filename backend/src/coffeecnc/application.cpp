@@ -650,20 +650,21 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
     try {
       RemoteServer::Upload upload;
       if (config->remote_upload) {
-        upload = [&](std::string_view name, std::string_view bytes, bool replace)
-            -> std::expected<void, std::string> {
+        upload = [&](std::string_view name, std::string_view bytes,
+                     bool replace) -> std::expected<void, LocalizedReason> {
           auto* target = upload_runtime.load();
           if (target == nullptr)
-            return std::unexpected("CoffeeCNC is starting.");
+            return std::unexpected(LocalizedReason{"CoffeeCNC is starting.",
+                                                   MessageKey{"backend.programFiles.starting"}});
           ProgramWriter::Publish publish;
           if (replace) {
             publish = [target](const std::string& path, const ProgramWriter::Commit& commit)
-                -> std::expected<void, std::string> {
+                -> std::expected<void, LocalizedReason> {
               return target->publish_program(path, commit);
             };
           }
           if (auto written = upload_writer.receive(name, bytes, replace, publish); !written)
-            return std::unexpected(written.error().text);
+            return std::unexpected(std::move(written.error()));
           return {};
         };
       }

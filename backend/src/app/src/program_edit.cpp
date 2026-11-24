@@ -316,19 +316,21 @@ auto ProgramWriter::write_new(ProgramStore::NewProgram target, std::string_view 
     step = files_.write(bytes);
   if (step)
     step = files_.sync();
-  if (step)
-    step = publish ? publish(target.path, commit) : commit();
-  if (!step && !committed) {
+  const auto unkeyed = [](std::string error) { return LocalizedReason{std::move(error)}; };
+  auto written = std::move(step).transform_error(unkeyed);
+  if (written)
+    written = publish ? publish(target.path, commit) : commit().transform_error(unkeyed);
+  if (!written && !committed) {
     files_.discard(temporary);
-    return std::unexpected(
-        LocalizedReason{std::format("The program could not be saved: {}", step.error()),
-                        MessageKey{"backend.programEdit.notSaved", {{"detail", step.error()}}}});
+    return std::unexpected(LocalizedReason{
+        std::format("The program could not be saved: {}", written.error().text),
+        MessageKey{"backend.programEdit.notSaved", {{"detail", written.error().text}}}});
   }
   if (!replace)
     files_.discard(temporary);
   auto synced = files_.sync_directory(directory);
-  if (!step)
-    return std::unexpected(LocalizedReason{std::move(step.error())});
+  if (!written)
+    return std::unexpected(std::move(written.error()));
   if (!synced)
     return std::unexpected(LocalizedReason{
         std::format("Saved on disk. Directory synchronization failed. {}", synced.error()),

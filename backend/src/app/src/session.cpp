@@ -401,7 +401,8 @@ void Session::close() {
   const std::scoped_lock lock{mutex_};
   closing_ = true;
   if (publication_) {
-    publication_->result.set_value(std::unexpected("CoffeeCNC is closing."));
+    publication_->result.set_value(std::unexpected(
+        LocalizedReason{"CoffeeCNC is closing.", MessageKey{"backend.programFiles.closing"}}));
     publication_.reset();
   }
   problems_.clear();
@@ -694,14 +695,16 @@ auto Session::loaded_program() const -> std::string {
 }
 
 auto Session::publish_program(std::string path, Publication publish)
-    -> std::future<std::expected<void, std::string>> {
+    -> std::future<std::expected<void, LocalizedReason>> {
   ProgramPublication request{std::move(path), std::move(publish), {}};
   auto result = request.result.get_future();
   const std::scoped_lock lock{mutex_};
   if (closing_) {
-    request.result.set_value(std::unexpected("CoffeeCNC is closing."));
+    request.result.set_value(std::unexpected(
+        LocalizedReason{"CoffeeCNC is closing.", MessageKey{"backend.programFiles.closing"}}));
   } else if (publication_) {
-    request.result.set_value(std::unexpected("Another program upload is in progress."));
+    request.result.set_value(std::unexpected(LocalizedReason{
+        "Another program upload is in progress.", MessageKey{"backend.programFiles.busy"}}));
   } else {
     publication_.emplace(std::move(request));
     wake();
@@ -901,7 +904,9 @@ void Session::publish_program(ProgramPublication& request, const Clock& clock) {
     return std::pair{status(clock().monotonic), epoch_};
   }();
   if (observed.link != Link::live) {
-    request.result.set_value(std::unexpected("Cannot verify the loaded program while the controller is offline."));
+    request.result.set_value(std::unexpected(
+        LocalizedReason{"Cannot verify the loaded program while the controller is offline.",
+                        MessageKey{"backend.programFiles.verify"}}));
     return;
   }
   const auto active = [](const ControllerState& state) -> bool {
@@ -918,10 +923,12 @@ void Session::publish_program(ProgramPublication& request, const Clock& clock) {
             started_program_.source.inputs->program_file == request.path));
   };
   if (using_file(controller) || using_file(observed)) {
-    request.result.set_value(std::unexpected("Stop the loaded program before replacing it."));
+    request.result.set_value(std::unexpected(LocalizedReason{
+        "Stop the loaded program before replacing it.", MessageKey{"backend.programFiles.stop"}}));
     return;
   }
-  auto published = request.publish();
+  auto published = request.publish().transform_error(
+      [](std::string error) { return LocalizedReason{std::move(error)}; });
   if (published) {
     const auto now = port_.snapshot();
     if (loaded(now)) {
@@ -934,7 +941,9 @@ void Session::publish_program(ProgramPublication& request, const Clock& clock) {
       const auto reopened = active(now) ? ActionResult{ActionStatus::failed, "The program is running."}
                                         : port_.open_program(request.path, reopen_current);
       if (reopened.status != ActionStatus::accepted)
-        published = std::unexpected("Saved on disk, but not reopened. " + reopened.reason);
+        published = std::unexpected(LocalizedReason{
+            std::format("Saved on disk, but not reopened. {}", reopened.reason),
+            MessageKey{"messages.session.savedNotReopened", {{"detail", reopened.reason}}}});
     }
   }
   request.result.set_value(std::move(published));

@@ -98,7 +98,9 @@ void pages_and_snapshots() {
   const auto& preview = sent.messages.at(3);
   require(preview.at("state") == "unavailable" && preview.at("segments").empty() &&
               preview.at("context") == sent.context() &&
-              preview.at("error").at("text") == PanelComposer::no_preview_reason,
+              preview.at("error").at("text") == PanelComposer::no_preview_reason &&
+              preview.at("error").at("localization") ==
+                  Json{{"key", "messages.panelFeed.noPreview"}, {"params", Json::object()}},
           "The preview is unavailable for the status's context, and says why");
   sent = compose(composer, r);
   require(sent.types == Types{"status"} && sent.last().at("seq") == 2,

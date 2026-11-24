@@ -166,9 +166,16 @@ auto unconfigured_tapping(const PreviewSettings& settings, std::string_view byte
     return {};
   const std::string reason = "G33.1 rigid tapping is not configured on this machine.";
   return SnapshotFailure{
-      false, subroutine.empty() ? PreviewError{*line, std::format("Line {}: {}", *line, reason)}
-                                : PreviewError{0, std::format("{}.ngc line {}: {}",
-                                                              subroutine, *line, reason)},
+      false,
+      subroutine.empty()
+          ? PreviewError{*line, std::format("Line {}: {}", *line, reason),
+                         MessageKey{"backend.previewEngine.lineError",
+                                    {{"line", std::to_string(*line)}, {"detail", reason}}}}
+          : PreviewError{0, std::format("{}.ngc line {}: {}", subroutine, *line, reason),
+                         MessageKey{"backend.previewEngine.subroutineError",
+                                    {{"name", std::string(subroutine)},
+                                     {"line", std::to_string(*line)},
+                                     {"detail", reason}}}},
       true};
 }
 
@@ -178,15 +185,21 @@ auto unconfigured_tapping(const PreviewSettings& settings, std::string_view byte
 auto take_snapshot(const PreviewSettings& settings, const std::string& program,
                    const Cancelled& cancelled, const Lookups& lookups)
     -> std::expected<Manifest, SnapshotFailure> {
-  const auto refused = [](int line, std::string text) -> std::unexpected<SnapshotFailure> {
-    return std::unexpected(SnapshotFailure{false, PreviewError{line, std::move(text)}});
+  const auto refused = [](int line, std::string text,
+                          MessageKey localization) -> std::unexpected<SnapshotFailure> {
+    return std::unexpected(
+        SnapshotFailure{false, PreviewError{line, std::move(text), std::move(localization)}});
   };
   Manifest manifest;
   auto bytes = read_file(program, settings.max_input_bytes);
-  if (!bytes)
-    return refused(0, std::format("The program cannot be read for a preview, or is larger than "
-                                  "{}.",
-                                  megabytes(settings.max_input_bytes)));
+  if (!bytes) {
+    const auto size = megabytes(settings.max_input_bytes);
+    return refused(0,
+                   std::format("The program cannot be read for a preview, or is larger than "
+                               "{}.",
+                               size),
+                   MessageKey{"backend.previewEngine.cannotRead", {{"size", size}}});
+  }
   if (auto tap = unconfigured_tapping(settings, *bytes, {}, cancelled))
     return std::unexpected(std::move(*tap));
   // Nothing with a comment that runs Python or writes a file, or with an O word that is not
@@ -194,7 +207,9 @@ auto take_snapshot(const PreviewSettings& settings, const std::string& program,
   // also in lines it never executes.
   if (const auto found = first_forbidden_line(*bytes))
     return refused(found->line,
-                   std::format("The preview ends at line {}: {}.", found->line, found->what));
+                   std::format("The preview ends at line {}: {}.", found->line, found->what),
+                   MessageKey{"backend.previewEngine.endsAtLine",
+                              {{"line", std::to_string(found->line)}, {"detail", found->what}}});
   std::size_t total = bytes->size();
   manifest.program = {program, "program.ngc", std::move(*bytes)};
   std::set<std::string> seen;
@@ -207,9 +222,12 @@ auto take_snapshot(const PreviewSettings& settings, const std::string& program,
     if (called.cancelled)
       return std::unexpected(SnapshotFailure{true, {}});
     if (called.too_many)
-      return refused(0, std::format("The program calls more than {} different subroutines: no "
-                                    "preview.",
-                                    settings.max_calls));
+      return refused(0,
+                     std::format("The program calls more than {} different subroutines: no "
+                                 "preview.",
+                                 settings.max_calls),
+                     MessageKey{"backend.previewEngine.tooManySubroutines",
+                                {{"limit", std::to_string(settings.max_calls)}}});
     const auto& names = called.names;
     for (const auto& name : names) {
       if (!seen.insert(name).second)
@@ -221,18 +239,29 @@ auto take_snapshot(const PreviewSettings& settings, const std::string& program,
       if (found.empty())
         continue;
       if (manifest.subroutines.size() + 2 > settings.max_files)
-        return refused(0, std::format("The program uses more than {} files: no preview.",
-                                      settings.max_files));
+        return refused(
+            0, std::format("The program uses more than {} files: no preview.", settings.max_files),
+            MessageKey{"backend.previewEngine.tooManyFiles",
+                       {{"limit", std::to_string(settings.max_files)}}});
       auto text = read_file(found, settings.max_input_bytes - total);
-      if (!text)
-        return refused(0, std::format("The program and its subroutine files cannot be read, or "
-                                      "are larger than {} together: no preview.",
-                                      megabytes(settings.max_input_bytes)));
+      if (!text) {
+        const auto size = megabytes(settings.max_input_bytes);
+        return refused(0,
+                       std::format("The program and its subroutine files cannot be read, or "
+                                   "are larger than {} together: no preview.",
+                                   size),
+                       MessageKey{"backend.previewEngine.subroutinesUnreadable", {{"size", size}}});
+      }
       if (auto tap = unconfigured_tapping(settings, *text, name, cancelled))
         return std::unexpected(std::move(*tap));
       if (const auto forbidden = first_forbidden_line(*text))
-        return refused(0, std::format("No preview: {}.ngc line {}: {}.", name, forbidden->line,
-                                      forbidden->what));
+        return refused(
+            0,
+            std::format("No preview: {}.ngc line {}: {}.", name, forbidden->line, forbidden->what),
+            MessageKey{"backend.previewEngine.subroutineForbidden",
+                       {{"name", name},
+                        {"line", std::to_string(forbidden->line)},
+                        {"detail", forbidden->what}}});
       total += text->size();
       manifest.subroutines.push_back({std::move(found), name + ".ngc", std::move(*text)});
     }
@@ -288,7 +317,7 @@ struct StartState {
   std::string inherited_motion;
   std::string tool_length; // G43, G43.1, G43.2 or G49, as task has it
 };
-auto start_state(const InterpreterStart& start) -> std::expected<StartState, std::string> {
+auto start_state(const InterpreterStart& start) -> std::expected<StartState, PreviewError> {
   StartState state;
   std::string units;
   std::string plane;
@@ -348,12 +377,16 @@ auto start_state(const InterpreterStart& start) -> std::expected<StartState, std
     case 171:
     case 181:
     case 191:
-      return std::unexpected(std::format("A UVW plane ({}) is active: no preview.", code));
+      return std::unexpected(
+          PreviewError{0, std::format("A UVW plane ({}) is active: no preview.", code),
+                       MessageKey{"backend.previewEngine.uvwPlane", {{"code", code}}}});
     case 410:
     case 411:
     case 420:
     case 421:
-      return std::unexpected(std::format("Cutter compensation ({}) is active: no preview.", code));
+      return std::unexpected(
+          PreviewError{0, std::format("Cutter compensation ({}) is active: no preview.", code),
+                       MessageKey{"backend.previewEngine.cutterCompensation", {{"code", code}}}});
     case 20:
     case 30:
     case 50:
@@ -659,27 +692,26 @@ auto run_helper(const PreviewSettings& settings, const fs::path& directory,
   return run;
 }
 
-auto failed(int line, std::string text) -> PreviewOutcome {
+auto failed(PreviewError error) -> PreviewOutcome {
   PreviewOutcome outcome;
   outcome.state = PreviewState::failed;
-  outcome.error = PreviewError{line, std::move(text)};
+  outcome.error = std::move(error);
   return outcome;
 }
 
 auto snapshot_rejection(const SnapshotFailure& failure) -> PreviewComputation {
   if (failure.cancelled)
     return {{}, true, {}};
-  auto outcome = failed(failure.error.line, failure.error.text);
+  auto outcome = failed(failure.error);
   if (failure.blocks_run)
     outcome.check.emplace().errors.push_back(failure.error.text);
   return {std::move(outcome), false, {}};
 }
 
-auto unavailable(std::string text) -> PreviewOutcome {
+auto unavailable(std::optional<PreviewError> error) -> PreviewOutcome {
   PreviewOutcome outcome;
   outcome.state = PreviewState::unavailable;
-  if (!text.empty())
-    outcome.error = PreviewError{0, std::move(text)};
+  outcome.error = std::move(error);
   return outcome;
 }
 
@@ -781,7 +813,8 @@ auto program_check(const PreviewSettings& settings, const PreviewInputs& inputs,
 auto outcome_of(const PreviewSettings& settings, const PreviewInputs& inputs, HelperRun& run,
                 int program_lines, const CheckToolFiles& files) -> PreviewOutcome {
   if (run.how == HelperExit::not_started)
-    return unavailable("The preview program could not be started.");
+    return unavailable(PreviewError{0, "The preview program could not be started.",
+                                    MessageKey{"backend.previewEngine.notStarted"}});
   auto output = parse_output(run.result, {settings.max_points + 2, program_lines});
   PreviewOutcome outcome;
   outcome.segments = std::move(output.segments);
@@ -791,39 +824,54 @@ auto outcome_of(const PreviewSettings& settings, const PreviewInputs& inputs, He
   const bool exited = run.how == HelperExit::by_itself && WIFEXITED(run.status);
   const bool well = exited && WEXITSTATUS(run.status) == 0;
   // How the helper ended, when that is what there is to say.
-  const auto ending = [&]() -> std::string {
+  const auto ending = [&]() -> PreviewError {
     const auto seconds =
         std::chrono::duration_cast<std::chrono::seconds>(settings.timeout).count();
     switch (run.how) {
     case HelperExit::timed_out:
-      return std::format("The preview took longer than {} s and was ended; the program may "
-                         "loop without end. The path is shown as far as it was computed.",
-                         seconds);
+      return {0,
+              std::format("The preview took longer than {} s and was ended; the program may "
+                          "loop without end. The path is shown as far as it was computed.",
+                          seconds),
+              MessageKey{"backend.previewEngine.timedOut", {{"seconds", std::to_string(seconds)}}}};
     case HelperExit::too_much:
-      return "The preview wrote more than its limit and was ended.";
+      return {0, "The preview wrote more than its limit and was ended.",
+              MessageKey{"backend.previewEngine.tooMuchOutput"}};
     case HelperExit::never_ended:
-      return "The preview program closed its result and did not end; it was ended.";
+      return {0, "The preview program closed its result and did not end; it was ended.",
+              MessageKey{"backend.previewEngine.neverEnded"}};
     case HelperExit::by_itself:
-      if (WIFSIGNALED(run.status))
-        return WTERMSIG(run.status) == SIGXCPU
-                   ? std::string("The preview used more processor time than its limit and was "
-                                 "ended; the program may loop without end.")
-                   : std::format("The preview program was ended by signal {}.",
-                                 WTERMSIG(run.status));
-      if (!well)
-        return std::format("The preview program ended with exit code {}.",
-                           WEXITSTATUS(run.status));
-      return "The preview program ended without finishing its result; the path is shown as "
-             "far as it was received.";
+      if (WIFSIGNALED(run.status)) {
+        const int signal = WTERMSIG(run.status);
+        if (signal == SIGXCPU)
+          return {0,
+                  "The preview used more processor time than its limit and was "
+                  "ended; the program may loop without end.",
+                  MessageKey{"backend.previewEngine.processorTime"}};
+        return {0, std::format("The preview program was ended by signal {}.", signal),
+                MessageKey{"backend.previewEngine.signal", {{"signal", std::to_string(signal)}}}};
+      }
+      if (!well) {
+        const int code = WEXITSTATUS(run.status);
+        return {0, std::format("The preview program ended with exit code {}.", code),
+                MessageKey{"backend.previewEngine.exitCode", {{"code", std::to_string(code)}}}};
+      }
+      return {0,
+              "The preview program ended without finishing its result; the path is shown as "
+              "far as it was received.",
+              MessageKey{"backend.previewEngine.unfinished"}};
     default:
-      return "The preview program did not run to its end.";
+      return {0, "The preview program did not run to its end.",
+              MessageKey{"backend.previewEngine.didNotRun"}};
     }
   };
   if (!output.defect.empty())
     outcome.error = PreviewError{
-        0, std::format("The preview program's result is not valid ({}); the path is shown as "
-                       "far as it was.",
-                       output.defect)};
+        0,
+        std::format("The preview program's result is not valid ({}); the path is shown as "
+                    "far as it was.",
+                    output.defect),
+        MessageKey{"backend.previewEngine.invalidResult", {{"detail", output.defect}}}};
   else if (output.end == HelperEnd::ok && well) {
     outcome.state = PreviewState::ready;
     outcome.restart = output.restart;
@@ -833,15 +881,18 @@ auto outcome_of(const PreviewSettings& settings, const PreviewInputs& inputs, He
     // The interpreter's own error, with its line: that is the reason, however the helper
     // ended after it.
     outcome.error = std::move(output.problem);
-  else if ((output.end == HelperEnd::stop || output.end == HelperEnd::cut) && output.problem)
+  else if ((output.end == HelperEnd::stop || output.end == HelperEnd::cut) && output.problem) {
+    const auto& problem = *output.problem;
+    const bool cut = output.end == HelperEnd::cut;
     outcome.error = PreviewError{
-        output.problem->line,
-        output.end == HelperEnd::cut
-            ? std::format("Line {}: {}.", output.problem->line, output.problem->text)
-            : std::format("The preview ends at line {}: {}.", output.problem->line,
-                          output.problem->text)};
-  else
-    outcome.error = PreviewError{0, ending()};
+        problem.line,
+        cut ? std::format("Line {}: {}.", problem.line, problem.text)
+            : std::format("The preview ends at line {}: {}.", problem.line, problem.text),
+        MessageKey{cut ? "backend.previewEngine.lineErrorStop" : "backend.previewEngine.endsAtLine",
+                   {{"line", std::to_string(problem.line)}, {"detail", problem.text}}}};
+  } else {
+    outcome.error = ending();
+  }
   if (!inputs.restart_line)
     outcome.check = program_check(settings, inputs, output, outcome, files);
   return outcome;
@@ -874,7 +925,9 @@ auto load_preview_settings(const MachineConfig& config, std::string helper,
     settings.touched_off_file = config.touched_off_file();
   }
   if (std::ranges::any_of(config.rotary_joints, [](const auto& joints) { return !joints.empty(); })) {
-    settings.refusal = "Program preview and line restart are unavailable on rotary configurations.";
+    settings.refusal = PreviewError{
+        0, "Program preview and line restart are unavailable on rotary configurations.",
+        MessageKey{"backend.previewEngine.rotary"}};
     return settings;
   }
   auto& soft = settings.soft_travel.emplace();
@@ -890,7 +943,8 @@ auto load_preview_settings(const MachineConfig& config, std::string helper,
 
   IniFile ini;
   if (!ini.Open(config.ini_file.c_str())) {
-    settings.refusal = "The machine's INI file cannot be read for the preview.";
+    settings.refusal = PreviewError{0, "The machine's INI file cannot be read for the preview.",
+                                    MessageKey{"backend.previewEngine.iniUnreadable"}};
     return settings;
   }
   const auto text = [&](const char* section, const char* key) -> std::optional<std::string> {
@@ -958,12 +1012,17 @@ auto load_preview_settings(const MachineConfig& config, std::string helper,
     }
   }
   if (positive("EMCIO", "RANDOM_TOOLCHANGER"))
-    settings.refusal = "This machine has a random tool changer: no preview is computed.";
+    settings.refusal =
+        PreviewError{0, "This machine has a random tool changer: no preview is computed.",
+                     MessageKey{"backend.previewEngine.randomToolChanger"}};
   else if (positive("RS274NGC", "NO_DOWNCASE_OWORD"))
-    settings.refusal = "This machine keeps the case of O word names ([RS274NGC] "
-                       "NO_DOWNCASE_OWORD): no preview is computed.";
+    settings.refusal = PreviewError{0,
+                                    "This machine keeps the case of O word names ([RS274NGC] "
+                                    "NO_DOWNCASE_OWORD): no preview is computed.",
+                                    MessageKey{"backend.previewEngine.oWordCase"}};
   else if (settings.helper.empty() || access(settings.helper.c_str(), X_OK) != 0)
-    settings.refusal = "The preview program (coffeecnc-preview) is not installed.";
+    settings.refusal = PreviewError{0, "The preview program (coffeecnc-preview) is not installed.",
+                                    MessageKey{"backend.previewEngine.notInstalled"}};
   return settings;
 }
 
@@ -979,19 +1038,20 @@ auto HelperPreviewEngine::compute(const PreviewInputs& inputs,
     return {unavailable(settings_.refusal), false, {}};
   if (is_cancelled(cancelled))
     return {{}, true, {}};
-  const auto without_preview = [&](std::string reason) -> PreviewComputation {
+  const auto without_preview = [&](PreviewError error) -> PreviewComputation {
     if (!settings_.rigid_tap) {
       const auto source = take_snapshot(settings_, *inputs.program_file, cancelled, lookups_);
       if (!source && (source.error().cancelled || source.error().blocks_run))
         return snapshot_rejection(source.error());
     }
-    return {unavailable(std::move(reason)), false, {}};
+    return {unavailable(std::move(error)), false, {}};
   };
-  if (!settings_.refusal.empty())
-    return without_preview(settings_.refusal);
+  if (settings_.refusal)
+    return without_preview(*settings_.refusal);
   const int wcs = inputs.start.wcs;
   if (wcs < 1 || wcs > 9 || !inputs.systems.at(static_cast<std::size_t>(wcs - 1)).available)
-    return without_preview("The offsets of the active work system are not known: no preview.");
+    return without_preview({0, "The offsets of the active work system are not known: no preview.",
+                            MessageKey{"backend.previewEngine.offsetsUnknown"}});
   const auto start = start_state(inputs.start);
   if (!start)
     return without_preview(start.error());
@@ -1094,8 +1154,11 @@ auto HelperPreviewEngine::compute(const PreviewInputs& inputs,
     if (directory.path().empty() || !plain_path(directory.path().string()) ||
         !fs::create_directory(programs, error) || !fs::create_directory(subroutines, error) ||
         !fs::create_directory(working, error))
-      return {unavailable("No directory for the preview's files could be made, or its path "
-                          "has characters the interpreter would expand."),
+      return {unavailable(
+                  PreviewError{0,
+                               "No directory for the preview's files could be made, or its path "
+                               "has characters the interpreter would expand.",
+                               MessageKey{"backend.previewEngine.noDirectory"}}),
               false,
               {}};
     bool written = write_file(programs / manifest->program.name, manifest->program.bytes);
@@ -1114,7 +1177,10 @@ auto HelperPreviewEngine::compute(const PreviewInputs& inputs,
                          ini_text(settings_, subroutines.string(), saved.g30)) &&
               write_file(request_file, write_request(request));
     if (!written)
-      return {unavailable("The preview's files could not be written."), false, {}};
+      return {unavailable(PreviewError{0, "The preview's files could not be written.",
+                                       MessageKey{"backend.previewEngine.filesNotWritten"}}),
+              false,
+              {}};
     if (after_snapshot_)
       after_snapshot_(attempt);
 
@@ -1142,9 +1208,12 @@ auto HelperPreviewEngine::compute(const PreviewInputs& inputs,
       return {{}, true, {}};
     return {std::move(outcome), false, std::move(changed), {manifest, &manifest->program.bytes}};
   }
-  return {failed(0, std::format("The program or one of its subroutine files changed on disk "
-                                "during each of {} computations: no preview.",
-                                settings_.attempts)),
+  return {failed({0,
+                  std::format("The program or one of its subroutine files changed on disk "
+                              "during each of {} computations: no preview.",
+                              settings_.attempts),
+                  MessageKey{"backend.previewEngine.changedDuring",
+                             {{"runs", std::to_string(settings_.attempts)}}}}),
           false, watch(last, last_tools)};
 }
 

@@ -22,6 +22,7 @@ const adapter = import.meta.glob<string>([
   '../../backend/src/core/include/coffeecnc/core/jog_stop_report.hpp',
   '../../backend/src/linuxcnc/src/nml_port.cpp',
   '../../backend/src/linuxcnc/src/nml_panel_source.cpp',
+  '../../backend/src/linuxcnc/src/preview_engine.cpp',
 ], { query: '?raw', import: 'default', eager: true })
 /** Panel modules whose English reaches the operator as run-time text (a result reason, an import error). */
 const modules = import.meta.glob<string>(['../src/bridge.ts', '../src/step.worker.ts', '../src/step-model.ts'],

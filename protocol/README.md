@@ -64,6 +64,8 @@ A hello with a different protocol version puts the panel in an incompatible conn
 
 A rejected `result` may include `refusal`. Operator `message` records, results with an operator message, `alarm_log.entries`, `preview.error`, and `operator_settings` may include `localization` with the same shape. Each carries a catalog `key` and `params`, an object of named string arguments. Static messages use an empty object. English `reason` and `text` continue to be sent. The panel translates by key when it recognizes the key and its expected arguments. It uses the fallback text for older peers, unknown keys, and invalid arguments. The alarm log retains the optional metadata across reloads with the same version 1 format.
 
+A message can also include `params_localization` alongside `key` and `params`. Each member names a string already present in `params` and carries a `key` with string `params` for that argument. The panel translates one level of arguments and falls back to the original argument when its metadata is absent or invalid. An ignored request with no usable ID uses this field for the decoder's explanation.
+
 Program Check keeps its English `errors` and `warnings` arrays and may also send `errors_localization` or `warnings_localization`. Entries in these arrays match the corresponding English array by position. A null entry uses its English fallback.
 
 When the decoder has a catalog key and an unambiguous request ID, the rejected result carries the key. Field names are supplied as text parameters. Invalid requests without a usable ID are reported with the `messages.session.requestIgnored` operator message and its detail.

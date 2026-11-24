@@ -1059,6 +1059,19 @@ const examples = [
     }
   },
   {
+    "type": "message",
+    "level": "error",
+    "text": "Panel request ignored: Missing required field: id.",
+    "time": 1700000001200,
+    "localization": {
+      "key": "messages.session.requestIgnored",
+      "params": { "detail": "Missing required field: id." },
+      "params_localization": {
+        "detail": { "key": "messages.request.missingField", "params": { "field": "id" } }
+      }
+    }
+  },
+  {
     "type": "result",
     "id": 41,
     "outcome": "accepted",

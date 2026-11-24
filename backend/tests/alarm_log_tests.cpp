@@ -148,24 +148,35 @@ void localization_survives_reload() {
   const MessageKey contact{"backend.jogStop.probeContact"};
   const RefusalMessage refusal{"messages.policy.jogVelocityAxisLimit",
                                {{"axis", "Z"}, {"limit", "750"}}};
+  const MessageKey ignored{"messages.session.requestIgnored",
+                           {{"detail", "Missing required field: id."}},
+                           {{"detail", {"messages.request.missingField", {{"field", "id"}}}}}};
   const std::vector messages{
       encode_message(MessageLevel::info, "Jog stopped: probe contact", epoch, contact),
       encode_result(1, CommandOutcome::rejected,
                     "Jog velocity is above the Z axis limit of 750 mm/min.", {}, {}, refusal),
+      encode_message(MessageLevel::error, "Panel request ignored: Missing required field: id.",
+                     epoch, ignored),
       std::string{
-          R"({"type":"message","level":"error","text":"Keep this text","localization":{"key":"invalid","params":{"x":7}}})"}};
+          R"({"type":"message","level":"error","text":"Keep this text","localization":{"key":"invalid","params":{"x":7}}})"},
+      std::string{
+          R"({"type":"message","level":"error","text":"Panel request ignored: Bad packet.","localization":{"key":"messages.session.requestIgnored","params":{"detail":"Bad packet."},"params_localization":{"detail":{"key":"messages.request.missingField","params":{"field":7}}}}})"}};
   f.log->posted(page, messages, epoch);
   f.log->settle();
   f.open();
   const auto view = f.log->view();
-  require(view.entries.size() == 4 && view.skipped == 0, "Both older and localized records reload");
+  require(view.entries.size() == 6 && view.skipped == 0, "Both older and localized records reload");
   require(!view.entries[0].localization && view.entries[1].localization == contact &&
-              view.entries[2].localization == refusal && !view.entries[3].localization &&
-              view.entries[3].text == "Keep this text",
+              view.entries[2].localization == refusal && view.entries[3].localization == ignored &&
+              !view.entries[4].localization && view.entries[4].text == "Keep this text" &&
+              view.entries[5].localization ==
+                  MessageKey{"messages.session.requestIgnored", {{"detail", "Bad packet."}}},
           "Known metadata survives reload and invalid metadata does not discard English text");
   const auto wire = Json::parse(encode_alarm_log(view)).at("entries");
   require(wire[1].at("localization").at("key") == contact.key &&
-              wire[2].at("localization").at("params").at("axis") == "Z",
+              wire[2].at("localization").at("params").at("axis") == "Z" &&
+              wire[3].at("localization").at("params_localization").at("detail") ==
+                  Json{{"key", "messages.request.missingField"}, {"params", {{"field", "id"}}}},
           "The alarm log provides keys and arguments to the next page");
 }
 

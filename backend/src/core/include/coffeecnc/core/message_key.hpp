@@ -7,10 +7,18 @@
 
 namespace coffeecnc {
 
+// A named argument may itself come from the catalog. Its fallback remains a string in params.
+struct MessageParameterKey {
+  std::string key;
+  std::map<std::string, std::string> params{};
+  friend auto operator==(const MessageParameterKey&, const MessageParameterKey&) -> bool = default;
+};
+
 // A catalog key and named arguments, carried alongside English fallback text.
 struct MessageKey {
   std::string key;
   std::map<std::string, std::string> params{};
+  std::map<std::string, MessageParameterKey> params_localization{};
   friend auto operator==(const MessageKey&, const MessageKey&) -> bool = default;
 };
 

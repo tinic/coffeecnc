@@ -171,7 +171,8 @@ describe('capability-aware controls', () => {
     expect(wrapper.get('.state-pill').text()).toBe('Program running')
     s.interp = 'paused'
     s.wait = { kind: 'paused' }
-    s.paused_z = { offset: 0, max_lift: 10, displaced: false, reason: 'Stop the spindle before jogging Z.', spindle: 'can_stop' }
+    s.paused_z = { offset: 0, max_lift: 10, displaced: false, reason: 'Older paused-Z instruction.',
+      spindle: 'can_stop', localization: { key: 'backend.nmlStatus.stopSpindle', params: {} } }
     await nextTick()
     expect(wrapper.get('.machine-state').text()).toBe('Stop the spindle before jogging Z.')
     panel.tab = 'manual'

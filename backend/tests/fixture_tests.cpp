@@ -204,6 +204,13 @@ auto encoded_messages() -> std::vector<Encoded> {
   paused.wait = WaitPaused{};
   paused.active_codes = {"G1", "G54", "G93", "M4"};
   paused.probe_input = false;
+  paused.paused_z = PausedZStatus{0,
+                                  20,
+                                  false,
+                                  true,
+                                  "Pause a running program before jogging Z.",
+                                  PausedSpindle::none,
+                                  MessageKey{"backend.nmlStatus.pauseFirst"}};
   for (auto& a : paused.axes) {
     a.reference_mark = false;
     a.at_reference_mark = false;

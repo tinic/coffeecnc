@@ -4718,8 +4718,14 @@ void paused_z_jog(Rig& rig) {
   if (!at_pause("M5"))
     return;
   const auto lift_without_home = rig.send(lift);
+  const auto show_home_first = [&]() {
+    const auto z = rig.status().controller.paused_z;
+    return z && z->localization == MessageKey{"backend.nmlStatus.homeFirst"};
+  };
   check("paused_z_requires_homing",
-        !lift_without_home.accepted() && lift_without_home.reason.find("Home all axes") != std::string::npos,
+        !lift_without_home.accepted() &&
+            lift_without_home.reason.find("Home all axes") != std::string::npos &&
+            rig.pump_until(2s, show_home_first),
         lift_without_home.text());
   rig.send(stop);
   for (const auto axis : {"x", "y", "z"}) {

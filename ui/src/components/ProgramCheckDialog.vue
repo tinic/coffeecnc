@@ -36,8 +36,8 @@ function range(min: number, max: number, format: (value: number) => string): str
         <div>
           <strong>{{ check.errors.length ? t('program.checkDialog.blocked') : t('program.checkDialog.review') }}</strong>
           <ul>
-            <li v-for="issue in check.errors" :key="issue">{{ translateMessage(issue) }}</li>
-            <li v-for="issue in check.warnings" :key="issue">{{ translateMessage(issue) }}</li>
+            <li v-for="(issue, index) in check.errors" :key="issue">{{ translateMessage(issue, check.errors_localization?.[index] ?? undefined) }}</li>
+            <li v-for="(issue, index) in check.warnings" :key="issue">{{ translateMessage(issue, check.warnings_localization?.[index] ?? undefined) }}</li>
           </ul>
         </div>
       </div>

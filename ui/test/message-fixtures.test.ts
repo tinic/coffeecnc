@@ -934,7 +934,37 @@ const examples = [
         "line": 6,
         "seconds": 2
       }
-    ]
+    ],
+    "check": {
+      "tools": [],
+      "frames": [],
+      "feed": null,
+      "spindle": null,
+      "units": [],
+      "travel": "unknown",
+      "errors": [
+        "T3 has no verified length in the tool table."
+      ],
+      "warnings": [
+        "Additional controller check is required.",
+        "Feed per revolution is excluded from the feed range."
+      ],
+      "errors_localization": [
+        {
+          "key": "backend.previewEngine.noVerifiedLength",
+          "params": {
+            "tool": "3"
+          }
+        }
+      ],
+      "warnings_localization": [
+        null,
+        {
+          "key": "backend.previewEngine.feedPerRevolution",
+          "params": {}
+        }
+      ]
+    }
   },
   {
     "type": "preview",

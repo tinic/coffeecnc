@@ -11,7 +11,7 @@
 //   standalone M70/M72 with cutter compensation off, block delete with a leading /.
 // Everything else is an error that names the line and the word. Nothing is skipped silently.
 
-import type { LengthUnit, Preview, PreviewDwell, PreviewSegment, ProgramCheck, SpindleDirection, Tool, Vec3 } from '../protocol'
+import type { LengthUnit, MessageKey, Preview, PreviewDwell, PreviewSegment, ProgramCheck, SpindleDirection, Tool, Vec3 } from '../protocol'
 
 export type AxisIndex = 0 | 1 | 2
 export const axisIndices: readonly AxisIndex[] = [0, 1, 2]
@@ -1111,17 +1111,28 @@ export function previewProgram(modal: Modal, lines: string[], blockDelete: boole
     error = { line: last, text: `line ${String(last)}: file ended with no percent sign or program end (M2 or M30)` }
   }
   if (checks) {
+    const localization: (MessageKey | null)[] = []
+    const addError = (text: string, key: MessageKey | null = null): void => {
+      report.errors.push(text)
+      localization.push(key)
+    }
     for (const tool of usedTools) {
       const value = modal.tools.find((row) => row.number === tool)?.length
       const hasLength = value !== undefined && Number.isFinite(value) && value !== 0
       report.tools.push({ tool, length: hasLength ? 'table' : 'missing' })
-      if (!hasLength) report.errors.push(`T${String(tool)} has no verified length in the tool table.`)
+      if (!hasLength) addError(`T${String(tool)} has no verified length in the tool table.`,
+        { key: 'backend.previewEngine.noVerifiedLength', params: { tool: String(tool) } })
     }
-    if (error) report.errors.push(error.text)
-    if (report.travel === 'outside') report.errors.push('The program exceeds configured machine travel.')
+    if (error) addError(error.text, error.localization)
+    if (report.travel === 'outside') addError('The program exceeds configured machine travel.',
+      { key: 'backend.previewEngine.exceedsTravel', params: {} })
     if (report.spindle && checks.spindleLimit !== undefined && report.spindle.max > checks.spindleLimit) {
-      report.errors.push(`The program requests ${String(report.spindle.max)} rpm. The spindle limit is ${String(checks.spindleLimit)} rpm.`)
+      const requested = String(report.spindle.max)
+      const limit = String(checks.spindleLimit)
+      addError(`The program requests ${requested} rpm. The spindle limit is ${limit} rpm.`,
+        { key: 'backend.previewEngine.spindleLimit', params: { requested, limit } })
     }
+    if (localization.some((key) => key !== null)) report.errors_localization = localization
   }
   return {
     type: 'preview',

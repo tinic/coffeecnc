@@ -530,11 +530,30 @@ auto encode_preview(const Preview& preview) -> Encoded {
                         {"feed", range(check->feed)},
                         {"spindle", range(check->spindle)},
                         {"units", std::move(units)},
-                        {"errors", check->errors},
-                        {"warnings", check->warnings},
                         {"travel", check->travel == TravelCheck::fits      ? "fits"
                                    : check->travel == TravelCheck::outside ? "outside"
                                                                            : "unknown"}};
+    auto& report = message.at("check");
+    const auto issues = [&](const std::string& field,
+                            const std::vector<ProgramCheckIssue>& findings) {
+      auto fallback = Json::array();
+      auto localization = Json::array();
+      bool translated = false;
+      for (const auto& finding : findings) {
+        fallback.push_back(finding.text);
+        if (const auto& key = finding.localization) {
+          localization.push_back({{"key", key->key}, {"params", key->params}});
+          translated = true;
+        } else {
+          localization.push_back(nullptr);
+        }
+      }
+      report[field] = std::move(fallback);
+      if (translated)
+        report[field + "_localization"] = std::move(localization);
+    };
+    issues("errors", check->errors);
+    issues("warnings", check->warnings);
   }
   return fields.finish(message);
 }

@@ -581,6 +581,9 @@ auto encoded_messages() -> std::vector<EncodedMessage> {
   messages.emplace_back(encode_result(55, CommandOutcome::failed,
                                       "LinuxCNC is not waiting for that tool change any more.", {},
                                       {}, {}, MessageKey{"backend.nmlPort.toolChangeGone"}));
+  messages.emplace_back(encode_result(
+      59, CommandOutcome::failed, "Home the machine before jogging Y: two motors drive it.",
+      {}, {}, {}, MessageKey{"messages.policy.homeBeforeGantryJog", {{"axis", "Y"}, {"motors", "two"}}}));
   return messages;
 }
 

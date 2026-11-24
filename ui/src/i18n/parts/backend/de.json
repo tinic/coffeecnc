@@ -277,7 +277,6 @@
       "commandOpenProgram": "das Öffnen des Programms",
       "commandOther": "ein anderer Befehl",
       "cancelledBeforeSent": "Vor dem Senden abgebrochen.",
-      "homeBeforeJogging": "Referenzieren Sie die Maschine vor dem Tippen von {axis}: {motors} Motoren treiben die Achse an.",
       "two": "zwei",
       "spindleToolNotSaved": "Das Spindelwerkzeug konnte für den nächsten Start nicht gespeichert werden.",
       "breakpointPauseNotSaved": "Die Haltepunkt-Pause konnte für die Wiederherstellung der App nicht gespeichert werden.",

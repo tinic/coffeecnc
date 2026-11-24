@@ -277,7 +277,6 @@
       "commandOpenProgram": "opening the program",
       "commandOther": "another command",
       "cancelledBeforeSent": "Cancelled before it was sent.",
-      "homeBeforeJogging": "Home the machine before jogging {axis}: {motors} motors drive it.",
       "two": "two",
       "spindleToolNotSaved": "Could not save the spindle tool for the next startup.",
       "breakpointPauseNotSaved": "Could not save the breakpoint pause for app recovery.",

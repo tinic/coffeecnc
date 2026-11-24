@@ -1692,6 +1692,16 @@ const examples = [
       "key": "backend.nmlPort.toolChangeGone",
       "params": {}
     }
+  },
+  {
+    "type": "result",
+    "id": 59,
+    "outcome": "failed",
+    "reason": "Home the machine before jogging Y: two motors drive it.",
+    "localization": {
+      "key": "messages.policy.homeBeforeGantryJog",
+      "params": { "axis": "Y", "motors": "two" }
+    }
   }
 ] satisfies FromMachine[]
 

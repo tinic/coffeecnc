@@ -277,7 +277,6 @@
       "commandOpenProgram": "l’ouverture du programme",
       "commandOther": "une autre commande",
       "cancelledBeforeSent": "Annulé avant l’envoi.",
-      "homeBeforeJogging": "Référencez la machine avant de jogger {axis} : {motors} moteurs l’entraînent.",
       "two": "deux",
       "spindleToolNotSaved": "Impossible d’enregistrer l’outil en broche pour le prochain démarrage.",
       "breakpointPauseNotSaved": "Impossible d’enregistrer la pause au point d’arrêt pour la récupération de l’application.",

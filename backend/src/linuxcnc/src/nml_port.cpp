@@ -252,12 +252,16 @@ auto joint_of(const MachineConfig& config, Axis axis) -> int {
 }
 
 // A joint jog moves one motor: on an axis with more than one that racks it.
-auto joint_jog_refusal(const MachineConfig& config, Axis axis) -> std::optional<std::string> {
+auto joint_jog_refusal(const MachineConfig& config, Axis axis) -> LocalizedReason {
   const auto motors = config.axis_joints.at(static_cast<std::size_t>(index_of(axis))).size();
   if (motors < 2)
     return {};
-  return std::format("Home the machine before jogging {}: {} motors drive it.",
-                     "XYZ"[index_of(axis)], motors == 2 ? "two" : std::to_string(motors));
+  const std::string axis_name(1, "XYZ"[index_of(axis)]);
+  const auto motor_count = motors == 2 ? "two" : std::to_string(motors);
+  return {std::format("Home the machine before jogging {}: {} motors drive it.", axis_name,
+                      motor_count),
+          MessageKey{"messages.policy.homeBeforeGantryJog",
+                     {{"axis", axis_name}, {"motors", motor_count}}}};
 }
 
 struct ProbeLine {
@@ -1302,8 +1306,9 @@ auto NmlPort::home(std::optional<Axis> axis, const Wanted& wanted) -> ActionResu
 
 auto NmlPort::start_jog(Axis axis, int direction, double velocity, JogSpace space,
                         const Wanted& wanted) -> ActionResult {
-  if (auto refusal = joint_jog_refusal(impl_->config, axis); space == JogSpace::joint && refusal)
-    return failed(*refusal);
+  if (auto refusal = joint_jog_refusal(impl_->config, axis);
+      space == JogSpace::joint && !refusal.empty())
+    return failed(std::move(refusal.text), std::move(refusal.localization));
   const auto from = impl_->begin(&wanted);
   const Impl::Scope scope{*impl_};
   if (!impl_->still())
@@ -1354,8 +1359,9 @@ auto NmlPort::stop_jog(Axis axis) -> ActionResult {
 
 auto NmlPort::jog_increment(Axis axis, double distance, double velocity, JogSpace space,
                             const Wanted& wanted) -> ActionResult {
-  if (auto refusal = joint_jog_refusal(impl_->config, axis); space == JogSpace::joint && refusal)
-    return failed(*refusal);
+  if (auto refusal = joint_jog_refusal(impl_->config, axis);
+      space == JogSpace::joint && !refusal.empty())
+    return failed(std::move(refusal.text), std::move(refusal.localization));
   const auto from = impl_->begin(&wanted);
   const Impl::Scope scope{*impl_};
   if (!impl_->still())

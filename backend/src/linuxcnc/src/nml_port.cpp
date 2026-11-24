@@ -2337,7 +2337,7 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     const double half = request.outside ? -diameter / 2 : diameter / 2;
     const std::array span{(contacts[0][0] - contacts[1][0]) / 2,
                           (contacts[2][1] - contacts[3][1]) / 2};
-    ProbeRunout measured{.tool = tool, .table_diameter_mm = 2 * radius, .radius_mm = {}};
+    ProbeRunout calibrated{.tool = tool, .table_diameter_mm = 2 * radius, .radius_mm = {}};
     for (std::size_t axis = 0; axis < span.size(); ++axis) {
       const double correction = half - span.at(axis) - radius;
       if (!std::isfinite(correction) || std::abs(correction) > max_runout_mm)
@@ -2345,9 +2345,9 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
             "The {} trigger radius correction is {:.3f} mm, more than {} mm. Check the diameter "
             "and the ball calibration.",
             "XY"[axis], correction, max_runout_mm));
-      measured.radius_mm.at(axis) = correction;
+      calibrated.radius_mm.at(axis) = correction;
     }
-    if (!write_sidecar(impl_->config.probe_runout_file(), format_probe_runout(measured)))
+    if (!write_sidecar(impl_->config.probe_runout_file(), format_probe_runout(calibrated)))
       return std::unexpected("Could not save the runout compensation.");
     return SetterState{calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,
                        std::move(current_marks)};

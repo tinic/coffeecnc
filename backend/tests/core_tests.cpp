@@ -145,13 +145,26 @@ void height_map_grid() {
   const FixedSetterLimits limits{.travel_mm = 15, .feed_mm_min = 240, .latch_feed_mm_min = 60,
                                  .latch_backoff_mm = 1, .material_travel_mm = 20};
   require(std::abs(height_map_point_seconds(limits) - 31.875) < 1e-9, "one point takes at most 31.875 s");
-  require(std::abs(height_map_seconds(limits, 150, 5) - ((150 * 31.875) + 0.625)) < 1e-9,
-          "150 points and a 5 mm descent at 480 mm/min");
-  require(height_map_seconds(limits, 150, 0) <= max_height_map_seconds,
+  // 15 x 10 points 10 mm apart, the first 50 mm away, XY at 6000 mm/min: 50 + 149 x 10 =
+  // 1540 mm in 15.4 s.
+  const HeightMapTravel small{.points = 150, .step_mm = 10, .first_mm = 50, .descent_mm = 5,
+                              .xy_rapid_mm_min = 6000};
+  require(std::abs(height_map_seconds(limits, small) - ((150 * 31.875) + 15.4 + 0.625)) < 1e-9,
+          "150 points, 1540 mm of XY at 6000 mm/min and a 5 mm descent at 480 mm/min");
+  require(height_map_seconds(limits, small) <= max_height_map_seconds,
           "150 points at these limits fit the 2 h limit");
+  // The review's case: 9 x 9 points 250 mm apart. The 80 traverses of 250 mm at 10000 mm/min
+  // add 120 s to the 81 points' 2581.875 s.
+  const HeightMapTravel wide{.points = 81, .step_mm = 250, .first_mm = 0, .descent_mm = 0,
+                             .xy_rapid_mm_min = 10000};
+  require(std::abs(height_map_seconds(limits, wide) - (2581.875 + 120)) < 1e-9,
+          "81 points 250 mm apart take 2701.875 s with their XY traverses");
+  require(!std::isfinite(height_map_seconds(limits, {.points = 2, .step_mm = 10, .first_mm = 0,
+                                                     .descent_mm = 0, .xy_rapid_mm_min = 0})),
+          "no XY speed: no bound");
   auto slow = limits;
   slow.latch_feed_mm_min = 5; // 24 s a latch pass
-  require(height_map_seconds(slow, 150, 0) > max_height_map_seconds,
+  require(height_map_seconds(slow, small) > max_height_map_seconds,
           "a slow latch makes 150 points exceed the 2 h limit");
   slow.latch_feed_mm_min = 0;
   require(!std::isfinite(height_map_point_seconds(slow)), "no latch feed: no bound");

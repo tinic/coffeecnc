@@ -306,9 +306,10 @@ describe('height map', () => {
     await fixture.get('.probe-utilities button[aria-haspopup=dialog]').trigger('click')
     await findButton(fixture, 'Height map…')?.trigger('click')
     const fields = fixture.findAll('.grid-fields input')
-    // 15 × 10 points; the clearance stays at the present Z, so there is no descent.
+    // 15 × 10 points, 244.7 min of probing and the XY traverses; the clearance stays at the
+    // present Z, so there is no descent.
     for (const [index, value] of ['0', '140', '0', '90', '10'].entries()) await fields[index]?.setValue(value)
-    expect(fixture.get('.summary').text()).toBe('Up to 245 min, more than the 120 min limit. Use fewer points.')
+    expect(fixture.get('.summary').text()).toBe('Up to 246 min, more than the 120 min limit. Use fewer points.')
     expect(fixture.get('.start-map').attributes('disabled')).toBeDefined()
   })
 })

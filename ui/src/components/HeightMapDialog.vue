@@ -4,7 +4,7 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { panel } from '../machine'
-import { heightGrid, heightMapSeconds, maxHeightMapPoints, maxHeightMapSeconds, type HeightMapGrid } from '../height-map'
+import { heightGrid, heightMapWorstSeconds, maxHeightMapPoints, maxHeightMapSeconds, type HeightMapGrid } from '../height-map'
 import { parseNumericExpression } from '../numeric-expression'
 import { vNumeric } from '../numeric-input'
 import { formatLength, fromDisplay, wcsName } from '../units'
@@ -31,12 +31,12 @@ const grid = computed(() => {
   const { x_min: x0, y_min: y0, x_max: x1, y_max: y1, step } = values.value
   return x0 === null || y0 === null || x1 === null || y1 === null || step === null ? null : heightGrid([x0, y0, x1, y1], step)
 })
-// The worst case the controller refuses above (fixed_setter.hpp height_map_seconds), with the
-// first feed down from the present Z to the clearance.
+// The worst case the controller refuses above (fixed_setter.hpp height_map_seconds), from where
+// the probe is: the XY traverses and the first feed down to the clearance included.
 const worst = computed(() => {
-  const clearance = values.value.clearance
-  if (grid.value === null || clearance === null) return 0
-  return heightMapSeconds(panel.hello?.fixed_setter, grid.value.columns * grid.value.rows, work('z') - clearance)
+  const { x_min, y_min, x_max, y_max, step, clearance } = values.value
+  if (grid.value === null || x_min === null || y_min === null || x_max === null || y_max === null || step === null || clearance === null) return 0
+  return heightMapWorstSeconds(panel.hello, { x_min, y_min, x_max, y_max, step, clearance }, [work('x'), work('y'), work('z')])
 })
 // Without the latch limits the controller decides.
 const tooLong = computed(() => grid.value !== null && Number.isFinite(worst.value) && worst.value > maxHeightMapSeconds)

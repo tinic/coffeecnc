@@ -772,6 +772,7 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
           {{"PROBE_OFF_LINE_TOLERANCE_MM", &tolerances.probe_off_line_mm},
            {"PROBE_BACKLASH_TOLERANCE_MM", &tolerances.probe_backlash_mm},
            {"PROBE_POSITION_TOLERANCE_MM", &tolerances.probe_position_mm},
+           {"HEIGHT_MAP_Z_LAG_TOLERANCE_MM", &tolerances.height_map_z_lag_mm},
            {"RESTART_POSITION_TOLERANCE_MM", &tolerances.restart_position_mm}}); !parsed)
     return std::unexpected(parsed.error());
   auto configured_macros = macros(ini, file);

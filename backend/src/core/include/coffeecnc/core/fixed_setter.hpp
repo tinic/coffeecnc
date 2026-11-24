@@ -119,11 +119,11 @@ inline auto height_grid(const std::array<double, 4>& corners, double step)
 }
 
 // The longest a height map may take, in seconds, and the longest one of its points can take with
-// these limits. A point is a search over the whole material travel, three latch passes (back-off
-// at twice the search feed, up to 2 s for the release, then twice the back-off at the latch
-// feed), the retract over the travel at twice the search feed with its 2 s release, and 10 s for
-// the lift, the traverse at the clearance and the feed and interlock blocks. The panel computes
-// the same (ui/src/height-map.ts) for its answer deadline.
+// these limits, at a point. A point is a search over the whole material travel, three latch
+// passes (back-off at twice the search feed, up to 2 s for the release, then twice the back-off
+// at the latch feed), the retract over the travel at twice the search feed with its 2 s release,
+// and 10 s for the lift and the feed and interlock blocks. The panel computes the same
+// (ui/src/height-map.ts) for its answer deadline.
 constexpr double max_height_map_seconds = 7200;
 inline auto height_map_point_seconds(const FixedSetterLimits& limits) -> double {
   if (!(limits.feed_mm_min > 0) || !(limits.latch_feed_mm_min > 0))
@@ -135,11 +135,23 @@ inline auto height_map_point_seconds(const FixedSetterLimits& limits) -> double 
   const double retract = (limits.material_travel_mm / fast * 60) + 2;
   return search + (3 * pass) + retract + 10;
 }
-// Every point, and the first feed down from the start to the clearance (`descent_mm`).
-inline auto height_map_seconds(const FixedSetterLimits& limits, int points, double descent_mm)
+// Every point; the XY traverses at `xy_rapid_mm_min` (`first_mm` from the start to the first
+// point, then at most one `step_mm` to each next one); and the first feed down from the start to
+// the clearance (`descent_mm`).
+struct HeightMapTravel {
+  int points;
+  double step_mm;
+  double first_mm;
+  double descent_mm;
+  double xy_rapid_mm_min;
+};
+inline auto height_map_seconds(const FixedSetterLimits& limits, const HeightMapTravel& travel)
     -> double {
-  return (points * height_map_point_seconds(limits)) +
-         (std::max(0.0, descent_mm) / (2 * limits.feed_mm_min) * 60);
+  if (!(travel.xy_rapid_mm_min > 0))
+    return std::numeric_limits<double>::infinity();
+  const double xy_mm = std::max(0.0, travel.first_mm) + (std::max(0, travel.points - 1) * travel.step_mm);
+  return (travel.points * height_map_point_seconds(limits)) + (xy_mm / travel.xy_rapid_mm_min * 60) +
+         (std::max(0.0, travel.descent_mm) / (2 * limits.feed_mm_min) * 60);
 }
 
 struct SetterEpoch {

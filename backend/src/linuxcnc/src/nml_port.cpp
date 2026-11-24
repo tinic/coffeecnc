@@ -1463,14 +1463,14 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   bool traversing_xy = false;
   std::optional<std::array<double, 3>> vertical_at;
   bool lifting = false;
-  // Z held at `z`: measured there, or commanded there with the encoder within the backlash of it
-  // (the Z encoder lags the command after an upward move: 0.125 mm on the G0759).
+  // Z held at `z`: measured there or, for a height map's later point, commanded there with the
+  // encoder within the start's allowed lag of it (the last retract's: 0.125 mm on the G0759).
   const auto z_held = [&](const EMC_STAT& current, double z) {
     const double commanded = current.motion.traj.position.tran.z * machine_scale;
     const double measured = current.motion.traj.actualPosition.tran.z * machine_scale;
     return near(measured, z) ||
-           (near(commanded, z) &&
-            std::abs(measured - z) <= impl_->config.motion_tolerances.probe_backlash_mm);
+           (move.start_z_lag_mm > 0 && near(commanded, z) &&
+            std::abs(measured - z) <= move.start_z_lag_mm);
   };
   const auto steady_context = [&](const EMC_STAT& current) -> bool {
     const auto s = to_status(current, impl_->config, hal, Link::live);
@@ -1608,14 +1608,14 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
     return interrupt(std::format("Could not prepare the probing feed ({}).", block_failure));
   raw = live_cycle();
   const auto probe_pin = interlock();
-  // The start is measured. Along Z the command may lead it by the encoder's lag after an upward
-  // move (a height map's later points start from the last retract); along X or Y it may not.
+  // The start is measured, and the command must agree with it. Only a height map's later point
+  // (`start_z_lag_mm`) lets the command lead it along Z, by the last retract's encoder lag.
   const auto commanded_at_start = [&](const EMC_STAT& current) {
     const auto commanded = machine_position(current.motion.traj.position);
-    if (line.axis != 2)
+    if (line.axis != 2 || !(move.start_z_lag_mm > 0))
       return near(line.distance(move.start, commanded), 0);
     return std::abs(commanded[2] - machine_position(current.motion.traj.actualPosition)[2]) <=
-           impl_->config.motion_tolerances.probe_backlash_mm;
+           move.start_z_lag_mm;
   };
   if (raw == nullptr || !probe_pin || probe_pin->probe_input.value_or(true) || raw->motion.traj.probeval != 0 ||
       raw->motion.traj.feed_override_enabled || raw->motion.traj.adaptive_feed_enabled ||
@@ -2260,8 +2260,15 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
               "Grid point {} is outside the configured travel at the clearance or the search depth.",
               where(column, row)));
       }
-    const double worst = height_map_seconds(*limits, grid->columns * grid->rows,
-                                            request.start[2] - clearance_z);
+    // XY at the slower of X and Y's fastest moves, from the start to the first point and then one
+    // step to each next point, in work XY (the same distances in a rotated system).
+    const auto& velocity = impl_->config.limits.max_axis_jog_velocity;
+    const double worst = height_map_seconds(
+        *limits, {.points = grid->columns * grid->rows,
+                  .step_mm = request.step_mm,
+                  .first_mm = std::hypot(before.work[0] - x0, before.work[1] - y0),
+                  .descent_mm = request.start[2] - clearance_z,
+                  .xy_rapid_mm_min = std::min(velocity[0], velocity[1])});
     if (!(worst <= max_height_map_seconds))
       return std::unexpected(std::format(
           "The height map could take up to {} min, more than the {} min limit. Use fewer points.",
@@ -2282,7 +2289,8 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
     };
     // Where the last point left the probe: its search start at the clearance.
     std::optional<std::array<double, 3>> left_at;
-    const double backlash = impl_->config.motion_tolerances.probe_backlash_mm;
+    // The Z encoder may trail the command after a point's retract, by at most this much.
+    const double z_lag = impl_->config.motion_tolerances.height_map_z_lag_mm;
     for (int row = 0; row < grid->rows; ++row) {
       for (int along = 0; along < grid->columns; ++along) {
         // Back and forth: every other row from its far end.
@@ -2305,7 +2313,7 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
               near(commanded[0], (*left_at)[0]) && near(commanded[1], (*left_at)[1]) &&
               near(commanded[2], (*left_at)[2]) &&
               std::hypot(here[0] - (*left_at)[0], here[1] - (*left_at)[1]) <= limits->xy_tolerance_mm &&
-              std::abs(here[2] - (*left_at)[2]) <= backlash;
+              std::abs(here[2] - (*left_at)[2]) <= z_lag;
           if (!held)
             return stop("The machine moved between the height map points.");
         }
@@ -2316,8 +2324,12 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
                                 .travel_mm = search,
                                 .feed_mm_min = limits->feed_mm_min,
                                 .approach = above,
-                                .clearance_z = std::max(reading.commanded_position[2], above[2]),
-                                .material = ProbeDirection::z_top},
+                                // A later point lifts to the command it holds, the first to
+                                // where it is.
+                                .clearance_z = std::max(left_at ? reading.commanded_position[2] : here[2],
+                                                        above[2]),
+                                .material = ProbeDirection::z_top,
+                                .start_z_lag_mm = left_at ? z_lag : 0.0},
                                wanted);
         if (!contact)
           return stop(std::format("Point {}: {}", where(column, row), contact.error()));

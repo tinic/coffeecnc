@@ -1,6 +1,6 @@
 // The last Z height map (#247): shown in the 3D view, saved as CSV and as a LinuxCNC probe file.
 import { shallowRef } from 'vue'
-import type { FixedSetterLimits, HeightMap, HeightMapPoint, LengthUnit } from './protocol'
+import type { FixedSetterLimits, HeightMap, HeightMapPoint, Hello, LengthUnit, Vec3 } from './protocol'
 import { toDisplay, wcsName } from './units'
 
 /** The grid a height map probes, in work millimetres: corners, step and the clearance Z. */
@@ -28,7 +28,7 @@ export function heightGrid(corners: readonly [number, number, number, number], s
 /**
  * The longest one point can take, seconds, as natively (fixed_setter.hpp height_map_point_seconds):
  * the search over the material travel, three latch passes, the retract and its release, and 10 s
- * for the lift, the traverse and the blocks. Infinite without the limits.
+ * for the lift and the blocks, at a point. Infinite without the limits.
  */
 export function heightMapPointSeconds(limits: FixedSetterLimits | undefined): number {
   const latch = limits?.latch_feed_mm_min ?? 0
@@ -40,24 +40,49 @@ export function heightMapPointSeconds(limits: FixedSetterLimits | undefined): nu
   return travel / limits.feed_mm_min * 60 + 3 * pass + travel / fast * 60 + 2 + 10
 }
 
-/** Every point, and the first feed down from the start to the clearance (`descent` mm). */
-export function heightMapSeconds(limits: FixedSetterLimits | undefined, points: number, descent: number): number {
+/**
+ * The traverses and moves of a map, as natively (fixed_setter.hpp HeightMapTravel): `points`;
+ * XY at `xyRapid` mm/min, `first` mm from the start to the first point and at most `step` mm to
+ * each next one; and the first feed down from the start to the clearance, `descent` mm.
+ */
+export interface HeightMapTravel { points: number; step: number; first: number; descent: number; xyRapid: number }
+
+/** Every point, the XY traverses and the first descent, seconds, as natively (height_map_seconds). */
+export function heightMapSeconds(limits: FixedSetterLimits | undefined, travel: HeightMapTravel): number {
+  if (!(travel.xyRapid > 0)) return Infinity
+  const xy = Math.max(0, travel.first) + Math.max(0, travel.points - 1) * travel.step
   const fast = 2 * (limits?.feed_mm_min ?? 0)
-  return points * heightMapPointSeconds(limits) + Math.max(0, descent) / fast * 60
+  return travel.points * heightMapPointSeconds(limits) + xy / travel.xyRapid * 60 + Math.max(0, travel.descent) / fast * 60
 }
+
+/** The XY speed the controller assumes, mm/min: the slower of X and Y's fastest moves. */
+export function heightMapRapid(hello: Hello | null | undefined): number {
+  const axes = hello?.axis_max_jog_velocity
+  return Math.min(axes?.x ?? hello?.max_jog_velocity ?? 0, axes?.y ?? hello?.max_jog_velocity ?? 0)
+}
+
+/** A grid's worst case from the probe's work XYZ `start`, seconds, as the controller computes it. */
+export function heightMapWorstSeconds(hello: Hello | null | undefined, grid: HeightMapGrid, start: Vec3): number {
+  const size = heightGrid([grid.x_min, grid.y_min, grid.x_max, grid.y_max], grid.step)
+  if (size === null) return Infinity
+  return heightMapSeconds(hello?.fixed_setter, {
+    points: size.columns * size.rows, step: grid.step, first: Math.hypot(start[0] - grid.x_min, start[1] - grid.y_min),
+    descent: start[2] - grid.clearance, xyRapid: heightMapRapid(hello),
+  })
+}
+
+/** After stopping a height map past its deadline, how long the panel waits for its result, ms. */
+export const heightMapAbortMs = 30_000
 
 /** How long the panel waits for any other probe cycle's answer, ms. */
 export const probeAnswerMs = 1_600_000
 
 /**
- * How long the panel waits for a height map's answer, ms: its worst case and two minutes more,
- * and never less than for another probe cycle. `machineZ` is the start's machine Z and
- * `workOffsetZ` machine Z less work Z there, so the clearance's machine Z follows.
+ * How long the panel waits for a height map's answer, ms: its worst case from the probe's work
+ * XYZ `start` and two minutes more, never less than for another probe cycle.
  */
-export function heightMapAnswerMs(limits: FixedSetterLimits | undefined, grid: HeightMapGrid, machineZ: number, workOffsetZ: number): number {
-  const size = heightGrid([grid.x_min, grid.y_min, grid.x_max, grid.y_max], grid.step)
-  if (size === null) return probeAnswerMs
-  const seconds = heightMapSeconds(limits, size.columns * size.rows, machineZ - (grid.clearance + workOffsetZ))
+export function heightMapAnswerMs(hello: Hello | null | undefined, grid: HeightMapGrid, start: Vec3): number {
+  const seconds = heightMapWorstSeconds(hello, grid, start)
   return Number.isFinite(seconds) ? Math.max(probeAnswerMs, Math.ceil(seconds * 1000) + 120_000) : probeAnswerMs
 }
 

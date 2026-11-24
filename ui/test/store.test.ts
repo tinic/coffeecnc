@@ -6,6 +6,7 @@ import type { FromMachine, Status, ToMachine } from '../src/protocol'
 import { hello, SimMachine } from '../src/sim/machine'
 import { answerTimeoutMs, createPanel, describeCommand, restartTimeoutMs, staleAfterMs, type Panel } from '../src/store'
 import { emptyToolModelDocument } from '../src/tool-model-settings'
+import { heightMapAbortMs, probeAnswerMs } from '../src/height-map'
 
 interface Rig {
   panel: Panel
@@ -277,6 +278,31 @@ describe('commands', () => {
     panel.send({ type: 'tool_changed' })
     pass(answerTimeoutMs + 1)
     expect(outcomes.slice(-2)).toEqual(['start_restart accepted', 'tool_changed timed_out'])
+  })
+
+  it('stops a height map past its deadline and keeps the partial result that answers the stop', () => {
+    const { panel, sent, receive, pass } = rig()
+    const results: string[] = []
+    panel.onResult((command, result) => results.push(`${command.type} ${result.outcome} ${String(result.setter?.height_map?.partial)}`))
+    const map = { type: 'fixed_setter', action: 'height_map', tool: 99, x: 0, y: 0, z: 0, x_min: 0, y_min: 0, x_max: 10, y_max: 0, step: 10, clearance: 0 } as const
+    const id = panel.send(map)
+    pass(probeAnswerMs + 1)
+    // Stopped, not timed out: the map's own answer is still awaited.
+    expect(sent.at(-1)).toMatchObject({ type: 'abort' })
+    expect(results.filter((entry) => entry.startsWith('fixed_setter'))).toEqual([])
+    const height_map = { wcs: 1, columns: 2, rows: 1, points: [{ work: [0, 0, 0.1] as const, machine: [0, 0, 1] as const }, null], partial: 'The height map was stopped.' }
+    receive({ type: 'result', id, outcome: 'failed', reason: 'The height map was stopped.',
+      setter: { calibration: null, measurement: null, height_map: { ...height_map, points: height_map.points.map((point) => point && { work: [...point.work], machine: [...point.machine] }) } } })
+    expect(results.filter((entry) => entry.startsWith('fixed_setter'))).toEqual(['fixed_setter failed The height map was stopped.'])
+    // Without any answer it times out once the stop's wait has passed too.
+    const silent = panel.send(map)
+    pass(probeAnswerMs + 1)
+    pass(heightMapAbortMs - 10)
+    expect(results.filter((entry) => entry.startsWith('fixed_setter'))).toHaveLength(1)
+    pass(20)
+    expect(results.at(-1)).toBe('fixed_setter timed_out undefined')
+    receive({ type: 'result', id: silent, outcome: 'failed', reason: '' })
+    expect(results.filter((entry) => entry.startsWith('fixed_setter'))).toHaveLength(2)
   })
 
   it('notifies a held control of a local timeout so it can release, and ignores a late answer', () => {

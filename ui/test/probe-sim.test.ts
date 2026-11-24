@@ -324,7 +324,7 @@ describe('browser probe scene', () => {
     expect(left.sim.modal.offsets[0]?.[0]).toBe(x)
   })
 
-  it.each(['ball', 'touch_off', 'check'] as const)('refuses %s as measure-only, as the controller does', (action) => {
+  it.each(['ball', 'touch_off', 'check', 'height_map'] as const)('refuses %s as measure-only, as the controller does', (action) => {
     const { sim, send, result } = scene('top')
     const before = structuredClone(sim.status().offsets)
     const tools = JSON.stringify(sim.modal.tools)

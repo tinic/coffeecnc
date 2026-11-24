@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   heightGrid, heightMapAnswerMs, heightMapCsv, heightMapName, heightMapOrder, heightMapPointAt, heightMapPointSeconds,
-  heightMapProbeFile, heightMapSeconds, heightMapSidecar, heightRange, maxHeightMapSeconds, probeAnswerMs,
+  heightMapProbeFile, heightMapSeconds, heightMapSidecar, heightMapWorstSeconds, heightRange, maxHeightMapSeconds, probeAnswerMs,
 } from '../src/height-map'
 import type { HeightMap } from '../src/protocol'
+import { hello } from '../src/sim/machine'
 
 // The same grid as the controller's (backend/tests/core_tests.cpp height_map_grid).
 describe('height map', () => {
@@ -61,17 +62,33 @@ describe('height map', () => {
     latch_backoff_mm: 1, material_travel_mm: 20 }
   it('bounds the time of a map as the controller does', () => {
     expect(heightMapPointSeconds(limits)).toBeCloseTo(31.875, 9)
-    expect(heightMapSeconds(limits, 150, 5)).toBeCloseTo(150 * 31.875 + 0.625, 9)
-    expect(heightMapSeconds({ ...limits, latch_feed_mm_min: 5 }, 150, 0)).toBeGreaterThan(maxHeightMapSeconds)
+    // 15 × 10 points 10 mm apart, the first 50 mm away, XY at 6000 mm/min: 1540 mm in 15.4 s.
+    const small = { points: 150, step: 10, first: 50, descent: 5, xyRapid: 6000 }
+    expect(heightMapSeconds(limits, small)).toBeCloseTo(150 * 31.875 + 15.4 + 0.625, 9)
+    expect(heightMapSeconds({ ...limits, latch_feed_mm_min: 5 }, small)).toBeGreaterThan(maxHeightMapSeconds)
+    expect(heightMapSeconds(limits, { ...small, xyRapid: 0 })).toBe(Infinity)
     expect(heightMapPointSeconds({ reference_tool: 98, travel_mm: 15, feed_mm_min: 240, xy_tolerance_mm: 0.5 })).toBe(Infinity)
   })
 
+  const machine = { ...hello, fixed_setter: limits, axis_max_jog_velocity: { x: 10_000, y: 10_000, z: 3000 } }
+  it('counts the XY traverses: 81 points 250 mm apart take 120 s more than their probing', () => {
+    // 9 × 9 points over 2000 mm, starting over the first one at the clearance: 80 traverses of
+    // 250 mm at 10000 mm/min, 2581.875 s and 120 s.
+    const grid = { x_min: 0, y_min: 0, x_max: 2000, y_max: 2000, step: 250, clearance: 3 }
+    expect(heightMapWorstSeconds(machine, grid, [0, 0, 3])).toBeCloseTo(2581.875 + 120, 9)
+    // The slower of X and Y decides, and the first move from the start counts.
+    expect(heightMapWorstSeconds({ ...machine, axis_max_jog_velocity: { x: 10_000, y: 5000 } }, grid, [-300, -400, 3]))
+      .toBeCloseTo(2581.875 + (500 + 80 * 250) / 5000 * 60, 9)
+  })
+
   it('waits for a 150-point map as long as its worst case, not the 1600 s of one cycle', () => {
-    // 15 × 10 points at 10 mm, the clearance 5 mm under the start: 4781.25 s, 0.625 s and 120 s.
+    // 15 × 10 points 10 mm apart from 50 mm away, 5 mm over the clearance, XY at 6000 mm/min:
+    // 4781.25 s, 15.4 s, 0.625 s and 120 s.
     const grid = { x_min: 0, y_min: 0, x_max: 140, y_max: 90, step: 10, clearance: 3 }
-    expect(Math.abs(heightMapAnswerMs(limits, grid, 20, 12) - (4_781_875 + 120_000))).toBeLessThanOrEqual(1)
-    expect(heightMapAnswerMs(limits, { ...grid, x_max: 10, y_max: 0 }, 20, 12)).toBe(probeAnswerMs)
-    expect(heightMapAnswerMs(undefined, grid, 20, 12)).toBe(probeAnswerMs)
+    const slow = { ...machine, axis_max_jog_velocity: { x: 6000, y: 6000 } }
+    expect(Math.abs(heightMapAnswerMs(slow, grid, [-30, -40, 8]) - (4_797_275 + 120_000))).toBeLessThanOrEqual(1)
+    expect(heightMapAnswerMs(slow, { ...grid, x_max: 10, y_max: 0 }, [-30, -40, 8])).toBe(probeAnswerMs)
+    expect(heightMapAnswerMs(null, grid, [-30, -40, 8])).toBe(probeAnswerMs)
   })
 
   it('names the point of the probing order the probe is over', () => {

@@ -1258,16 +1258,24 @@ void height_map_scenarios(NmlPort& port, HalShared& shared, double scale, double
     request.clearance_mm = clearance;
     return request;
   };
-  // `z_lag`: the Z encoder reads this much below the command after every upward move.
+  // `z_lag`: from the first point's first touch on, the Z encoder reads this much below the
+  // command after every upward move, so every later point starts lagged.
   const auto map = [&](double turn, double z_lag) {
     const double c = std::cos(turn * std::numbers::pi / 180);
     const double s = std::sin(turn * std::numbers::pi / 180);
     frame(turn);
-    set_lag(z_lag);
     const auto before = port.status();
     const auto request = map_request({-5, -4, 15, 12}, 10, 3);
     const auto writes = port.writes().size();
-    const auto result = port.fixed_setter(request, epoch, {});
+    bool lagging = false;
+    const auto result = port.fixed_setter(request, epoch, [&] {
+      const auto pins = shared.view(HalShared::Clock::now());
+      if (z_lag != 0 && !lagging && pins && pins->probe_cycle_active && pins->probe_input.value_or(false)) {
+        halcmd(std::format("setp sim-z-backlash.in1 {:.12f}", z_lag / scale));
+        lagging = true;
+      }
+      return true;
+    });
     if (!result || !result->height_map)
       throw std::runtime_error(std::format("height map at {}° with {} mm Z lag: {}", turn, z_lag,
                                            result ? "no map" : result.error()));
@@ -1312,8 +1320,8 @@ void height_map_scenarios(NmlPort& port, HalShared& shared, double scale, double
     set_lag(0);
   };
   map(0, 0);
-  // Item 1 of the review: each later point starts after a retract, with the Z encoder 0.125 mm
-  // below the command as on the G0759. The rig allows 0.15 mm of backlash (run()).
+  // Each later point starts after a retract, with the Z encoder 0.125 mm below the command as on
+  // the G0759, within the map's 0.15 mm (HEIGHT_MAP_Z_LAG_TOLERANCE_MM's default).
   map(degrees, -0.125);
 
   // Refused before any motion: a grid point beyond the travel, the search depth below the travel
@@ -1401,8 +1409,26 @@ void height_map_scenarios(NmlPort& port, HalShared& shared, double scale, double
   };
   const auto never = [](const Watch&) { return true; };
 
-  // A real move: the Z encoder 0.2 mm off the command between the points, beyond the rig's
-  // 0.15 mm backlash allowance. The map stops before the second point moves anything.
+  // Any other probe stays strict: a single Z top refuses to start with the same 0.125 mm between
+  // the command and the encoder, before it descends, and writes nothing.
+  frame(0);
+  set_lag(-0.125);
+  {
+    const auto g5x = port.status().g5x;
+    const auto single = port.fixed_setter({SetterAction::material, 99, machine(), ProbeDirection::z_top}, epoch, {});
+    std::cout << std::format("fact=height_map action=single_z_top_with_lag z_lag=-0.125 refused={} g5x_unchanged={} "
+                             "reason=\"{}\"",
+                             !single, port.status().g5x == g5x, single ? "" : single.error())
+              << std::endl;
+    require(!single && single.error().contains("Probe input, position or feed controls changed before descent.") &&
+                port.status().g5x == g5x,
+            "a single Z top still refuses 0.125 mm between the commanded and the measured Z");
+  }
+  reset();
+  set_lag(0);
+
+  // A real move: the Z encoder 0.2 mm off the command between the points, beyond the map's
+  // 0.15 mm allowance. The map stops before the second point moves anything.
   bool lagged = false;
   require(stopped_map("refuses_a_position_change", 3,
                       [&](const Watch& watch) {
@@ -1820,10 +1846,6 @@ void run(const std::string& ini, std::string_view scenario) {
     config->fixed_setter->travel_mm = 30;
   if (material || edge || features || rotated || height_map)
     config->touch_probe_tool = 99;
-  // The height map runs with 0.125 mm of Z lag, and must refuse 0.2 mm: below LinuxCNC's
-  // 0.254 mm following error at rest, so the allowance is 0.15 mm here.
-  if (height_map)
-    config->motion_tolerances.probe_backlash_mm = 0.15;
   // The runner recreates the table, but retains files beside it between runs.
   std::filesystem::remove(std::filesystem::path(config->tool_table).parent_path() /
                           "coffeecnc-touched-off.txt");

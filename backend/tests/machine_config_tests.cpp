@@ -894,15 +894,18 @@ void motion_settings() {
   require(defaulted && near(defaulted->motion_tolerances.probe_position_mm, 0.1) &&
               near(defaulted->motion_tolerances.probe_off_line_mm, 0.5) &&
               near(defaulted->motion_tolerances.probe_backlash_mm, 0.5) &&
-              near(defaulted->motion_tolerances.restart_position_mm, 0.5),
+              near(defaulted->motion_tolerances.restart_position_mm, 0.5) &&
+              near(defaulted->motion_tolerances.height_map_z_lag_mm, 0.15),
           "the G0759 motion tolerances remain the defaults");
   const auto tuned = load(with(std::string(g0759), rpm, "MAX_SPINDLE_RPM = 1500\n"
       "PROBE_OFF_LINE_TOLERANCE_MM = 0.2\nPROBE_BACKLASH_TOLERANCE_MM = 0.3\n"
-      "PROBE_POSITION_TOLERANCE_MM = 0.04\nRESTART_POSITION_TOLERANCE_MM = 0.23\n"));
+      "PROBE_POSITION_TOLERANCE_MM = 0.04\nRESTART_POSITION_TOLERANCE_MM = 0.23\n"
+      "HEIGHT_MAP_Z_LAG_TOLERANCE_MM = 0.2\n"));
   require(tuned && near(tuned->motion_tolerances.probe_off_line_mm, 0.2) &&
               near(tuned->motion_tolerances.probe_backlash_mm, 0.3) &&
               near(tuned->motion_tolerances.probe_position_mm, 0.04) &&
-              near(tuned->motion_tolerances.restart_position_mm, 0.23),
+              near(tuned->motion_tolerances.restart_position_mm, 0.23) &&
+              near(tuned->motion_tolerances.height_map_z_lag_mm, 0.2),
           "each motion tolerance can be tuned independently");
   const auto invalid = load(with(std::string(g0759), rpm, "MAX_SPINDLE_RPM = 1500\n"
       "PROBE_POSITION_TOLERANCE_MM = nan\n"));

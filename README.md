@@ -46,6 +46,7 @@ CoffeeCNC is a LinuxCNC display program, like AXIS or Gmoccapy: it runs on any L
 - With the touch probe (T99) loaded, probe the **Z top** or one workpiece edge: **X−** (left), **X+** (right), **Y−** (front) or **Y+** (back). The diagram shows which face each button probes.
 - **Corners** (X− Y−, X+ Y−, X− Y+, X+ Y+): probe Z top first, then jog the ball over the part within 10 mm of both edges. CoffeeCNC goes down beside each face and sets X0 and Y0 together.
 - **Bore centre** and **Boss centre** set X0 and Y0 at the centre and show the diameter.
+- **3 points: Bore** and **Boss** set X0 and Y0 at the centre of the circle through three contacts in directions you choose, and show the diameter. Use them on a partial bore or boss, or where a 4-point cycle cannot reach. The directions must be at least 10° apart and cover at least 30° of the circle. CoffeeCNC refuses a result whose contacts lie almost on a line.
 - **Edge angle** probes the front or left edge at two points and measures its angle from the current work axes. **Apply rotation** adds that angle to the active G5x rotation, so a second measurement after applying shows the turn that is left.
 - In a rotated work system, every probe cycle moves along the rotated X and Y axes and sets the origin in them. Ball calibration needs a work system without rotation.
 - **Calibrate ball** measures the effective ball diameter on a gauge of known width and saves it to the tool table.

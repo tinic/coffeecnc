@@ -99,7 +99,15 @@
       "rotationTitle": "Als G5x-Drehung übernehmen?",
       "rotationEffect": "Die XY-Achsen von {wcs} um {degrees} um den gespeicherten Nullpunkt drehen. Die Drehung ändert sich von {current} auf {rotation}.",
       "shiftStays": "Die aktuelle G52/G92-Verschiebung bleibt aktiv.",
-      "applyRotation": "Drehung übernehmen"
+      "applyRotation": "Drehung übernehmen",
+      "arcFeature": "3 Punkte",
+      "arcBore": "Bohrung",
+      "arcBoss": "Zapfen",
+      "arcBoreLabel": "Bohrung aus 3 Punkten",
+      "arcBossLabel": "Zapfen aus 3 Punkten",
+      "arcBoreBusy": "Drei Bohrungswände werden angetastet…",
+      "arcBossBusy": "Drei Zapfenflächen werden angetastet…",
+      "arcDone": "{wcs} X0 Y0 im Kreismittelpunkt gesetzt, Ø {diameter} mm, aus Kontakten über {span}°."
     },
     "guide": {
       "angleFront": "Vorne · Y−",
@@ -180,7 +188,15 @@
       "stepLatch": "Feinantastung · {pass} von 3",
       "stepRetract": "Rückzug",
       "stepLiftWork": "Über das Werkstück anheben",
-      "stepClearance": "Auf Sicherheitsabstand zurückziehen"
+      "stepClearance": "Auf Sicherheitsabstand zurückziehen",
+      "titleBoreArc": "Bohrungsmitte aus 3 Punkten antasten",
+      "titleBossArc": "Zapfenmitte aus 3 Punkten antasten",
+      "setupBoreArc": "Die Kugel in die Bohrung unter ihre Oberkante fahren. Drei Richtungen wählen, in denen eine Wand innerhalb des Suchwegs liegt. Es wird vom Start aus in jeder Richtung nach außen angetastet. Ein Teil des Kreises genügt.",
+      "setupBossArc": "Zuerst Z0 auf der Zapfenoberseite setzen. Über den Zapfen fahren, den ungefähren Durchmesser und drei Richtungen mit einer Fläche eingeben. Ein Teil des Kreises genügt.",
+      "resultArc": "X0 und Y0 in der Mitte des Kreises durch die drei Kontakte setzen und seinen Durchmesser zeigen",
+      "contactAt": "Kontakt bei {angle}°",
+      "aboveContact": "Außerhalb der Fläche bei {angle}° positionieren",
+      "inputAngles": "Richtungen ab +X"
     },
     "guideDialog": {
       "previous": "Vorherige Bewegung",
@@ -209,7 +225,9 @@
       "result": "Ergebnis",
       "lengthTolerance": "Längentoleranz",
       "startCheck": "Prüfung starten",
-      "startProbe": "Antasten starten"
+      "startProbe": "Antasten starten",
+      "arcDirection": "Richtung {n}",
+      "arcRange": "Grad gegen den Uhrzeigersinn, mindestens {separation}° auseinander, über mindestens {span}°."
     },
     "guideCanvas": {
       "label": "Bewegung des Messtasters in 3D: zum Drehen ziehen",

@@ -37,6 +37,33 @@ describe('illustrated probe motion', () => {
     expect(plan.steps.at(-1)?.label).toContain('example +7°')
   })
 
+  it('draws a 3-point bore as three searches outward along the chosen directions', () => {
+    const plan = probeGuide({ kind: 'bore_arc' }, limits, 'y_plus', null, [-80, -40, 0])
+    const searches = plan.steps.filter(step => step.kind === 'search')
+    expect(searches).toHaveLength(3)
+    expect(plan.object).toBe('bore')
+    for (const [index, degrees] of [-80, -40, 0].entries()) {
+      const contact = searches[index]?.point ?? [0, 0, 0]
+      // Outward from the start [2, -3] to the ball-centre circle of radius 11.
+      expect(Math.hypot(contact[0], contact[1])).toBeCloseTo(11)
+      expect(Math.atan2(contact[1] + 3, contact[0] - 2) * 180 / Math.PI).toBeCloseTo(degrees)
+      expect(searches[index]?.label).toBe(`Search · contact at ${String(degrees)}°`)
+    }
+    // Each latch backs off 1 mm along the search line, back towards the start.
+    const first = plan.steps.findIndex(step => step.kind === 'search')
+    const back = plan.steps[first + 1]?.point ?? [0, 0, 0]
+    const contact = searches[0]?.point ?? [0, 0, 0]
+    expect(Math.hypot(back[0] - contact[0], back[1] - contact[1])).toBeCloseTo(1)
+  })
+
+  it('draws a 3-point boss from outside above the top, inward along each direction', () => {
+    const plan = probeGuide({ kind: 'boss_arc' }, limits, 'y_plus', null, [90, 180, 270])
+    const searches = plan.steps.filter(step => step.kind === 'search')
+    expect(plan.object).toBe('boss')
+    expect(searches.map(step => step.contact?.map(value => Math.round(value) + 0))).toEqual([[0, 14, -4], [-14, 0, -4], [0, -14, -4]])
+    expect(plan.steps.some(step => step.label === 'Move outside the face at 180°')).toBe(true)
+  })
+
   it('approaches inside corners from inside and keeps the pocket searches at one Z', () => {
     const corner = probeGuide({ kind: 'inside_corner', x: 'x_minus', y: 'y_plus' }, limits, 'y_plus', null)
     const hits = corner.steps.filter(step => step.kind === 'search')

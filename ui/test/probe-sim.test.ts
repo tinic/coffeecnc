@@ -210,6 +210,36 @@ describe('browser probe scene', () => {
     }
   })
 
+  it.each([0, 7.5, -30])('finds the bore and boss from three contacts, also on a partial arc, rotated %s°', (degrees) => {
+    const cases = [
+      ['bore', [155, 108], 19.96, { action: 'bore_arc', angles: [0, 120, 240] }],
+      ['bore', [155, 108], 19.96, { action: 'bore_arc', angles: [-80, -40, 0] }],
+      ['boss', [235, 170], 24.04, { action: 'boss_arc', angles: [90, 180, 270], diameter: 24 }],
+      ['boss', [235, 170], 24.04, { action: 'boss_arc', angles: [200, 240, 280], diameter: 24 }],
+    ] as const
+    for (const [setup, centre, diameter, mode] of cases) {
+      const { sim, cycle } = scene(setup)
+      sim.modal.rotations[0] = degrees
+      const measured = cycle({ ...mode, angles: [...mode.angles] })
+      expect(measured.setter?.material).toEqual({ wcs: 1, axis: 'XY' })
+      expect(measured.setter?.center_diameter).toBeCloseTo(diameter)
+      expect(measured.setter?.arc_span).toBeGreaterThan(20)
+      expect(sim.status().offsets.g5x[0]).toBeCloseTo(centre[0])
+      expect(sim.status().offsets.g5x[1]).toBeCloseTo(centre[1])
+      expect(sim.status().offsets.rotation_xy).toBe(degrees)
+    }
+  })
+
+  it('refuses 3-point directions too close together before moving', () => {
+    const { sim, submit, result } = scene('bore')
+    const before = structuredClone(sim.status().offsets)
+    for (const angles of [[0, 5, 90], [0, 12, 24], [350, 365, 10]] as const) {
+      const id = submit({ action: 'bore_arc', angles: [...angles] })
+      expect(result(id)?.reason).toBe('Enter three probe angles at least 10° apart that cover at least 30° of the circle.')
+    }
+    expect(sim.status().offsets).toEqual(before)
+  })
+
   it('keeps an applied rotation inside -180..180° like the controller', () => {
     expect([363, -363, -180, 180, 540, 10.5].map(wrapped)).toEqual([3, -3, 180, 180, 180, 10.5])
     expect(wrapped(179 + 2.8624)).toBeCloseTo(-178.1376)

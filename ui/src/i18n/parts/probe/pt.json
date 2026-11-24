@@ -99,7 +99,15 @@
       "rotationTitle": "Aplicar como rotação G5x?",
       "rotationEffect": "Rodar os eixos XY de {wcs} {degrees} em torno da origem guardada. A rotação passa de {current} para {rotation}.",
       "shiftStays": "O deslocamento G52/G92 atual mantém-se ativo.",
-      "applyRotation": "Aplicar rotação"
+      "applyRotation": "Aplicar rotação",
+      "arcFeature": "3 pontos",
+      "arcBore": "Furo",
+      "arcBoss": "Ressalto",
+      "arcBoreLabel": "Furo por 3 pontos",
+      "arcBossLabel": "Ressalto por 3 pontos",
+      "arcBoreBusy": "A apalpar três paredes do furo…",
+      "arcBossBusy": "A apalpar três faces do ressalto…",
+      "arcDone": "{wcs} X0 Y0 definido no centro do círculo, Ø {diameter} mm, com contactos em {span}°."
     },
     "guide": {
       "angleFront": "Frontal · Y−",
@@ -180,7 +188,15 @@
       "stepLatch": "Apalpação lenta · {pass} de 3",
       "stepRetract": "Recuo",
       "stepLiftWork": "Subir acima da peça",
-      "stepClearance": "Recuar até à distância de segurança"
+      "stepClearance": "Recuar até à distância de segurança",
+      "titleBoreArc": "Apalpar o centro do furo por 3 pontos",
+      "titleBossArc": "Apalpar o centro do ressalto por 3 pontos",
+      "setupBoreArc": "Leve a esfera para dentro do furo, abaixo do topo. Escolha três direções com uma parede dentro do curso de procura. Apalpa para fora em cada uma a partir do início. Basta uma parte do círculo.",
+      "setupBossArc": "Defina primeiro Z0 no topo do ressalto. Posicione-se por cima, introduza o diâmetro aproximado e três direções em que tem uma face. Basta uma parte do círculo.",
+      "resultArc": "Definir X0 e Y0 no centro do círculo que passa pelos três contactos e indicar o seu diâmetro",
+      "contactAt": "contacto a {angle}°",
+      "aboveContact": "Mover para fora da face a {angle}°",
+      "inputAngles": "Direções a partir de +X"
     },
     "guideDialog": {
       "previous": "Movimento anterior",
@@ -209,7 +225,9 @@
       "result": "Resultado",
       "lengthTolerance": "Tolerância de comprimento",
       "startCheck": "Iniciar verificação",
-      "startProbe": "Iniciar apalpação"
+      "startProbe": "Iniciar apalpação",
+      "arcDirection": "Direção {n}",
+      "arcRange": "Graus no sentido anti-horário, com pelo menos {separation}° de distância, cobrindo pelo menos {span}°."
     },
     "guideCanvas": {
       "label": "Movimento do apalpador em 3D: arraste para rodar",

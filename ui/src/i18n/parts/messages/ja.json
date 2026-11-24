@@ -163,6 +163,7 @@
       "missingField": "必須フィールドがありません：{field}。",
       "unexpectedField": "要求に予期しないフィールドがあります。",
       "expectedString": "文字列が必要です：{field}。",
+      "expectedAngles": "度単位のプローブ角度が3つ必要です。",
       "nulInString": "要求の文字列に NUL は使用できません。",
       "expectedNumber": "数値が必要です：{field}。",
       "expectedFinite": "有限の数値が必要です：{field}。",

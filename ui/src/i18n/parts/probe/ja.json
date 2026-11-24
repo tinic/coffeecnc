@@ -99,7 +99,15 @@
       "rotationTitle": "G5x 回転として適用しますか？",
       "rotationEffect": "{wcs} の XY 軸を保存された原点を中心に {degrees} 回転します。回転は {current} から {rotation} に変わります。",
       "shiftStays": "現在の G52/G92 シフトは有効なままです。",
-      "applyRotation": "回転を適用"
+      "applyRotation": "回転を適用",
+      "arcFeature": "3点",
+      "arcBore": "穴",
+      "arcBoss": "ボス",
+      "arcBoreLabel": "3点で穴",
+      "arcBossLabel": "3点でボス",
+      "arcBoreBusy": "穴の壁を3か所プローブ中…",
+      "arcBossBusy": "ボスの面を3か所プローブ中…",
+      "arcDone": "{span}° にわたる接触から、円の中心に {wcs} X0 Y0 を設定しました（Ø {diameter} mm）。"
     },
     "guide": {
       "angleFront": "手前 · Y−",
@@ -180,7 +188,15 @@
       "stepLatch": "低速再接触 · {pass}/3",
       "stepRetract": "退避",
       "stepLiftWork": "ワークより上へ上昇",
-      "stepClearance": "クリアランスまで退避"
+      "stepClearance": "クリアランスまで退避",
+      "titleBoreArc": "3点で穴の中心をプローブ",
+      "titleBossArc": "3点でボスの中心をプローブ",
+      "setupBoreArc": "ボールを穴の上端より下に入れてください。探索距離内に壁がある方向を3つ選びます。開始点から各方向へ外向きにプローブします。円の一部だけでも構いません。",
+      "setupBossArc": "まずボスの上面に Z0 を設定してください。ボスの上へ移動し、おおよその直径と、面がある方向を3つ入力します。円の一部だけでも構いません。",
+      "resultArc": "3つの接触点を通る円の中心に X0 と Y0 を設定し、その直径を表示します",
+      "contactAt": "{angle}° の接触",
+      "aboveContact": "{angle}° の面の外側へ移動",
+      "inputAngles": "+X からの方向"
     },
     "guideDialog": {
       "previous": "前の動作",
@@ -209,7 +225,9 @@
       "result": "結果",
       "lengthTolerance": "長さ公差",
       "startCheck": "確認開始",
-      "startProbe": "プロービング開始"
+      "startProbe": "プロービング開始",
+      "arcDirection": "方向 {n}",
+      "arcRange": "反時計回りの角度。{separation}° 以上離し、{span}° 以上の範囲にします。"
     },
     "guideCanvas": {
       "label": "3D プローブ動作：ドラッグで回転",

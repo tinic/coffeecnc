@@ -928,6 +928,182 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
           "rotated probing changes only the active work coordinate system");
 }
 
+// Three-point bore and boss (#247) in G55 rotated `degrees`. HAL turns the commanded machine XY
+// into the frame (u, v) of the work axes and computes r² = (u - 4)² + (v + 2)² there. With the
+// 2 mm ball, the ball centre touches at r = 7: a bore of Ø16 trips outside it, a boss of Ø12
+// inside it below Z 12. The expected origin is the frame point (4, -2).
+void arc_scenarios(NmlPort& port, double scale, double degrees, const auto& mdi) {
+  checked(port.set_tool({98, 98, 50, 0, "Setter reference"}, {}));
+  checked(port.set_tool({99, 99, 45, 2, "Ruby probe"}, {}));
+  constexpr double none = std::numeric_limits<double>::quiet_NaN();
+  const double turn = degrees * std::numbers::pi / 180;
+  const double c = std::cos(turn);
+  const double s = std::sin(turn);
+  const auto machine = [&] {
+    const auto axes = port.status().controller.axes;
+    return std::array{axes[0].machine, axes[1].machine, axes[2].machine};
+  };
+  const auto origin_of = [&](const NmlStatus& status) {
+    const auto& axes = status.controller.axes;
+    const double x = axes[0].machine;
+    const double y = axes[1].machine;
+    return std::array{c * x + s * y - status.work[0], -s * x + c * y - status.work[1]};
+  };
+  const auto at = [&](double u, double v) {
+    mdi(std::format("G21 G90 G53 G0 X{:.8f} Y{:.8f} Z20", c * u - s * v, s * u + c * v));
+    mdi(scale == 1 ? "G21 G91" : "G20 G91");
+  };
+  SetterEpoch epoch{1, 1, 1, 0};
+  for (const int tool : {98, 99}) {
+    mdi(std::format("M61 Q{}", tool));
+    mdi(std::format("G43 H{}", tool));
+    at(0, 0);
+    ++epoch.tool;
+    halcmd(std::format("setp sim-tool-setter.max {}", (tool == 98 ? 10 : 12) / scale));
+    const auto touched = port.fixed_setter({SetterAction::touch_off, tool, machine()}, epoch, {});
+    require(touched.has_value(), touched ? "the reference and probe have known lengths" : touched.error());
+  }
+  mdi("G21 G90 G54");
+  const auto g54 = port.status().g5x;
+  mdi(std::format("G10 L2 P2 X5 Y-7 Z2 R{}", degrees));
+  mdi("G55");
+  mdi("G92 X2 Y3 Z4");
+  at(0, 0);
+  mdi("G21 G10 L20 P0 Z8"); // Z0 at machine Z 12, the top of the boss.
+  const auto initial = port.status();
+
+  // comp, wcomp and and2 belong to the machine's HAL: windows with near, gates with logic.
+  halcmd("loadrt sum2 names=sim-arc-du,sim-arc-dv,sim-arc-r2");
+  halcmd("loadrt mult2 names=sim-arc-du2,sim-arc-dv2");
+  halcmd("loadrt near names=sim-arc-in,sim-arc-z");
+  halcmd("loadrt logic names=sim-arc-hollow,sim-arc-solid personality=0x801,0x102");
+  for (const auto* part : {"sim-arc-du", "sim-arc-dv", "sim-arc-du2", "sim-arc-dv2", "sim-arc-r2",
+                           "sim-arc-in", "sim-arc-z", "sim-arc-hollow", "sim-arc-solid"})
+    halcmd(std::format("addf {} servo-thread", part));
+  halcmd("net sim-arc-mx axis.x.pos-cmd sim-arc-du.in0 sim-arc-dv.in0");
+  halcmd("net sim-arc-my axis.y.pos-cmd sim-arc-du.in1 sim-arc-dv.in1");
+  halcmd(std::format("setp sim-arc-du.gain0 {:.12f}", c));
+  halcmd(std::format("setp sim-arc-du.gain1 {:.12f}", s));
+  halcmd(std::format("setp sim-arc-du.offset {:.12f}", -4 / scale));
+  halcmd(std::format("setp sim-arc-dv.gain0 {:.12f}", -s));
+  halcmd(std::format("setp sim-arc-dv.gain1 {:.12f}", c));
+  halcmd(std::format("setp sim-arc-dv.offset {:.12f}", 2 / scale));
+  halcmd("net sim-arc-u sim-arc-du.out sim-arc-du2.in0 sim-arc-du2.in1");
+  halcmd("net sim-arc-v sim-arc-dv.out sim-arc-dv2.in0 sim-arc-dv2.in1");
+  halcmd("net sim-arc-u2 sim-arc-du2.out sim-arc-r2.in0");
+  halcmd("net sim-arc-v2 sim-arc-dv2.out sim-arc-r2.in1");
+  // Inside the contact circle: r² within [0, 7²].
+  const double contact_r2 = 7 * 7 / (scale * scale);
+  halcmd("net sim-arc-rr sim-arc-r2.out sim-arc-in.in1");
+  halcmd(std::format("setp sim-arc-in.in2 {:.12f}", contact_r2 / 2));
+  halcmd(std::format("setp sim-arc-in.difference {:.12f}", contact_r2 / 2));
+  halcmd("setp sim-arc-in.scale 1");
+  // Below the boss top: Z within [-100, 12].
+  halcmd("net sim-setter-z sim-arc-z.in1");
+  halcmd(std::format("setp sim-arc-z.in2 {:.12f}", -44 / scale));
+  halcmd(std::format("setp sim-arc-z.difference {:.12f}", 56 / scale));
+  halcmd("setp sim-arc-z.scale 1");
+  halcmd("net sim-arc-inside sim-arc-in.out sim-arc-hollow.in-00 sim-arc-solid.in-00");
+  halcmd("net sim-arc-low sim-arc-z.out sim-arc-solid.in-01");
+  const auto probe_input = [&](std::string_view net, std::string_view pin) {
+    halcmd("unlinkp motion.probe-input");
+    halcmd("unlinkp coffeecnc.probe-input");
+    halcmd(std::format("net {} {} motion.probe-input coffeecnc.probe-input", net, pin));
+  };
+
+  const auto run = [&](std::string_view name, SetterAction action, std::array<double, 3> angles,
+                       double expected_diameter) {
+    const auto before = port.status();
+    FixedSetterRequest request{.action = action, .tool = 99, .start = machine()};
+    request.angles_deg = angles;
+    if (action == SetterAction::boss_arc)
+      request.gauge_width_mm = 16;
+    const auto result = port.fixed_setter(request, epoch, {});
+    if (!result)
+      throw std::runtime_error(std::format("{} at {}°: {}", name, degrees, result.error()));
+    const auto after = port.status();
+    const auto origin = origin_of(after);
+    const double span = arc_spread(angles).span_deg;
+    std::cout << std::format("fact=arc_probe action={} rotation={} angles={:.0f},{:.0f},{:.0f} "
+                             "requested_span={:.0f} origin_u_expected=4.0000 origin_u_measured={:.4f} "
+                             "origin_v_expected=-2.0000 origin_v_measured={:.4f} diameter_expected={:.4f} "
+                             "diameter_measured={:.4f} arc_span_measured={:.1f}",
+                             name, degrees, angles[0], angles[1], angles[2], span, origin[0],
+                             origin[1], expected_diameter, result->center_diameter.value_or(none),
+                             result->arc_span_deg.value_or(none))
+              << std::endl;
+    require(result->material && result->material->corner && result->center_diameter &&
+                std::abs(*result->center_diameter - expected_diameter) < 0.03 &&
+                std::abs(origin[0] - 4) < 0.03 && std::abs(origin[1] + 2) < 0.03 &&
+                result->arc_span_deg && *result->arc_span_deg > 20 && after.wcs == 2 &&
+                std::abs(after.rotation_xy - degrees) < 1e-9 && after.g92 == initial.g92 &&
+                after.tool_offset == initial.tool_offset &&
+                std::abs(after.g5x[2] - before.g5x[2]) < 1e-6 &&
+                std::abs(machine()[2] - before.controller.axes[2].machine) < 0.03,
+            std::format("{} finds the centre and diameter through three contacts at {}°", name,
+                        degrees));
+  };
+  // A bore: from inside, three walls; one set around the circle, one partial arc on one side.
+  probe_input("sim-arc-wall", "sim-arc-hollow.nand");
+  at(2, 1);
+  run("bore_arc", SetterAction::bore_arc, {0, 120, 240}, 16);
+  at(2, 1);
+  run("bore_arc_partial", SetterAction::bore_arc, {-80, -40, 0}, 16);
+  // A boss: from outside beyond Ø16, three faces; again a partial arc.
+  probe_input("sim-arc-boss", "sim-arc-solid.and");
+  at(3, -1);
+  run("boss_arc", SetterAction::boss_arc, {90, 180, 270}, 12);
+  at(3, -1);
+  run("boss_arc_partial", SetterAction::boss_arc, {200, 240, 280}, 12);
+
+  // Directions too close together, or covering too short an arc, are refused before moving.
+  probe_input("sim-arc-wall", "sim-arc-hollow.nand");
+  at(2, 1);
+  for (const auto& [angles, reason] :
+       {std::pair{std::array{0.0, 5.0, 90.0}, "at least 10° apart"},
+        std::pair{std::array{0.0, 12.0, 24.0}, "at least 10° apart"},
+        std::pair{std::array{350.0, 365.0, 10.0}, "at least 10° apart"}}) {
+    const auto writes = port.writes().size();
+    FixedSetterRequest request{.action = SetterAction::bore_arc, .tool = 99, .start = machine()};
+    request.angles_deg = angles;
+    const auto refused = port.fixed_setter(request, epoch, {});
+    std::cout << std::format("fact=arc_probe action=refused rotation={} angles={},{},{} closest={:.0f} "
+                             "span={:.0f} refused={} writes={}",
+                             degrees, angles[0], angles[1], angles[2],
+                             arc_spread(angles).closest_deg, arc_spread(angles).span_deg, !refused,
+                             port.writes().size() - writes)
+              << std::endl;
+    require(!refused && refused.error().contains(reason) && port.writes().size() == writes,
+            refused ? "expected a refused angle set" : refused.error());
+  }
+
+  // The travel check is on the machine endpoint of each direction: 1 mm inside the Y limit.
+  // Outside the bore its wall input would trip during the moves there: the boss input is clear
+  // above Z 12.
+  probe_input("sim-arc-boss", "sim-arc-solid.and");
+  const double edge_y = s >= 0 ? 249 : -249;
+  mdi(std::format("G21 G90 G53 G0 X0 Y{} Z20", edge_y / 2));
+  mdi(std::format("G21 G90 G53 G0 X0 Y{} Z20", edge_y));
+  const auto writes = port.writes().size();
+  const auto origin = port.status().g5x;
+  FixedSetterRequest outward{.action = SetterAction::bore_arc, .tool = 99, .start = machine()};
+  const double up = s >= 0 ? 90 : -90;
+  outward.angles_deg = {up - degrees, up - degrees + 120, up - degrees + 240};
+  const auto outside = port.fixed_setter(outward, epoch, {});
+  std::cout << std::format("fact=arc_probe action=travel rotation={} start_y={} endpoint_y={:.4f} "
+                           "limit_y={} writes={}",
+                           degrees, edge_y, edge_y + (s >= 0 ? 20 : -20), s >= 0 ? 250 : -250,
+                           port.writes().size() - writes)
+            << std::endl;
+  require(!outside && outside.error().contains("outside the configured travel") &&
+              port.writes().size() == writes && port.status().g5x == origin,
+          outside ? "expected a travel refusal" : outside.error());
+  mdi(std::format("G21 G90 G53 G0 X0 Y{} Z20", edge_y / 2));
+  mdi("G21 G90 G53 G0 X0 Y0 Z20");
+  mdi("G54");
+  require(port.status().g5x == g54, "three-point probing changes only the active work system");
+}
+
 void edge_rotations(NmlPort& port, double scale, const auto& mdi) {
   checked(port.set_tool({99, 99, 45, 2, "Ruby probe"}, {}));
   mdi("M61 Q99");
@@ -1254,6 +1430,7 @@ void run(const std::string& ini, std::string_view scenario) {
   const bool edge = scenario == "edge-rotation";
   const bool features = scenario == "features";
   const bool rotated = scenario == "rotated";
+  const bool arc = scenario == "arc" || scenario == "arc-rotated";
   const bool g0759 = std::filesystem::path(ini).filename() == "coffeecnc_g0759.ini";
   auto config = load_machine_config(ini);
   if (!config)
@@ -1266,7 +1443,7 @@ void run(const std::string& ini, std::string_view scenario) {
   config->fixed_setter = FixedSetterLimits{15, 240, reference_tool, 0.5, 12, 60, 1};
   if (scenario == "measure-m6")
     config->fixed_setter->travel_mm = 30;
-  if (material || edge || features || rotated)
+  if (material || edge || features || rotated || arc)
     config->touch_probe_tool = 99;
   // The runner recreates the table, but retains files beside it between runs.
   std::filesystem::remove(std::filesystem::path(config->tool_table).parent_path() /
@@ -1315,6 +1492,11 @@ void run(const std::string& ini, std::string_view scenario) {
   if (rotated) {
     // Millimetres at +7.5°, inches at -30°: each rotated cycle in both units and turns.
     rotated_scenarios(*port, scale, scale == 1 ? 7.5 : -30, mdi);
+    return;
+  }
+  if (arc) {
+    // Millimetres unrotated and at +7.5°, inches at -30°.
+    arc_scenarios(*port, scale, scenario == "arc" ? 0 : scale == 1 ? 7.5 : -30, mdi);
     return;
   }
   if (scenario == "measure-m6") {
@@ -1598,7 +1780,8 @@ auto main(int argc, char** argv) -> int {
   const std::string_view scenario = argc == 4 ? argv[3] : "";
   const std::filesystem::path ini = argv[2];
   if ((scenario != "" && scenario != "material" && scenario != "edge-rotation" &&
-       scenario != "features" && scenario != "rotated" && scenario != "measure-m6") ||
+       scenario != "features" && scenario != "rotated" && scenario != "arc" &&
+       scenario != "arc-rotated" && scenario != "measure-m6") ||
       ini.parent_path() != run_dir ||
       (ini.filename() != "coffeecnc_sim.ini" &&
        !(scenario == "edge-rotation" && ini.filename() == "coffeecnc_g0759.ini")))

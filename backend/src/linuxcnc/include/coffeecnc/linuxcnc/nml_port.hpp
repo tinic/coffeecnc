@@ -186,6 +186,9 @@ struct FixedSetterMove {
   double retract_above_contact_mm{};
   std::optional<ProbeDirection> material{};
   bool return_to_clearance{}; // lift on the search-start XY with the probe interlock still active
+  // A material search along this direction instead of `material`'s axis: degrees
+  // counterclockwise from the active work system's +X axis, turned by its rotation.
+  std::optional<double> heading_deg{};
 };
 
 struct FixedSetterContact {

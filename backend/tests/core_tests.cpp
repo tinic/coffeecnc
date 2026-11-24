@@ -11,6 +11,7 @@
 #include <format>
 #include <iostream>
 #include <limits>
+#include <numbers>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -126,6 +127,38 @@ void edge_rotation_wraps() {
             std::format("rotation {} wraps to {}, not {}", sum, wrapped, wrapped_rotation(sum)));
 }
 
+// Three-point bore and boss geometry (#247): the circle, the arc it covers, the spread checks.
+void arc_geometry() {
+  const auto on_circle = [](double degrees) {
+    const double a = degrees * std::numbers::pi / 180;
+    return std::array{4 + 7 * std::cos(a), -2 + 7 * std::sin(a)};
+  };
+  for (const auto& angles : {std::array{0.0, 120.0, 240.0}, std::array{-80.0, -40.0, 0.0},
+                             std::array{200.0, 240.0, 280.0}, std::array{10.0, 25.0, 40.0}}) {
+    const std::array points{on_circle(angles[0]), on_circle(angles[1]), on_circle(angles[2])};
+    const auto circle = circle_through(points);
+    require(circle && std::abs(circle->centre[0] - 4) < 1e-9 &&
+                std::abs(circle->centre[1] + 2) < 1e-9 && std::abs(circle->radius - 7) < 1e-9,
+            std::format("the circle through {}°, {}°, {}° has its centre at (4, -2) and radius 7",
+                        angles[0], angles[1], angles[2]));
+    require(circle && std::abs(measured_span(points, circle->centre) - arc_spread(angles).span_deg) < 1e-9,
+            "the measured arc equals the requested one for contacts on the circle");
+  }
+  require(!circle_through({std::array{0.0, 0.0}, std::array{1.0, 1.0}, std::array{2.0, 2.0}}),
+          "three points on a line have no circle");
+  require(!circle_through({std::array{0.0, 0.0}, std::array{1.0, 0.0}, std::array{2.0, 1e-9}}),
+          "three points almost on a line give no usable circle");
+  const auto spread = arc_spread({350, 365, 10});
+  require(std::abs(spread.closest_deg - 5) < 1e-9 && std::abs(spread.span_deg - 20) < 1e-9,
+          "directions are compared around the full turn");
+  const auto full = arc_spread({0, 120, 240});
+  require(std::abs(full.closest_deg - 120) < 1e-9 && std::abs(full.span_deg - 240) < 1e-9,
+          "three even directions cover 240° and are 120° apart");
+  const auto partial = arc_spread({-80, -40, 0});
+  require(std::abs(partial.closest_deg - 40) < 1e-9 && std::abs(partial.span_deg - 80) < 1e-9,
+          "a partial arc covers the angle between its outer directions");
+}
+
 void fixed_setter_homing() {
   CommandPolicy homing{simulator_limits()};
   CommandPolicy no_homing{Limits{3000, {3000, 3000, 3000}, 1.2, 0.5, 1.2, 24000, false}};
@@ -149,6 +182,9 @@ void fixed_setter_homing() {
   require(!homing.evaluate(FixedSetterRequest{.action = SetterAction::boss,
                                               .tool = 99, .gauge_width_mm = nan}, s).allowed,
           "a probe gauge width is finite");
+  require(!homing.evaluate(FixedSetterRequest{.action = SetterAction::bore_arc, .tool = 99,
+                                              .angles_deg = {0, nan, 240}}, s).allowed,
+          "three-point probe angles are finite");
   s.axes[1].on_hard_limit = true;
   require(!homing.evaluate(FixedSetterRequest{.action = SetterAction::material, .tool = 99}, s).allowed,
           "a hard limit blocks a probe cycle");
@@ -665,6 +701,7 @@ auto main() -> int {
     reference_mark_homing();
     fixed_setter_homing();
     edge_rotation_wraps();
+    arc_geometry();
     work_origin_gates();
     rotation_and_shift_gates();
     paused_z_gates();

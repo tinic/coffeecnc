@@ -65,6 +65,14 @@ void command_results() {
   const auto feature = Json::parse(encode_result(42, CommandOutcome::accepted, "", slot)).at("setter");
   require(feature.at("feature_size") == Json{{"y", 12.5}} && feature.at("material").at("axis") == "Y",
           "Slot response reports the physical width in millimetres for the measured axis only");
+  SetterState arc{};
+  arc.material = SetterState::Material{2, 'X', true};
+  arc.center_diameter = 16;
+  arc.arc_span_deg = 80;
+  const auto arc_json = Json::parse(encode_result(42, CommandOutcome::accepted, "", arc)).at("setter");
+  require(arc_json.at("center_diameter") == 16 && arc_json.at("arc_span") == 80 &&
+              arc_json.at("material").at("axis") == "XY",
+          "A three-point result reports the diameter and the arc the contacts covered");
   slot.feature_size[1] = std::numeric_limits<double>::quiet_NaN();
   const auto invalid = Json::parse(encode_result(42, CommandOutcome::accepted, "", slot));
   require(invalid.at("outcome") == "failed" && !invalid.contains("setter"),

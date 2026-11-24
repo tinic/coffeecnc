@@ -180,6 +180,33 @@ describe('recess and ridge setup', () => {
     expect(fixture.get('.setter-band.blocked p').text()).toContain('+Y face')
   })
 
+  it('probes a 3-point bore along the entered directions and refuses a set too close together', async () => {
+    const fixture = await choose('3-point bore')
+    const fields = fixture.findAll('.arc-angles input')
+    expect(fields.map(field => (field.element as HTMLInputElement).value)).toEqual(['0', '120', '240'])
+    await fields[1]?.setValue('5')
+    expect(fixture.get('.start-probe').attributes('disabled')).toBeDefined()
+    await fields[0]?.setValue('-80')
+    await fields[1]?.setValue('-40')
+    await fields[2]?.setValue('0')
+    await fixture.get('.start-probe').trigger('click')
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'fixed_setter', action: 'bore_arc', angles: [-80, -40, 0],
+      tool: 99, x: 0, y: 0, z: 0 })
+    expect(fixture.get('.setter-band.busy p').text()).toBe('Probing three bore walls…')
+    await answer({ outcome: 'accepted', reason: '', setter: { calibration: null, measurement: null,
+      material: { wcs: 2, axis: 'XY' }, center_diameter: 16, arc_span: 80 } })
+    expect(fixture.get('.setter-band.done p').text()).toBe('G55 X0 Y0 set at the circle centre, Ø 16.000 mm, from contacts over 80°.')
+  })
+
+  it('asks a 3-point boss for its approximate diameter as well', async () => {
+    const fixture = await choose('3-point boss')
+    expect(fixture.get('.start-probe').attributes('disabled')).toBeDefined()
+    await fixture.get('.dimension input').setValue('30mm')
+    await fixture.get('.start-probe').trigger('click')
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'fixed_setter', action: 'boss_arc', angles: [0, 120, 240],
+      diameter: 30, tool: 99, x: 0, y: 0, z: 0 })
+  })
+
   it('reports a one-axis ridge width in the display units', async () => {
     panel.unit = 'inch'
     const fixture = await choose('ridge across Y')

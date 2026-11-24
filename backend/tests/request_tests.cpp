@@ -129,6 +129,19 @@ void protocol_forms() {
   require(ridge.action == SetterAction::ridge && ridge.direction == ProbeDirection::y_plus &&
               ridge.gauge_width_mm == 25.4,
           "Ridge requests carry the axis and approximate width in millimetres");
+  const auto bore_arc = body<FixedSetterRequest>(
+      R"({"id":42,"type":"fixed_setter","action":"bore_arc","tool":99,"x":1,"y":2,"z":3,"angles":[-80,-40,0]})");
+  require(bore_arc.action == SetterAction::bore_arc &&
+              bore_arc.angles_deg == std::array{-80.0, -40.0, 0.0} && bore_arc.start == std::array{1.0, 2.0, 3.0},
+          "A three-point bore names its three directions in degrees");
+  const auto boss_arc = body<FixedSetterRequest>(
+      R"({"id":42,"type":"fixed_setter","action":"boss_arc","tool":99,"x":1,"y":2,"z":3,"angles":[90,180,270],"diameter":30})");
+  require(boss_arc.action == SetterAction::boss_arc && boss_arc.gauge_width_mm == 30 &&
+              boss_arc.angles_deg == std::array{90.0, 180.0, 270.0},
+          "A three-point boss also gives its approximate diameter");
+  rejected(R"({"id":42,"type":"fixed_setter","action":"bore_arc","tool":99,"x":1,"y":2,"z":3,"angles":[0,120]})", 42);
+  rejected(R"({"id":42,"type":"fixed_setter","action":"bore_arc","tool":99,"x":1,"y":2,"z":3,"angles":[0,"120",240]})", 42);
+  rejected(R"({"id":42,"type":"fixed_setter","action":"boss_arc","tool":99,"x":1,"y":2,"z":3,"angles":[0,120,240]})", 42);
   rejected(R"({"id":42,"type":"fixed_setter","action":"slot","tool":99,"x":1,"y":2,"z":3,"axis":"z"})", 42);
   rejected(R"({"id":42,"type":"fixed_setter","action":"ridge","tool":99,"x":1,"y":2,"z":3,"axis":"x"})", 42);
   const auto tool =

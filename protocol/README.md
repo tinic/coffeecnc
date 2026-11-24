@@ -18,9 +18,13 @@ The optional `hello.fixed_setter` advertises `reference_tool`, `travel_mm`, `fee
 | `slot` | `tool`, machine start `x`, `y`, `z`, and `axis` |
 | `ridge` | `tool`, machine start `x`, `y`, `z`, `axis`, and `width` |
 | `boss` | `tool`, machine start `x`, `y`, `z`, and `diameter` |
+| `bore_arc` | `tool`, machine start `x`, `y`, `z`, and `angles` (three directions, degrees counterclockwise from the work +X axis) |
+| `boss_arc` | `tool`, machine start `x`, `y`, `z`, `angles`, and `diameter` |
 | `ball` | `tool`, machine start `x`, `y`, `z`, and `gauge_width` |
 | `angle` | `tool`, machine start `x`, `y`, `z`, `direction`, and `spacing` |
 | `apply_angle` | `tool` and the `measurement_id` of an `angle` result |
+
+`bore_arc` probes outward from the start along each direction. `boss_arc` probes inward from beyond `diameter`/2, below Z0. Both set X0 Y0 at the centre of the circle through the three ball-centre contacts. They report `setter.center_diameter` and `setter.arc_span`, the arc in degrees that the contacts cover around that centre. The directions must be at least 10° apart and cover at least 30°. Otherwise the request is refused before any motion. A result whose contacts cover less than 20° (almost on a line), or whose circle does not enclose the start, is refused without writing anything.
 | `ball` | `tool`, machine start `x`, `y`, `z`, and `gauge_width` |
 | `angle` | `tool`, machine start `x`, `y`, `z`, `direction`, and `spacing` |
 | `apply_angle` | `tool` and `measurement_id` |

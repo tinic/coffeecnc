@@ -99,7 +99,15 @@
       "rotationTitle": "Appliquer comme rotation G5x ?",
       "rotationEffect": "Faire tourner les axes XY de {wcs} de {degrees} autour de son origine enregistrée. Sa rotation passe de {current} à {rotation}.",
       "shiftStays": "Le décalage G52/G92 actuel reste actif.",
-      "applyRotation": "Appliquer la rotation"
+      "applyRotation": "Appliquer la rotation",
+      "arcFeature": "3 points",
+      "arcBore": "Alésage",
+      "arcBoss": "Bossage",
+      "arcBoreLabel": "Alésage par 3 points",
+      "arcBossLabel": "Bossage par 3 points",
+      "arcBoreBusy": "Palpage de trois parois de l’alésage…",
+      "arcBossBusy": "Palpage de trois faces du bossage…",
+      "arcDone": "{wcs} X0 Y0 défini au centre du cercle, Ø {diameter} mm, avec des contacts sur {span}°."
     },
     "guide": {
       "angleFront": "Avant · Y−",
@@ -180,7 +188,15 @@
       "stepLatch": "Palpage lent · {pass} sur 3",
       "stepRetract": "Dégager",
       "stepLiftWork": "Remonter au-dessus de la pièce",
-      "stepClearance": "Dégager à la hauteur de dégagement"
+      "stepClearance": "Dégager à la hauteur de dégagement",
+      "titleBoreArc": "Palper le centre de l’alésage par 3 points",
+      "titleBossArc": "Palper le centre du bossage par 3 points",
+      "setupBoreArc": "Amenez la bille dans l’alésage, sous son bord. Choisissez trois directions avec une paroi dans la course de recherche. Le palpage part du départ vers l’extérieur dans chacune. Une partie du cercle suffit.",
+      "setupBossArc": "Définissez d’abord Z0 sur le dessus du bossage. Placez-vous au-dessus, saisissez son diamètre approximatif et trois directions où il a une face. Une partie du cercle suffit.",
+      "resultArc": "Définir X0 et Y0 au centre du cercle passant par les trois contacts et indiquer son diamètre",
+      "contactAt": "contact à {angle}°",
+      "aboveContact": "Se placer à l’extérieur de la face à {angle}°",
+      "inputAngles": "Directions depuis +X"
     },
     "guideDialog": {
       "previous": "Mouvement précédent",
@@ -209,7 +225,9 @@
       "result": "Résultat",
       "lengthTolerance": "Tolérance de longueur",
       "startCheck": "Lancer le contrôle",
-      "startProbe": "Lancer le palpage"
+      "startProbe": "Lancer le palpage",
+      "arcDirection": "Direction {n}",
+      "arcRange": "Degrés dans le sens antihoraire, espacés d’au moins {separation}°, couvrant au moins {span}°."
     },
     "guideCanvas": {
       "label": "Mouvement du palpeur en 3D : faites glisser pour tourner",

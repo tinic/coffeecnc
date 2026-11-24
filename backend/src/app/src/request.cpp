@@ -378,6 +378,8 @@ auto command(const Json& object) -> Command {
                                               {"ball", SetterAction::ball},
                                               {"bore", SetterAction::bore},
                                               {"boss", SetterAction::boss},
+                                              {"bore_arc", SetterAction::bore_arc},
+                                              {"boss_arc", SetterAction::boss_arc},
                                               {"angle", SetterAction::angle},
                                               {"apply_angle", SetterAction::apply_angle}});
     FixedSetterRequest request{action};
@@ -410,6 +412,19 @@ auto command(const Json& object) -> Command {
       } else if (action == SetterAction::boss) {
         fields(object, {"id", "type", "action", "tool", "x", "y", "z", "diameter"});
         request.gauge_width_mm = number(object, "diameter");
+      } else if (action == SetterAction::bore_arc || action == SetterAction::boss_arc) {
+        if (action == SetterAction::boss_arc) {
+          fields(object, {"id", "type", "action", "tool", "x", "y", "z", "angles", "diameter"});
+          request.gauge_width_mm = number(object, "diameter");
+        } else {
+          fields(object, {"id", "type", "action", "tool", "x", "y", "z", "angles"});
+        }
+        const auto& angles = field(object, "angles");
+        if (!angles.is_array() || angles.size() != request.angles_deg.size() ||
+            !std::ranges::all_of(angles, [](const Json& angle) { return angle.is_number(); }))
+          throw InvalidRequest("Expected three probe angles in degrees.");
+        for (std::size_t i = 0; i < request.angles_deg.size(); ++i)
+          request.angles_deg.at(i) = angles.at(i).get<double>();
       } else if (action == SetterAction::slot || action == SetterAction::ridge) {
         if (action == SetterAction::ridge) {
           fields(object, {"id", "type", "action", "tool", "x", "y", "z", "axis", "width"});

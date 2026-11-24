@@ -99,7 +99,15 @@
       "rotationTitle": "¿Aplicar como rotación G5x?",
       "rotationEffect": "Girar los ejes XY de {wcs} {degrees} alrededor de su origen guardado. Su rotación pasa de {current} a {rotation}.",
       "shiftStays": "El desplazamiento G52/G92 actual sigue activo.",
-      "applyRotation": "Aplicar rotación"
+      "applyRotation": "Aplicar rotación",
+      "arcFeature": "3 puntos",
+      "arcBore": "Agujero",
+      "arcBoss": "Saliente",
+      "arcBoreLabel": "Agujero por 3 puntos",
+      "arcBossLabel": "Saliente por 3 puntos",
+      "arcBoreBusy": "Palpando tres paredes del agujero…",
+      "arcBossBusy": "Palpando tres caras del saliente…",
+      "arcDone": "{wcs} X0 Y0 fijado en el centro del círculo, Ø {diameter} mm, con contactos en {span}°."
     },
     "guide": {
       "angleFront": "Delantera · Y−",
@@ -180,7 +188,15 @@
       "stepLatch": "Palpado lento · {pass} de 3",
       "stepRetract": "Retracción",
       "stepLiftWork": "Subir por encima de la pieza",
-      "stepClearance": "Retraer a la distancia de seguridad"
+      "stepClearance": "Retraer a la distancia de seguridad",
+      "titleBoreArc": "Palpar el centro del agujero por 3 puntos",
+      "titleBossArc": "Palpar el centro del saliente por 3 puntos",
+      "setupBoreArc": "Lleve la bola dentro del agujero, por debajo de su borde. Elija tres direcciones con una pared dentro del recorrido de búsqueda. Palpa hacia fuera en cada una desde el inicio. Basta con una parte del círculo.",
+      "setupBossArc": "Primero fije Z0 en la parte superior del saliente. Sitúese encima, introduzca su diámetro aproximado y tres direcciones en las que tiene una cara. Basta con una parte del círculo.",
+      "resultArc": "Fijar X0 e Y0 en el centro del círculo que pasa por los tres contactos e informar su diámetro",
+      "contactAt": "contacto a {angle}°",
+      "aboveContact": "Mover fuera de la cara a {angle}°",
+      "inputAngles": "Direcciones desde +X"
     },
     "guideDialog": {
       "previous": "Movimiento anterior",
@@ -209,7 +225,9 @@
       "result": "Resultado",
       "lengthTolerance": "Tolerancia de longitud",
       "startCheck": "Iniciar comprobación",
-      "startProbe": "Iniciar palpado"
+      "startProbe": "Iniciar palpado",
+      "arcDirection": "Dirección {n}",
+      "arcRange": "Grados en sentido antihorario, separados al menos {separation}°, cubriendo al menos {span}°."
     },
     "guideCanvas": {
       "label": "Movimiento del palpador en 3D: arrastre para girar",

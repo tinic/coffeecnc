@@ -62,6 +62,8 @@ auto encode_result(RequestId id, CommandOutcome outcome, std::string_view reason
       message["setter"]["ball_diameter"] = *setter->ball_diameter;
     if (setter->center_diameter)
       message["setter"]["center_diameter"] = *setter->center_diameter;
+    if (setter->arc_span_deg)
+      message["setter"]["arc_span"] = *setter->arc_span_deg;
     if (setter->edge_angle_deg)
       message["setter"]["edge_angle"] = *setter->edge_angle_deg;
     if (const auto& edge = setter->edge_rotation)

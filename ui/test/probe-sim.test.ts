@@ -219,6 +219,11 @@ describe('browser probe scene', () => {
     expect(Object.keys(runout ?? {}).sort()).toEqual(['radius', 'table_diameter', 'tool'])
     expect(runout?.radius.x).toBeCloseTo(0.02)
     expect(runout?.radius.y).toBeCloseTo(0.02)
+    // A measure-only bore reports corrected faces: they lie 20 mm apart, not 19.96.
+    const faces = cycle({ action: 'bore', measure_only: true }).setter?.measured?.faces ?? []
+    const side = (direction: ProbeDirection): Vec3 | undefined => faces.find(face => face.direction === direction)?.machine
+    const [front, back] = [side('y_minus'), side('y_plus')]
+    expect(front && back ? back[1] - front[1] : null).toBeCloseTo(20)
     // The compensated bore reads the true diameter.
     expect(cycle({ action: 'bore' }).setter?.center_diameter).toBeCloseTo(20)
     expect(sim.status().offsets.g5x.slice(0, 2).map(value => Math.round(value * 1000) / 1000)).toEqual([155, 108])
@@ -267,6 +272,84 @@ describe('browser probe scene', () => {
     const id = submit({ action: 'runout', diameter: 20.1, outside: false })
     sim.advanceUntil(() => result(id) !== undefined, 30_000)
     expect(result(id)?.reason).toBe('The X trigger radius correction is 0.070 mm, more than 0.05 mm. Check the diameter and the ball calibration.')
+  })
+
+  it.each([0, 7.5, -30])('measures the bore and boss only, then sets them on confirmation, rotated %s°', (degrees) => {
+    for (const [setup, centre, diameter] of [['bore', [155, 108], 19.96], ['boss', [235, 170], 24.04]] as const) {
+      const { sim, cycle, send, result } = scene(setup)
+      sim.modal.rotations[0] = degrees
+      const before = structuredClone(sim.status().offsets)
+      const measured = cycle(setup === 'bore' ? { action: 'bore', measure_only: true } : { action: 'boss', diameter: 24, measure_only: true })
+      expect(sim.status().offsets).toEqual(before)
+      expect(measured.setter?.material).toBeUndefined()
+      expect(measured.setter?.center_diameter).toBeCloseTo(diameter)
+      const report = measured.setter?.measured
+      const work = toWork(sim.modal, [centre[0], centre[1], 0])
+      expect(report).toMatchObject({ wcs: 1, axes: 'XY' })
+      expect(report?.faces.map(face => face.direction)).toEqual(['x_plus', 'x_minus', setup === 'bore' ? 'y_plus' : 'y_plus', 'y_minus'])
+      expect(report?.work.x).toBeCloseTo(work[0])
+      expect(report?.work.y).toBeCloseTo(work[1])
+      expect(report?.work.z).toBeUndefined()
+      expect(report?.machine?.[0]).toBeCloseTo(centre[0])
+      expect(report?.machine?.[1]).toBeCloseTo(centre[1])
+      const id = report?.measurement_id
+      if (id === undefined) throw new Error('Missing measurement')
+      const request = { type: 'fixed_setter', action: 'apply_measurement', tool: 99, measurement_id: id } as const
+      expect(result(send(request))?.setter?.material).toEqual({ wcs: 1, axis: 'XY' })
+      expect(sim.status().offsets.g5x[0]).toBeCloseTo(centre[0])
+      expect(sim.status().offsets.g5x[1]).toBeCloseTo(centre[1])
+      expect(sim.status().offsets.g5x[2]).toBe(before.g5x[2])
+      expect(sim.status().offsets.rotation_xy).toBe(degrees)
+      expect(result(send(request))?.reason).toBe('Probe the feature again before applying the measurement.')
+    }
+  })
+
+  it('measures Z top and an edge without writing, and refuses a measurement from another work frame', () => {
+    const { sim, cycle, send, result } = scene()
+    const top = cycle({ action: 'material', direction: 'z_top', measure_only: true })
+    expect(sim.status().offsets.g5x[2]).toBe(-118)
+    expect(top.setter?.measured).toMatchObject({ axes: 'Z', faces: [{ direction: 'z_top' }] })
+    expect(top.setter?.measured?.work.z).toBeCloseTo(-2)
+    const id = top.setter?.measured?.measurement_id
+    if (id === undefined) throw new Error('Missing measurement')
+    expect(result(send({ type: 'fixed_setter', action: 'apply_measurement', tool: 99, measurement_id: id }))?.setter?.material)
+      .toEqual({ wcs: 1, axis: 'Z' })
+    expect(sim.status().offsets.g5x[2]).toBe(-120)
+
+    const left = scene('left')
+    const x = left.sim.status().offsets.g5x[0]
+    const edge = left.cycle({ action: 'material', direction: 'x_plus', measure_only: true })
+    expect(left.sim.status().offsets.g5x[0]).toBe(x)
+    expect(edge.setter?.measured).toMatchObject({ axes: 'X', faces: [{ direction: 'x_plus' }] })
+    expect(edge.setter?.measured?.machine?.[0]).toBeCloseTo(109.98)
+    const stale = edge.setter?.measured?.measurement_id
+    if (stale === undefined) throw new Error('Missing measurement')
+    left.send({ type: 'select_wcs', wcs: 2 })
+    expect(left.result(left.send({ type: 'fixed_setter', action: 'apply_measurement', tool: 99, measurement_id: stale }))?.reason)
+      .toBe('The work frame or tool changed. Probe the feature again.')
+    expect(left.sim.modal.offsets[0]?.[0]).toBe(x)
+  })
+
+  it.each(['ball', 'touch_off', 'check'] as const)('refuses %s as measure-only, as the controller does', (action) => {
+    const { sim, send, result } = scene('top')
+    const before = structuredClone(sim.status().offsets)
+    const tools = JSON.stringify(sim.modal.tools)
+    const [x, y, z] = sim.status().axes.map(axis => axis.machine) as Vec3
+    const command = { type: 'fixed_setter', action, tool: 99, x, y, z, gauge_width: 24, measure_only: true }
+    const reply = result(send(command as unknown as CommandBody))
+    expect(reply).toMatchObject({ outcome: 'rejected', reason: 'This probe action always writes its result.',
+      refusal: { key: 'messages.policy.probeAlwaysWrites' } })
+    expect(sim.status().offsets).toEqual(before)
+    expect(JSON.stringify(sim.modal.tools)).toBe(tools)
+  })
+
+  it('reports both edge-angle contacts in measure-only mode and offers no origin', () => {
+    const { sim, cycle } = scene('angle')
+    const measured = cycle({ action: 'angle', direction: 'y_plus', spacing: 50, measure_only: true })
+    expect(measured.setter?.edge_angle).toBeCloseTo(3)
+    expect(measured.setter?.measured).toMatchObject({ axes: '', work: {}, faces: [{ direction: 'y_plus' }, { direction: 'y_plus' }] })
+    expect(measured.setter?.measured?.measurement_id).toBeUndefined()
+    expect(sim.status().offsets.rotation_xy).toBe(0)
   })
 
   it('keeps an applied rotation inside -180..180° like the controller', () => {

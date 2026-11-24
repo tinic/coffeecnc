@@ -544,6 +544,11 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s,
               !std::isfinite(c.gauge_width_mm))
             return reject("Probe positions and dimensions must be finite.",
                           RefusalMessage{"messages.policy.probeValuesFinite"});
+          if (c.measure_only && (!is_material_probe(c.action) || c.action == SetterAction::ball ||
+                                 c.action == SetterAction::apply_angle ||
+                                 c.action == SetterAction::apply_measurement))
+            return reject("This probe action always writes its result.",
+                          RefusalMessage{"messages.policy.probeAlwaysWrites"});
           if (!std::ranges::all_of(s.axes, &AxisState::enabled) ||
               s.any_enabled_axis([](const auto& axis) { return axis.on_hard_limit; }))
             return reject("The probe requires configured axes and no active hard limit.",

@@ -383,6 +383,8 @@
       "runoutTooLarge": "Die Korrektur des Schaltradius in {axis} beträgt {value} mm, mehr als {limit} mm. Prüfen Sie Durchmesser und Kugelkalibrierung.",
       "runoutSaveFailed": "Die Rundlaufkorrektur konnte nicht gespeichert werden.",
       "runoutRemoveFailed": "Die gespeicherte Rundlaufkorrektur konnte nicht entfernt werden.",
+      "probeFeatureAgain": "Tasten Sie das Merkmal erneut an, bevor Sie die Messung anwenden.",
+      "measuredFrameChanged": "Werkstückkoordinatensystem oder Werkzeug hat sich geändert. Tasten Sie das Merkmal erneut an.",
       "rotationCancelled": "Die Drehung wurde abgebrochen, bevor das Koordinatensystem geschrieben wurde.",
       "rotationCommand": "Der Befehl für die Drehung des Koordinatensystems konnte nicht erstellt werden.",
       "rotationUnverified": "Die angewendete Drehung konnte nicht geprüft werden. Prüfen Sie das aktive Koordinatensystem.",
@@ -578,7 +580,11 @@
       "stopExistsNamed": "fragt außerhalb eines Unterprogramms, ob {name} existiert: Auf der Maschine kann er aus einem früheren Programm oder MDI-Satz existieren, was die Vorschau nicht weiß",
       "stopComputedParameter": "liest einen Parameter, dessen Nummer berechnet wird (#[...], ##): Welcher es ist und ob das Programm ihn gesetzt hat, ist der Vorschau nicht bekannt",
       "stopReturnValue": "liest {name} oder {other}, bevor ein Unterprogramm des Programms zurückgekehrt ist: Sein Wert aus einem früheren Programm oder MDI-Satz ist der Vorschau nicht bekannt",
-      "stopDefinitionBlock": "ein O-Wort in einer Unterprogrammdefinition gehört zu einem Block außerhalb davon: Welche Zeilen laufen, ist der Vorschau nicht bekannt"
+      "stopDefinitionBlock": "ein O-Wort in einer Unterprogrammdefinition gehört zu einem Block außerhalb davon: Welche Zeilen laufen, ist der Vorschau nicht bekannt",
+      "stopPythonLine": "eine `;py,`-Zeile führt Python im Interpreter aus",
+      "stopPythonComment": "ein Kommentar ({word}...) führt Python im Interpreter aus",
+      "stopFileWritingComment": "ein Kommentar ({word}...) schreibt eine Datei",
+      "stopOwordName": "ein O-Wort, dessen Name berechnet wird oder kein einfacher Name ist (Buchstaben, Ziffern, `_`, `-`, `.`): Der Interpreter würde eine Datei mit diesem Namen suchen"
     },
     "nmlStatus": {
       "pauseFirst": "Pausieren Sie ein laufendes Programm, bevor Sie Z tippen.",

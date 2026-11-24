@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 
 namespace coffeecnc {
 namespace {
@@ -81,6 +82,39 @@ auto encode_result(RequestId id, CommandOutcome outcome, std::string_view reason
           {"tool", runout->tool},
           {"table_diameter", runout->table_diameter_mm},
           {"radius", {{"x", runout->radius_mm[0]}, {"y", runout->radius_mm[1]}}}};
+    }
+    if (const auto& measured = setter->measured) {
+      const auto direction = [](ProbeDirection d) {
+        switch (d) {
+        case ProbeDirection::z_top:
+          return "z_top";
+        case ProbeDirection::x_minus:
+          return "x_minus";
+        case ProbeDirection::x_plus:
+          return "x_plus";
+        case ProbeDirection::y_minus:
+          return "y_minus";
+        case ProbeDirection::y_plus:
+          return "y_plus";
+        }
+        return "z_top";
+      };
+      auto faces = Json::array();
+      std::ranges::transform(measured->faces, std::back_inserter(faces), [&](const auto& face) {
+        return Json{
+            {"direction", direction(face.direction)}, {"work", face.work}, {"machine", face.machine}};
+      });
+      auto work = Json::object();
+      for (std::size_t axis = 0; axis < measured->work.size(); ++axis)
+        if (const auto value = measured->work[axis])
+          work[std::string(1, "xyz"[axis])] = *value;
+      auto& out = message["setter"]["measured"];
+      out = {{"wcs", measured->wcs}, {"axes", measured->axes}, {"work", std::move(work)},
+             {"faces", std::move(faces)}};
+      if (measured->id != 0)
+        out["measurement_id"] = measured->id;
+      if (measured->machine)
+        out["machine"] = *measured->machine;
     }
     if (const auto& material = setter->material)
       message["setter"]["material"] = {{"wcs", material->wcs},

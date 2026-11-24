@@ -1763,6 +1763,19 @@
     ]
   },
   {
+    "type": "message",
+    "level": "error",
+    "text": "The restore was not completed: The restore was prepared 181 s before CoffeeCNC ended, more than 120 s: nothing was written. The files are as they were.",
+    "time": 1700000001700,
+    "localization": {
+      "key": "backend.machineData.notCompleted",
+      "params": { "detail": "The restore was prepared 181 s before CoffeeCNC ended, more than 120 s: nothing was written." },
+      "params_localization": {
+        "detail": { "key": "backend.machineData.stale", "params": { "age": "181", "limit": "120" } }
+      }
+    }
+  },
+  {
     "type": "diagnostics",
     "inputs": [
       { "role": "min_limit", "joint": 0, "axis": "x", "name": "joint.0.neg-lim-sw-in", "kind": "pin", "state": "undriven", "value": false },

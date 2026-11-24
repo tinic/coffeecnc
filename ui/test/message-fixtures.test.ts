@@ -1656,6 +1656,19 @@ const examples = [
   {"type": "restore_summary", "path": "/media/cnc/STICK/coffeecnc-G0759-20261123-140200.tar.gz", "token": "3f1c8e0a9b2d4c75", "machine_id": "G0759", "created": 1795960920000, "files": [{"role": "ini", "name": "config/g0759.ini", "target": "/home/cnc/linuxcnc/configs/g0759/g0759.ini", "change": "same", "bytes": 4012, "symlink": false}, {"role": "hal", "name": "config/g0759.hal", "target": "/home/cnc/linuxcnc/configs/g0759/g0759.hal", "change": "changed", "bytes": 2210, "symlink": true}, {"role": "tool_table", "name": "tool-table/tool.tbl", "target": "/home/cnc/linuxcnc/configs/g0759/tool.tbl", "change": "changed", "bytes": 310, "symlink": false}, {"role": "parameters", "name": "parameters/g0759.var", "target": "/home/cnc/linuxcnc/configs/g0759/g0759.var", "change": "at_exit", "bytes": 1882, "symlink": false}, {"role": "data", "name": "data/tool-models.json", "target": "/home/cnc/.local/share/coffeecnc/G0759/tool-models.json", "change": "new", "bytes": 512, "symlink": false}]},
   {"type": "restore_summary", "path": "/home/cnc/old.tar.gz", "token": "0000000000000001", "machine_id": null, "created": 0, "files": [{"role": "ini", "name": "config/mill.ini", "target": "/home/cnc/linuxcnc/configs/mill/mill.ini", "change": "same", "bytes": 10, "symlink": false}]},
   {
+    "type": "message",
+    "level": "error",
+    "text": "The restore was not completed: The restore was prepared 181 s before CoffeeCNC ended, more than 120 s: nothing was written. The files are as they were.",
+    "time": 1700000001700,
+    "localization": {
+      "key": "backend.machineData.notCompleted",
+      "params": { "detail": "The restore was prepared 181 s before CoffeeCNC ended, more than 120 s: nothing was written." },
+      "params_localization": {
+        "detail": { "key": "backend.machineData.stale", "params": { "age": "181", "limit": "120" } }
+      }
+    }
+  },
+  {
     "type": "diagnostics",
     "inputs": [
       { "role": "min_limit", "joint": 0, "axis": "x", "name": "joint.0.neg-lim-sw-in", "kind": "pin", "state": "undriven", "value": false },

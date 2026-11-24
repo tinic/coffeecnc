@@ -2,12 +2,15 @@
 
 #include <coffeecnc/app/backup_archive.hpp>
 
+#include "message_key_json.hpp"
+
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
 #include <format>
 #include <fstream>
 #include <iterator>
+#include <map>
 #include <set>
 #include <thread>
 #include <utility>
@@ -314,6 +317,10 @@ void MachineData::report_last_restore(const Pause& pause) {
     const auto written = result.value("written", std::uint64_t{});
     const auto copy = result.value("pre_restore", std::string{});
     const auto reason = result.value("reason", std::string{});
+    std::map<std::string, MessageParameterKey> details;
+    if (const auto metadata = result.find("reason_localization"); metadata != result.end())
+      if (auto key = message_parameter_from_json(*metadata))
+        details.emplace("detail", std::move(*key));
     const auto kept = strings(result.value("not_put_back", Json::array()));
     const auto groups = strings(result.value("group_not_kept", Json::array()));
     if (result.value("ok", false) && written == 0)
@@ -340,14 +347,15 @@ void MachineData::report_last_restore(const Pause& pause) {
       notice_ = {
           true,
           std::format("The restore was not completed: {} The files are as they were.", reason),
-          MessageKey{"backend.machineData.notCompleted", {{"detail", reason}}}};
+          MessageKey{"backend.machineData.notCompleted", {{"detail", reason}}, std::move(details)}};
     else
       notice_ = {true,
                  std::format("The restore was not completed: {} These files could not be put "
                              "back: {}. The files from before the restore are in {}.",
                              reason, joined(kept), copy),
                  MessageKey{"backend.machineData.notPutBack",
-                            {{"detail", reason}, {"files", joined(kept)}, {"path", copy}}}};
+                            {{"detail", reason}, {"files", joined(kept)}, {"path", copy}},
+                            std::move(details)}};
   } else if (applying.is_object()) {
     const auto pre_restore = applying.value("pre_restore", std::string{});
     notice_ = {true,
@@ -804,7 +812,7 @@ auto apply_staged_restore(ToolModelFiles& files, const std::string& data_directo
     [[nodiscard]] auto target() const -> std::string { return root + '/' + relative; }
   };
   std::vector<Replacement> steps;
-  std::string reason;
+  LocalizedReason reason;
   std::string copy_path;
   std::size_t written = 0;
   std::vector<std::string> not_put_back;
@@ -813,7 +821,8 @@ auto apply_staged_restore(ToolModelFiles& files, const std::string& data_directo
   if (!plan_found)
     return 0;
   const auto plan = Json::parse(plan_found->bytes, nullptr, false);
-  const auto damaged = "The prepared restore is damaged.";
+  const LocalizedReason damaged{"The prepared restore is damaged.",
+                                MessageKey{"backend.machineData.damagedPlan"}};
   // Only a plan of this machine's data folder: the folder is named by the machine ID.
   if (!plan.is_object() || plan.value("version", 0) != plan_version ||
       !plan.contains("machine_id") || !plan["machine_id"].is_string() ||
@@ -829,18 +838,23 @@ auto apply_staged_restore(ToolModelFiles& files, const std::string& data_directo
   const auto ended = reason.empty() ? hooks.ended.value_or(boot_time()) : BootTime{};
   if (reason.empty() &&
       (ended.boot_id.empty() || plan["boot_id"].get<std::string>() != ended.boot_id))
-    reason = "The restore was prepared before the computer was started again: nothing was "
-             "written.";
+    reason = {"The restore was prepared before the computer was started again: nothing was "
+              "written.",
+              MessageKey{"backend.machineData.otherBoot"}};
   if (reason.empty()) {
     const auto age =
         ended.since_boot - std::chrono::milliseconds{plan["booted"].get<std::int64_t>()};
     constexpr auto limit =
         std::chrono::duration_cast<std::chrono::milliseconds>(restore_plan_limit);
-    if (age > limit || age < -limit)
-      reason = std::format("The restore was prepared {} s before CoffeeCNC ended, more than {} s: "
-                           "nothing was written.",
-                           std::chrono::floor<std::chrono::seconds>(age).count(),
-                           std::chrono::duration_cast<std::chrono::seconds>(limit).count());
+    if (age > limit || age < -limit) {
+      const auto elapsed = std::to_string(std::chrono::floor<std::chrono::seconds>(age).count());
+      const auto maximum =
+          std::to_string(std::chrono::duration_cast<std::chrono::seconds>(limit).count());
+      reason = {std::format("The restore was prepared {} s before CoffeeCNC ended, more than {} s: "
+                            "nothing was written.",
+                            elapsed, maximum),
+                MessageKey{"backend.machineData.stale", {{"age", elapsed}, {"limit", maximum}}}};
+    }
   }
   const auto machine_id = reason.empty() ? plan["machine_id"].get<std::string>() : std::string{};
   for (const auto& file : reason.empty() ? plan["files"] : Json::array()) {
@@ -863,17 +877,18 @@ auto apply_staged_restore(ToolModelFiles& files, const std::string& data_directo
     }
     const auto staged = read_file(files, step.from);
     if (!staged) {
-      reason = staged.error();
+      reason = {staged.error()};
       break;
     }
     const auto& staged_bytes = *staged;
     if (!staged_bytes) {
-      reason = step.from + " is missing.";
+      reason = {std::format("{} is missing.", step.from),
+                MessageKey{"backend.machineData.stagedMissing", {{"path", step.from}}}};
       break;
     }
     auto before = read_config(files, step.root, step.relative);
     if (!before) {
-      reason = before.error();
+      reason = {before.error()};
       break;
     }
     // What was there when the restore was prepared, unless LinuxCNC or CoffeeCNC wrote it as
@@ -882,8 +897,10 @@ auto apply_staged_restore(ToolModelFiles& files, const std::string& data_directo
     const auto now_held = existing ? std::optional<std::string>{existing->content.bytes}
                                    : std::optional<std::string>{};
     if (!decided_at_exit(step.role) && held_json(now_held) != file["held"]) {
-      reason = std::format("{} changed after the restore was prepared: nothing was written.",
-                           step.target());
+      const auto target = step.target();
+      reason = {
+          std::format("{} changed after the restore was prepared: nothing was written.", target),
+          MessageKey{"backend.machineData.changedAfter", {{"path", target}}}};
       break;
     }
     step.bytes = *staged_bytes;
@@ -935,11 +952,12 @@ auto apply_staged_restore(ToolModelFiles& files, const std::string& data_directo
     const auto saved = archive ? replace_file(files, copy_path, *archive)
                                : ToolModelFiles::Done{std::unexpected(archive.error().text)};
     if (!saved)
-      reason = "the files before the restore could not be saved: " + saved.error();
+      reason = {std::format("the files before the restore could not be saved: {}", saved.error()),
+                MessageKey{"backend.machineData.copyNotSaved", {{"detail", saved.error()}}}};
   }
   if (reason.empty() && !steps.empty() && hooks.may_write)
     if (auto refused = hooks.may_write())
-      reason = std::move(*refused);
+      reason = {std::move(*refused)};
   if (reason.empty() && !steps.empty()) {
     // Before the first rename: a crash from here on is reported as a partial write, with the
     // copy to go back to.
@@ -949,14 +967,15 @@ auto apply_staged_restore(ToolModelFiles& files, const std::string& data_directo
     const Json applying{
         {"pre_restore", copy_path}, {"files", std::move(targets)}, {"time", now.count()}};
     if (auto marked = replace_file(files, applying_file, dump(applying) + '\n'); !marked)
-      reason = "the restore could not be marked as started: " + marked.error();
+      reason = {std::format("the restore could not be marked as started: {}", marked.error()),
+                MessageKey{"backend.machineData.notMarked", {{"detail", marked.error()}}}};
   }
   if (reason.empty()) {
     for (; written < steps.size(); ++written) {
       const auto& step = steps[written];
       if (hooks.still_may_write)
         if (auto refused = hooks.still_may_write()) {
-          reason = std::move(*refused);
+          reason = {std::move(*refused)};
           break;
         }
       const auto mode = step.before           ? step.before->mode
@@ -970,7 +989,7 @@ auto apply_staged_restore(ToolModelFiles& files, const std::string& data_directo
         // Renamed, and only its folder's fsync failed: it is the backup's now, and is put back.
         if (replaced.error().renamed)
           ++written;
-        reason = replaced.error().reason;
+        reason = {replaced.error().reason};
         break;
       }
       if (!replaced->group_kept)
@@ -1001,13 +1020,15 @@ auto apply_staged_restore(ToolModelFiles& files, const std::string& data_directo
   }
   const bool ok = reason.empty();
   const Json kept = not_put_back;
-  const Json result{{"ok", ok},
-                    {"written", written},
-                    {"reason", reason},
-                    {"pre_restore", copy_path},
-                    {"not_put_back", kept},
-                    {"group_not_kept", group_not_kept},
-                    {"time", now.count()}};
+  Json result{{"ok", ok},
+              {"written", written},
+              {"reason", reason.text},
+              {"pre_restore", copy_path},
+              {"not_put_back", kept},
+              {"group_not_kept", group_not_kept},
+              {"time", now.count()}};
+  if (reason.localization)
+    result["reason_localization"] = message_key_json(*reason.localization);
   const auto said = replace_file(files, result_file, dump(result) + '\n');
   // The marker goes only once the result is on the disk: without one the next start says the
   // write was interrupted.
@@ -1023,7 +1044,7 @@ auto apply_staged_restore(ToolModelFiles& files, const std::string& data_directo
   const auto synced = files.sync_directory(staging);
   static_cast<void>(synced);
   if (!ok)
-    return std::unexpected(reason);
+    return std::unexpected(std::move(reason.text));
   if (!said)
     return std::unexpected(said.error());
   return written;

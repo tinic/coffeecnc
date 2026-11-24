@@ -482,6 +482,19 @@ describe('translateMessage', () => {
     expect(translateMessage('')).toBe('')
   })
 
+  it('translates the saved restore refusal and keeps its timing values', async () => {
+    await setLanguage('fr')
+    const detail = 'The restore was prepared 181 s before CoffeeCNC ended, more than 120 s: nothing was written.'
+    const fallback = `The restore was not completed: ${detail} The files are as they were.`
+    expect(translateMessage(fallback, {
+      key: 'backend.machineData.notCompleted',
+      params: { detail },
+      params_localization: {
+        detail: { key: 'backend.machineData.stale', params: { age: '181', limit: '120' } },
+      },
+    })).toBe("La restauration n’a pas abouti : La restauration a été préparée 181 s avant la fin de CoffeeCNC, plus de 120 s : rien n'a été écrit. Les fichiers sont tels qu’avant.")
+  })
+
   it('shows English text as it is in English', () => {
     expect(translateMessage('Load a program first.')).toBe('Load a program first.')
   })

@@ -11,6 +11,7 @@
 #include <array>
 #include <chrono>
 #include <cstddef>
+#include <format>
 #include <fstream>
 #include <iostream>
 #include <limits>
@@ -541,6 +542,16 @@ auto encoded_messages() -> std::vector<EncodedMessage> {
        std::nullopt,
        0,
        {{"ini", "config/mill.ini", "/home/cnc/linuxcnc/configs/mill/mill.ini", "same", 10, false}}}));
+
+  constexpr auto stale = "The restore was prepared 181 s before CoffeeCNC ended, more than 120 s: "
+                         "nothing was written.";
+  messages.emplace_back(encode_message(
+      MessageLevel::error,
+      std::format("The restore was not completed: {} The files are as they were.", stale),
+      1700000001700ms,
+      MessageKey{"backend.machineData.notCompleted",
+                 {{"detail", stale}},
+                 {{"detail", {"backend.machineData.stale", {{"age", "181"}, {"limit", "120"}}}}}}));
 
   Diagnostics diagnostics;
   const auto row = [](DiagnosticRole role, std::optional<int> joint, std::string name,

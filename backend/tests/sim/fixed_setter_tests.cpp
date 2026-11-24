@@ -652,7 +652,8 @@ void feature_scenarios(NmlPort& port, double scale, const auto& mdi) {
 // With `measure` (#247), every cycle runs measure-only first: it must write nothing and report
 // the expected point and faces. Applying that measurement must then set the same origin.
 void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& mdi,
-                       bool measure = false, const std::string& tool_table = {}) {
+                       bool measure = false, const std::string& tool_table = {},
+                       const std::string& programs = {}) {
   // The MDI blocks written since `from` that write an offset or the tool table: G10.
   const auto g10_since = [&](std::size_t from) {
     const auto all = port.writes();
@@ -1055,45 +1056,129 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
   }
 
   // A stop mid-cycle drops the machine's enable: the cycle has switched to G90 and turned the
-  // feed override (M50) and adaptive feed (M52) off. Once the machine is on and idle, the
-  // operator's G91 and both feed controls come back; nothing is written.
+  // feed override (M50) and adaptive feed (M52) off. Once the machine can take MDI, the
+  // operator's G91 and both feed controls come back, once, and only over what the cycle left.
   probe_input("sim-rot-inner", "sim-rot-hollow.nand");
-  at(2, 1);
-  mdi("M50 P1");
-  mdi("M52 P1");
   {
-    const auto before = port.status();
-    const auto stop_at = std::chrono::steady_clock::now() + 1500ms;
-    const auto stopped = port.fixed_setter({.action = SetterAction::pocket, .tool = 99, .start = machine()},
-                                           epoch, [&] { return std::chrono::steady_clock::now() < stop_at; });
-    const auto off = port.status();
-    checked(port.set_machine_state(MachineState::off, {}));
-    checked(port.set_machine_state(MachineState::on, {}));
-    checked(port.set_task_mode(TaskMode::mdi, {}));
-    const auto on = port.status();
-    port.idle_maintenance([] { return true; });
-    const auto restored = port.status();
     const auto codes = [](const NmlStatus& status) {
       return std::ranges::contains(status.active_codes, "G91") ? "G91" : "G90";
     };
-    std::cout << std::format(
-                     "fact=probe_abort rotation={} stopped={} machine_on_after_stop={} "
-                     "before={} m50_before={} m52_before={} at_machine_on={} m50_at_machine_on={} "
-                     "m52_at_machine_on={} restored={} m50_restored={} m52_restored={} "
-                     "offsets_unchanged={}",
-                     degrees, !stopped, off.controller.machine == MachineState::on, codes(before),
-                     before.feed_override_enabled, before.adaptive_feed_enabled, codes(on),
-                     on.feed_override_enabled, on.adaptive_feed_enabled, codes(restored),
-                     restored.feed_override_enabled, restored.adaptive_feed_enabled,
-                     restored.g5x == before.g5x && restored.g92 == before.g92)
+    const auto last_write = [&] {
+      const auto all = port.writes();
+      return all.empty() ? NmlPort::Written{} : all.back();
+    };
+    const auto idle = [&] { port.idle_maintenance([] { return true; }); };
+    const auto state = [&](const NmlStatus& status) {
+      return std::format("{} m50={} m52={}", codes(status), status.feed_override_enabled,
+                         status.adaptive_feed_enabled);
+    };
+    // G91, M50 P1 and M52 P1, a pocket cycle stopped during its first search, the machine on
+    // again in MDI: what the cycle left.
+    const auto stop_cycle = [&](std::string_view name) {
+      at(2, 1);
+      mdi("M50 P1");
+      mdi("M52 P1");
+      const auto before = port.status();
+      const auto stop_at = std::chrono::steady_clock::now() + 1500ms;
+      const auto stopped = port.fixed_setter({.action = SetterAction::pocket, .tool = 99, .start = machine()},
+                                             epoch, [&] { return std::chrono::steady_clock::now() < stop_at; });
+      const auto off = port.status();
+      checked(port.set_machine_state(MachineState::off, {}));
+      checked(port.set_machine_state(MachineState::on, {}));
+      checked(port.set_task_mode(TaskMode::mdi, {}));
+      const auto on = port.status();
+      std::cout << std::format("fact=probe_abort case={} rotation={} stopped={} machine_on_after_stop={} "
+                               "before=\"{}\" at_machine_on=\"{}\"",
+                               name, degrees, !stopped, off.controller.machine == MachineState::on,
+                               state(before), state(on))
+                << std::endl;
+      require(!stopped && std::ranges::contains(before.active_codes, "G91") &&
+                  before.feed_override_enabled && before.adaptive_feed_enabled &&
+                  !std::ranges::contains(on.active_codes, "G91") && !on.feed_override_enabled &&
+                  !on.adaptive_feed_enabled,
+              "a stopped pocket cycle leaves G90 and M50, M52 off");
+      return before;
+    };
+
+    // 1. Somebody sets M50 P1 after machine on: the restore is dropped, nothing is sent.
+    stop_cycle("changed_after_stop");
+    mdi("M50 P1");
+    auto written = last_write();
+    idle();
+    idle();
+    auto now = port.status();
+    std::cout << std::format("fact=probe_abort case=changed_after_stop restore_blocks={} after=\"{}\"",
+                             last_write() == written ? 0 : 1, state(now))
               << std::endl;
-    require(!stopped && std::ranges::contains(before.active_codes, "G91") &&
-                before.feed_override_enabled && before.adaptive_feed_enabled,
-            stopped ? "expected a stopped pocket cycle" : "the rig sets G91, M50 P1 and M52 P1");
+    require(last_write() == written && !std::ranges::contains(now.active_codes, "G91") &&
+                now.feed_override_enabled && !now.adaptive_feed_enabled,
+            "a change after the stop suppresses the restore without an MDI block");
+
+    // 2. A program runs before the restore: its M2 sets G90 and the overrides on.
+    stop_cycle("program_ran");
+    {
+      const auto path = programs + "/coffeecnc-probe-abort.ngc";
+      {
+        std::ofstream out{path};
+        out << "G90\nM2\n";
+      }
+      checked(port.set_task_mode(TaskMode::automatic, {}));
+      checked(port.open_program(path, {}));
+      checked(port.run({}));
+      wait_for(port, [](const NmlStatus& s) {
+        return s.controller.interp == InterpState::idle && s.controller.in_position && !s.task_executing;
+      });
+      checked(port.set_task_mode(TaskMode::mdi, {}));
+    }
+    const auto after_program = port.status();
+    written = last_write();
+    idle();
+    idle();
+    now = port.status();
+    std::cout << std::format("fact=probe_abort case=program_ran after_program=\"{}\" restore_blocks={} "
+                             "after=\"{}\"",
+                             state(after_program), last_write() == written ? 0 : 1, state(now))
+              << std::endl;
+    require(last_write() == written && state(now) == state(after_program),
+            "a program run before the restore suppresses it");
+
+    // 3. Homing: the restore waits while an axis homes, then runs once; a second pass sends nothing.
+    const auto before = stop_cycle("homing_gate");
+    checked(port.set_task_mode(TaskMode::manual, {}));
+    checked(port.home({}, {}));
+    wait_for(port, [](const NmlStatus& s) {
+      return std::ranges::any_of(s.controller.axes, [](const auto& axis) { return axis.homing; });
+    });
+    written = last_write();
+    idle();
+    const auto homing = port.status();
+    const bool pending_while_homing = last_write() == written;
+    wait_for(port, [](const NmlStatus& s) {
+      return std::ranges::all_of(s.controller.axes, [](auto axis) { return axis.homed && !axis.homing; }) &&
+             s.controller.in_position;
+    });
+    idle();
+    const auto restored = port.status();
+    const auto messages = port.take_messages();
+    const auto restored_messages = std::ranges::count_if(messages, [](const ControllerMessage& message) {
+      return message.text.contains("Restored the distance mode");
+    });
+    written = last_write();
+    idle();
+    const bool second = last_write() != written;
+    std::cout << std::format("fact=probe_abort case=homing_gate while_homing=\"{}\" pending_while_homing={} "
+                             "restored=\"{}\" restored_messages={} second_restore_blocks={} offsets_unchanged={}",
+                             state(homing), pending_while_homing, state(restored), restored_messages,
+                             second ? 1 : 0, restored.g5x == before.g5x && restored.g92 == before.g92)
+              << std::endl;
+    require(pending_while_homing && !std::ranges::contains(homing.active_codes, "G91"),
+            "the restore waits while an axis homes");
     require(std::ranges::contains(restored.active_codes, "G91") && restored.feed_override_enabled &&
                 restored.adaptive_feed_enabled && restored.g5x == before.g5x &&
-                restored.g92 == before.g92 && restored.rotation_xy == before.rotation_xy,
-            "a stopped probe cycle restores G91, M50 and M52 once the machine is on");
+                restored.g92 == before.g92 && restored.rotation_xy == before.rotation_xy &&
+                restored_messages == 1 && !second,
+            "after homing the stopped cycle's G91, M50 and M52 come back once");
+    checked(port.set_task_mode(TaskMode::mdi, {}));
   }
   mdi("M52 P0");
   // Back to the solid part: outside the bore its wall input trips during the moves below.
@@ -1608,7 +1693,8 @@ void run(const std::string& ini, std::string_view scenario) {
   mdi("G21 G90 G94 G40");
   if (rotated) {
     // Millimetres at +7.5°, inches at -30°: each rotated cycle in both units and turns.
-    rotated_scenarios(*port, scale, scale == 1 ? 7.5 : -30, mdi, measure, config->tool_table);
+    rotated_scenarios(*port, scale, scale == 1 ? 7.5 : -30, mdi, measure, config->tool_table,
+                      config->program_prefix);
     return;
   }
   if (scenario == "measure-m6") {

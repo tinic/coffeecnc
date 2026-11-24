@@ -401,12 +401,21 @@ struct NmlPort::Impl {
   std::optional<int> startup_tool;
   // The operator's modal state a probe cycle changes (distance mode, feed, M50, M52), kept from
   // its start until the cycle restores it. A cycle that stops early drops the machine's enable:
-  // idle_maintenance restores the state once the machine is on and idle again.
+  // it records what it left (`left`), and idle_maintenance restores the operator's state once
+  // the machine can take MDI, but only while the state is still what the cycle left. Anything
+  // else (an MDI block, a program end) means somebody set it since: the restore is dropped.
   struct ProbeModal {
     bool incremental;
     double feed_mm_min;
     bool feed_override;
     bool adaptive_feed;
+    struct Left {
+      bool incremental;
+      double feed_mm_min;
+      bool feed_override;
+      bool adaptive_feed;
+    };
+    std::optional<Left> left{};
   };
   std::optional<ProbeModal> probe_modal;
   std::optional<int> observed_tool;
@@ -1058,12 +1067,17 @@ void NmlPort::synch_parameters(const Wanted& wanted) {
 void NmlPort::restore_probe_modal(const Wanted& wanted) {
   if (!impl_->probe_modal)
     return;
+  // As for the startup tool: the machine can take MDI.
   const auto ready = [&](const NmlStatus& status) {
     const auto& state = status.controller;
     return state.link == Link::live && state.machine == MachineState::on &&
            state.mode != TaskMode::automatic && state.interp == InterpState::idle &&
            state.in_position && !status.paused && !status.task_executing &&
-           status.queued_mdi == 0 && !state.requested_tool;
+           status.queued_mdi == 0 && !state.requested_tool &&
+           !state.any_enabled_axis([&](const auto& axis) {
+             return axis.homing || axis.on_hard_limit ||
+                    (impl_->config.limits.homing_required && !axis.homed);
+           });
   };
   if (impl_->hal != nullptr) {
     // A probe cycle in progress restores the state itself.
@@ -1083,9 +1097,17 @@ void NmlPort::restore_probe_modal(const Wanted& wanted) {
          "Check G90 or G91 and the feed override.",
          MessageKey{"backend.nmlPort.probeModalNotRestored"}});
   };
+  // Restore only over what the cycle left. A state somebody set since stays as it is.
+  const auto& left = modal.left;
+  if (!left || std::ranges::contains(before.active_codes, "G91") != left->incremental ||
+      !(std::abs(before.programmed_feed - left->feed_mm_min) <= 1e-6) ||
+      before.feed_override_enabled != left->feed_override ||
+      before.adaptive_feed_enabled != left->adaptive_feed)
+    return;
   const auto mode = before.controller.mode;
   if (mode != TaskMode::mdi && !accepted(set_task_mode(TaskMode::mdi, wanted))) {
-    not_restored();
+    // Not taken now: try again when task can take it.
+    impl_->probe_modal = modal;
     return;
   }
   const auto settled = [&] {
@@ -1583,6 +1605,17 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
     });
     if (stopped)
       hal->finish_probe_cycle();
+    // What the cycle leaves the operator: a later restore puts the operator's state back only
+    // while this is unchanged. Unknown without status: no restore then.
+    if (auto& kept = impl_->probe_modal) {
+      kept->left.reset();
+      if (const auto* s = impl_->stat(); s != nullptr && impl_->status.link() == Link::live) {
+        const auto now = to_status(*s, impl_->config, hal, Link::live);
+        kept->left = Impl::ProbeModal::Left{std::ranges::contains(now.active_codes, "G91"),
+                                            now.programmed_feed, now.feed_override_enabled,
+                                            now.adaptive_feed_enabled};
+      }
+    }
     // The cycle's own reason comes first: dropping the permit makes LinuxCNC report "motion
     // stopped by enable input", which says nothing about why the cycle stopped.
     auto errors = impl_->take_errors(from);

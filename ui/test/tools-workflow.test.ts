@@ -1,10 +1,12 @@
 /* eslint-disable vue/one-component-per-file -- Separate mounted fixtures for tools and settings. */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount, type VueWrapper } from '@vue/test-utils'
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { defineComponent, nextTick } from 'vue'
 import ToolsTab from '../src/components/ToolsTab.vue'
 import SettingsDialog from '../src/components/SettingsDialog.vue'
-import { panel, send } from '../src/machine'
+import { languageReady } from '../src/appearance'
+import { setLanguage } from '../src/i18n'
+import { onResult, panel, send } from '../src/machine'
 import { defaultOperatorPreferences } from '../src/operator-settings'
 import { createOperatorSettingsState } from '../src/operator-settings-state'
 import { hello, SimMachine } from '../src/sim/machine'
@@ -16,7 +18,11 @@ const { resultListeners } = vi.hoisted(() => ({ resultListeners: new Set<ResultL
 
 // A dialog can close before its lazy renderer finishes loading. Resolve the module while this
 // fixture is alive, so its dependency imports cannot outlive the test environment.
-beforeAll(async () => { await import('../src/components/ToolModelCanvas.vue') })
+beforeAll(async () => {
+  await import('../src/components/ToolModelCanvas.vue')
+  await setLanguage('de')
+  await setLanguage('en')
+})
 
 // The WebGL chunks must not load in the background (#279).
 vi.mock('../src/components/ProbeGuideCanvas.vue', () => import('./canvas-stub'))
@@ -50,6 +56,7 @@ beforeEach(() => {
   vi.stubGlobal('matchMedia', () => ({ matches: true }))
   setterState.value = null
   panel.hello = { ...hello }; panel.simulated = true; panel.link = 'live'; panel.unit = 'mm'
+  panel.operatorSettings = null
   panel.preferences = { ...defaultOperatorPreferences(), tool_reference_height: 6.35 }
   panel.status = new SimMachine({ emit: (): void => undefined }).status()
   panel.status.machine = 'on'; panel.status.link = 'live'; panel.status.tool.in_spindle = 1
@@ -395,6 +402,35 @@ describe('tool table workflow', () => {
     expect(panel.preferences.tool_reference_height).toBe(6.35)
     expect(JSON.parse(storage.setItem.mock.calls[0]?.[1] as string)).toMatchObject({ tool_reference_height: 6.35 })
     expect(send).not.toHaveBeenCalled()
+  })
+})
+
+describe('native language in Settings', () => {
+  it('saves with the localized footer action after previewing German', async () => {
+    const machineId = 'settings-test'
+    panel.simulated = false
+    panel.hello = { ...hello, machine_id: machineId, machine_units: 'inch', operator_settings_storage: 1 }
+    panel.operatorSettings = { type: 'operator_settings', availability: 'available', machine_id: machineId,
+      revision: 1, reason: '', document: defaultOperatorPreferences() }
+    const settings = createOperatorSettingsState(panel, { send, onResult })
+    dispose = settings.dispose
+    wrapper = mount(SettingsDialog, { attachTo: document.body, props: { settings }, global: { stubs: { teleport: true } } })
+
+    await getWrapper().get('.language-option[lang="de"] input').setValue(true)
+    await languageReady
+    await nextTick()
+    await press('Einstellungen speichern')
+    const command = vi.mocked(send).mock.lastCall?.[0]
+    expect(command).toMatchObject({ type: 'set_operator_settings', machine_id: machineId, base_revision: 1,
+      document: { language: 'de' } })
+    if (command?.type !== 'set_operator_settings') throw new Error('Missing settings save')
+
+    panel.operatorSettings = { ...panel.operatorSettings, revision: 2, document: command.document }
+    for (const listener of resultListeners)
+      listener(command, { type: 'result', id: 1, outcome: 'accepted', reason: '' })
+    await flushPromises()
+    expect(panel.preferences.language).toBe('de')
+    expect(getWrapper().emitted('close')).toHaveLength(1)
   })
 })
 

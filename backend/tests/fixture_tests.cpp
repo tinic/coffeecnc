@@ -414,6 +414,10 @@ auto encoded_messages() -> std::vector<Encoded> {
        MessageKey{"backend.operatorSettingsStore.fileTooLarge",
                   {{"file", "/home/cnc/operator-settings.json"}}}}));
 
+  messages.emplace_back(encode_result(
+      53, CommandOutcome::rejected, "Default jog speed exceeds the configured machine limit.", {},
+      {}, RefusalMessage{"backend.operatorSettings.jogSpeedLimit"}));
+
   OffsetHistory history{4, true, "", {}};
   const auto change = [](HistoryField field, std::optional<double> before,
                          std::optional<double> after) -> HistoryChange {

@@ -33,6 +33,7 @@ const adapter = import.meta.glob<string>([
   '../../backend/src/app/src/backup_archive.cpp',
   '../../backend/src/app/src/restore_helper.cpp',
   '../../backend/src/app/src/operator_settings_store.cpp',
+  '../../backend/src/app/src/operator_settings.cpp',
   '../../backend/src/app/src/offset_history.cpp',
   '../../backend/src/app/src/tool_models.cpp',
   '../../backend/src/app/src/tool_model_store.cpp',

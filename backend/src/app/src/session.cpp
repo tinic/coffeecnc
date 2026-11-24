@@ -522,7 +522,7 @@ auto Session::submit(PageToken page, std::string_view json, Instant now,
              RefusalMessage{"messages.session.noOperatorSettings"});
     else if (const auto refused =
                  tool_models_->submit_operator_settings(page, request.id, std::move(*settings)))
-      result(CommandOutcome::rejected, *refused);
+      result(CommandOutcome::rejected, refused->text, refused->localization);
     return outcome;
   }
 

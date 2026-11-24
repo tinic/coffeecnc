@@ -48,8 +48,9 @@ public:
   [[nodiscard]] virtual auto submit(PageToken page, RequestId id, ToolModelCommand command)
       -> std::optional<LocalizedReason> = 0;
   [[nodiscard]] virtual auto submit_operator_settings(PageToken, RequestId, SetOperatorSettings&&)
-      -> std::optional<std::string> {
-    return "Operator settings storage is not part of this session.";
+      -> std::optional<LocalizedReason> {
+    return LocalizedReason{"Operator settings storage is not part of this session.",
+                           MessageKey{"messages.session.noOperatorSettings"}};
   }
   // This page and every one before it has ended: what waits for them is dropped, and what
   // they are still owed is not sent.

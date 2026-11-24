@@ -1736,15 +1736,29 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
     std::cerr << "coffeecnc: fixed setter interrupted: " << failure.text << '\n';
     return std::unexpected(std::move(failure));
   };
-  std::string cycle_failure; // why live_cycle() last refused, for the operator
+  // The polling loop keeps a view of static diagnostics. Build message parameters only on failure.
+  struct ProbeDetail {
+    std::string_view text;
+    std::string_view key;
+
+    [[nodiscard]] auto localization() const -> std::optional<MessageKey> {
+      return key.empty() ? std::nullopt : std::optional{MessageKey{std::string(key)}};
+    }
+  };
+  ProbeDetail cycle_failure{}; // why live_cycle() last refused, for the operator
   const auto live_cycle = [&]() -> const EMC_STAT* {
     const auto* s = impl_->stat();
-    cycle_failure = !impl_->still()                          ? "the request was withdrawn"
-                    : s == nullptr || impl_->status.link() != Link::live ? "controller status lost"
-                    : !steady_context(*s) ? "machine state or position left the probe line"
-                    : !hal->renew_probe_cycle(Clock::now()) ? "probe lease could not be renewed"
-                                                            : "";
-    return cycle_failure.empty() ? s : nullptr;
+    cycle_failure =
+        !impl_->still()
+            ? ProbeDetail{"the request was withdrawn", "backend.nmlPort.requestWithdrawn"}
+        : s == nullptr || impl_->status.link() != Link::live
+            ? ProbeDetail{"controller status lost", "backend.nmlPort.statusLost"}
+        : !steady_context(*s) ? ProbeDetail{"machine state or position left the probe line",
+                                            "backend.nmlPort.leftProbeLine"}
+        : !hal->renew_probe_cycle(Clock::now())
+            ? ProbeDetail{"probe lease could not be renewed", "backend.nmlPort.leaseNotRenewed"}
+            : ProbeDetail{};
+    return cycle_failure.text.empty() ? s : nullptr;
   };
   const auto interlock = [&]() -> std::optional<HalView> {
     const auto view = hal->view(Clock::now());
@@ -1764,7 +1778,8 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
                      MessageKey{"backend.nmlPort.setterTripped"});
 
   bool saw_probe = false;
-  std::string block_failure; // why the last block() did not complete, for the operator
+  constexpr ProbeDetail interlock_lost{"probe interlock lost", "backend.nmlPort.interlockLost"};
+  ProbeDetail block_failure{}; // why the last block() did not complete, for the operator
   const auto block = [&](std::string_view code, std::chrono::milliseconds timeout,
                          bool watch_probe = false, bool moves = false) -> bool {
     if (live_cycle() == nullptr) {
@@ -1772,18 +1787,18 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
       return false;
     }
     if (!interlock()) {
-      block_failure = "probe interlock lost";
+      block_failure = interlock_lost;
       return false;
     }
     EMC_TASK_PLAN_EXECUTE command;
     if (!put(command.command, code) || !accepted(impl_->write(command))) {
-      block_failure = "LinuxCNC did not take the block";
+      block_failure = {"LinuxCNC did not take the block", "backend.nmlPort.blockNotTaken"};
       return false;
     }
     if (impl_->loads != nullptr)
       ++impl_->loads->mdi_blocks;
     bool done = false;
-    block_failure = "timed out";
+    block_failure = {"timed out", "backend.nmlPort.timedOut"};
     std::optional<Clock::time_point> done_since;
     static_cast<void>(until(timeout, [&]() {
       impl_->collect();
@@ -1791,18 +1806,22 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
       const auto pins = interlock();
       if (s == nullptr || !pins || (positioning && *pins->probe_input) ||
           impl_->error_since(from) || s->echo_serial_number > impl_->serial) {
-        block_failure = s == nullptr                           ? cycle_failure
-                        : !pins                                ? "probe interlock lost"
-                        : positioning && *pins->probe_input    ? "probe touched while positioning"
-                        : s->echo_serial_number > impl_->serial ? "another command took over"
-                                                                : "LinuxCNC reported an error";
+        block_failure =
+            s == nullptr ? cycle_failure
+            : !pins      ? interlock_lost
+            : positioning && *pins->probe_input
+                ? ProbeDetail{"probe touched while positioning",
+                              "backend.nmlPort.touchedWhilePositioning"}
+            : s->echo_serial_number > impl_->serial
+                ? ProbeDetail{"another command took over", "backend.nmlPort.commandTookOver"}
+                : ProbeDetail{"LinuxCNC reported an error", "backend.nmlPort.reportedErrorShort"};
         return true;
       }
       if (s->echo_serial_number != impl_->serial)
         return false;
       const auto& traj = s->motion.traj;
       if (moves && (traj.feed_override_enabled || traj.adaptive_feed_enabled)) {
-        block_failure = "feed override was enabled";
+        block_failure = {"feed override was enabled", "backend.nmlPort.feedOverrideEnabled"};
         return true;
       }
       if (watch_probe && traj.probing && !traj.probe_tripped)
@@ -1820,7 +1839,7 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
         done_since = Clock::now();
       done = still && (!moves || Clock::now() - *done_since >= std::chrono::milliseconds{150});
       if (s->status == RCS_ERROR)
-        block_failure = "LinuxCNC rejected the move";
+        block_failure = {"LinuxCNC rejected the move", "backend.nmlPort.moveRejected"};
       return done || s->status == RCS_ERROR;
     }));
     return done;
@@ -1829,8 +1848,10 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   // From here the cycle changes the operator's modal state: keep it for a restore.
   impl_->probe_modal = Impl::ProbeModal{modal};
   if (!block("M50 P0", completion_timeout) || !block("M52 P0", completion_timeout))
-    return interrupt(std::format("Could not prepare the probing feed ({}).", block_failure),
-                     MessageKey{"backend.nmlPort.probingFeed", {{"detail", block_failure}}});
+    return interrupt(std::format("Could not prepare the probing feed ({}).", block_failure.text),
+                     MessageKey{"backend.nmlPort.probingFeed",
+                                {{"detail", std::string(block_failure.text)}},
+                                parameter_localization("detail", block_failure.localization())});
   raw = live_cycle();
   const auto probe_pin = interlock();
   // The start is measured, and the command must agree with it. Only a height map's later point
@@ -1868,8 +1889,10 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
           impl_->config.motion_tolerances.probe_backlash_mm)) {
       if (raw == nullptr)
         return interrupt(
-            std::format("The machine did not reach the clearance height ({}).", cycle_failure),
-            MessageKey{"backend.nmlPort.clearanceNotReached", {{"detail", cycle_failure}}});
+            std::format("The machine did not reach the clearance height ({}).", cycle_failure.text),
+            MessageKey{"backend.nmlPort.clearanceNotReached",
+                       {{"detail", std::string(cycle_failure.text)}},
+                       parameter_localization("detail", cycle_failure.localization())});
       const auto commanded =
           std::format("{:.3f}", raw->motion.traj.position.tran.z * machine_scale);
       const auto measured =
@@ -1889,9 +1912,14 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
                            search_start[1] / program_scale),
                positioning_timeout, false, true)) {
       const std::string device = material ? "the probe" : "the setter";
-      return interrupt(std::format("Could not position XY for {} ({}).", device, block_failure),
-                       MessageKey{"backend.nmlPort.positionXy",
-                                  {{"device", device}, {"detail", block_failure}}});
+      auto details = parameter_localization("detail", block_failure.localization());
+      details.emplace("device", MessageParameterKey{material ? "backend.nmlPort.theProbe"
+                                                             : "backend.nmlPort.theSetter"});
+      return interrupt(
+          std::format("Could not position XY for {} ({}).", device, block_failure.text),
+          MessageKey{"backend.nmlPort.positionXy",
+                     {{"device", device}, {"detail", std::string(block_failure.text)}},
+                     std::move(details)});
     }
     traversing_xy = false;
     if (descends) {
@@ -1940,9 +1968,10 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
     }
     if (!block(code, timeout, true, true))
       return interrupt(
-          std::format("The probe search did not complete ({}, {}).", block_failure, code),
+          std::format("The probe search did not complete ({}, {}).", block_failure.text, code),
           MessageKey{"backend.nmlPort.searchIncomplete",
-                     {{"reason", block_failure}, {"code", code}}});
+                     {{"reason", std::string(block_failure.text)}, {"code", code}},
+                     parameter_localization("reason", block_failure.localization())});
     const auto* sample = live_cycle();
     const auto at_contact = interlock();
     if (sample == nullptr || !at_contact || !saw_probe || sample->motion.traj.probing ||
@@ -2057,22 +2086,38 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   raw = live_cycle();
   const auto after_retract = interlock();
   if (raw == nullptr || !after_retract || !released_at_retract(*raw, *after_retract)) {
-    const auto why =
-        raw == nullptr || !after_retract
-            ? std::string{" (no controller status)"}
-            : std::format(" (probe {}, latched {}, commanded {:+.3f} mm, measured {:+.3f} mm "
-                          "from the retract)",
-                          after_retract->probe_input.value_or(true) ? "touching" : "clear",
-                          raw->motion.traj.probeval,
-                          coordinate(machine_position(raw->motion.traj.position)) - retract,
-                          coordinate(machine_position(raw->motion.traj.actualPosition)) - retract);
-    return material
-               ? interrupt(std::format("The probe did not release at the retract position{}.", why),
-                           MessageKey{"backend.nmlPort.probeNotReleasedRetract", {{"detail", why}}})
-               : interrupt(
-                     std::format("The fixed setter did not release at the retract position{}.",
-                                 why),
-                     MessageKey{"backend.nmlPort.setterNotReleasedRetract", {{"detail", why}}});
+    auto why =
+        LocalizedReason{" (no controller status)", MessageKey{"backend.nmlPort.noStatusDetail"}};
+    if (raw != nullptr && after_retract) {
+      const bool touching = after_retract->probe_input.value_or(true);
+      const std::string input = touching ? "touching" : "clear";
+      const auto latched = std::format("{}", raw->motion.traj.probeval);
+      const auto commanded =
+          std::format("{:+.3f}", coordinate(machine_position(raw->motion.traj.position)) - retract);
+      const auto measured = std::format(
+          "{:+.3f}", coordinate(machine_position(raw->motion.traj.actualPosition)) - retract);
+      why = {
+          std::format(" (probe {}, latched {}, commanded {} mm, measured {} mm from the retract)",
+                      input, latched, commanded, measured),
+          MessageKey{
+              "backend.nmlPort.retractDetail",
+              {{"input", input},
+               {"latched", latched},
+               {"commanded", commanded},
+               {"measured", measured}},
+              {{"input", {touching ? "backend.nmlPort.touching" : "backend.nmlPort.clear"}}}}};
+    }
+    return material ? interrupt(std::format("The probe did not release at the retract position{}.",
+                                            why.text),
+                                MessageKey{"backend.nmlPort.probeNotReleasedRetract",
+                                           {{"detail", why.text}},
+                                           parameter_localization("detail", why.localization)})
+                    : interrupt(
+                          std::format("The fixed setter did not release at the retract position{}.",
+                                      why.text),
+                          MessageKey{"backend.nmlPort.setterNotReleasedRetract",
+                                     {{"detail", why.text}},
+                                     parameter_localization("detail", why.localization)});
   }
 
   if (move.return_to_clearance && descends) {
@@ -2083,8 +2128,10 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
     if (!block(std::format("G90 G53 G0 Z{:.8f}", lift_z / program_scale),
                std::chrono::seconds{30}, false, true))
       return interrupt(
-          std::format("Could not lift the probe to the clearance height ({}).", block_failure),
-          MessageKey{"backend.nmlPort.liftProbe", {{"detail", block_failure}}});
+          std::format("Could not lift the probe to the clearance height ({}).", block_failure.text),
+          MessageKey{"backend.nmlPort.liftProbe",
+                     {{"detail", std::string(block_failure.text)}},
+                     parameter_localization("detail", block_failure.localization())});
     raw = live_cycle();
     if (raw == nullptr || !near(raw->motion.traj.position.tran.z * machine_scale, lift_z) ||
         !(std::abs(raw->motion.traj.actualPosition.tran.z * machine_scale - lift_z) <=

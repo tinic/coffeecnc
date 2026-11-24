@@ -1280,8 +1280,14 @@ const examples = [
     "machine_id": "G0759",
     "revision": 0,
     "availability": "unavailable",
-    "reason": "Operator settings file is corrupt",
-    "document": null
+    "reason": "/home/cnc/operator-settings.json exceeds 16 KiB. The file was left alone.",
+    "document": null,
+    "localization": {
+      "key": "backend.operatorSettingsStore.fileTooLarge",
+      "params": {
+        "file": "/home/cnc/operator-settings.json"
+      }
+    }
   },
   {
     "type": "offset_history",

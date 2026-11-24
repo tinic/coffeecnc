@@ -1091,7 +1091,7 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
                      degrees, !forgotten, forgotten_program_writes, latest.has_value())
               << std::endl;
     require(!forgotten && forgotten.error().contains("Probe the feature again") &&
-                forgotten_clean && latest.has_value() &&
+                forgotten_program_writes == 0 && latest.has_value() &&
                 first->measured->id != second->measured->id,
             "a new probe action forgets the previous ID; an unrelated tool edit keeps the latest");
     // An action that always writes is refused as a measurement before anything is sent.

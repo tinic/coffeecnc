@@ -79,7 +79,7 @@ struct Step {
 
 auto compose(PanelComposer& composer, const PanelReading& r) -> Step {
   const auto messages = composer.compose(r, PageToken{1}, false, 1234ms);
-  require(messages.has_value(), "Composing succeeds: " + messages.error_or(""));
+  require(messages.has_value(), "Composing succeeds: " + messages.error_or(LocalizedReason{}).text);
   Step step;
   for (const auto& text : messages.value_or(std::vector<std::string>{})) {
     auto message = Json::parse(text);

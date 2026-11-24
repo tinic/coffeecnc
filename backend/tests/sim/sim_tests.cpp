@@ -5024,7 +5024,7 @@ void whole_job(Rig& rig) {
     progress.observe(reading, time);
     const auto messages = composer.compose(reading, rig.page, false, 0ms);
     if (!messages)
-      throw std::runtime_error(messages.error());
+      throw std::runtime_error(messages.error().text);
     for (const auto& message : *messages) {
       auto packet = Json::parse(message);
       if (packet.at("type") == "status") {

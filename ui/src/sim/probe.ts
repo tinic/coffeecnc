@@ -4,8 +4,8 @@ import { toWork, type Modal } from './gcode'
 import { heightGrid } from '../height-map'
 import {
   arcAnglesValid, arcCentreUncertainty, arcMaxCentreUncertainty, arcMinMeasuredSpan, bossDiameterPlausible, circleThrough, contactSigma,
-  checkAngleValid, circleCheckLimit, circleMinResidualGain, circleRays, fitProbeCircle, measuredCircleQuality,
-  measuredSpan, plannedCircleGain,
+  checkAngleValid, circleCheckLimit, circleMaxCentreError, circleMinResidualGain, circleRays, fitProbeCircle, measuredCircleQuality,
+  measuredSpan, plannedCircleQuality,
 } from '../arc'
 
 type XY = [number, number]
@@ -514,7 +514,15 @@ export class SimProbe {
         return 'Choose a check angle at least 10° from the other contacts.'
       const headings = check === undefined ? primary : [...primary, check]
       const weakLayout = 'Spread the check contacts around the circle. A bad contact can be hidden by the current layout.'
-      if (check !== undefined && plannedCircleGain(headings) < circleMinResidualGain) return weakLayout
+      const centreRisk = 'Spread the check contacts farther around the circle. A bad contact could move the fitted centre by more than 0.05 mm.'
+      if (check !== undefined) {
+        const planned = plannedCircleQuality(headings)
+        if (planned.gain < circleMinResidualGain) return weakLayout
+        if (!(planned.centreError <= circleMaxCentreError)) return {
+          ...result(() => ({})), failure: centreRisk,
+          failureKey: { key: 'backend.nmlPort.circleCheckCentreRisk', params: {} },
+        }
+      }
       const inside = command.action === 'bore_arc' || command.action === 'bore'
       const diameter = 'diameter' in command ? command.diameter : 0
       if (inside && (radiusFrom(start, bore) >= boreRadius - rubyRadius ||
@@ -554,6 +562,9 @@ export class SimProbe {
       if (verified && verified.gain < circleMinResidualGain)
         return { ...result(() => ({})), failure: weakLayout,
           failureKey: { key: 'backend.nmlPort.circleCheckSensitivity', params: {} } }
+      if (verified && !(verified.centreError <= circleMaxCentreError))
+        return { ...result(() => ({})), failure: centreRisk,
+          failureKey: { key: 'backend.nmlPort.circleCheckCentreRisk', params: {} } }
       const circle = fit ?? circleThrough([a, b, c])
       const span = circle ? measuredSpan([a, b, c], circle.centre) : 0
       if (!circle || span < arcMinMeasuredSpan)

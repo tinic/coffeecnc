@@ -2765,9 +2765,18 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
                           "hidden by the current layout.",
                           MessageKey{"backend.nmlPort.circleCheckSensitivity"}});
   };
-  if (check_circle &&
-      planned_circle_residual_gain(directions).value_or(0) < circle_min_residual_gain)
-    return weak_circle();
+  const auto centre_risk = [&] {
+    return refuse_origin({"Spread the check contacts farther around the circle. A bad contact "
+                          "could move the fitted centre by more than 0.05 mm.",
+                          MessageKey{"backend.nmlPort.circleCheckCentreRisk"}});
+  };
+  if (check_circle) {
+    const auto planned = planned_circle_quality(directions);
+    if (!planned || planned->min_residual_gain < circle_min_residual_gain)
+      return weak_circle();
+    if (!(planned->single_contact_centre_error_mm <= circle_max_centre_error_mm))
+      return centre_risk();
+  }
   // Every radial search is checked against the configured travel before the first
   // move: the search start and endpoint of each direction in machine space, and for a boss the
   // lift to clearance at each start and the traverse at that height. probe_fixed_setter checks
@@ -2834,6 +2843,8 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
                                          std::span{latch_spreads}.first(directions.size()));
       if (!verified || verified->min_residual_gain < circle_min_residual_gain)
         return weak_circle();
+      if (!(verified->single_contact_centre_error_mm <= circle_max_centre_error_mm))
+        return centre_risk();
       circle = fit->circle;
     } else {
       circle = circle_through(first_three);

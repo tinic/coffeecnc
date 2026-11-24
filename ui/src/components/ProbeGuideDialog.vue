@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { translateMessage } from '../i18n/messages'
 import type { FixedSetterLimits } from '../protocol'
 import { angleChoiceLabel, angleChoices, defaultArcAngles, guideInput, probeGuide, type AngleEdge, type ProbeGuideTarget } from '../probe-guide'
-import { arcAnglesValid, arcMinSeparation, arcMinSpan, checkAngleValid, circleMinResidualGain, circleRays, largestGapMiddle, plannedCircleGain, type Angles } from '../arc'
+import { arcAnglesValid, arcMinSeparation, arcMinSpan, checkAngleValid, circleMaxCentreError, circleMinResidualGain, circleRays, largestGapMiddle, plannedCircleQuality, type Angles } from '../arc'
 import { parseNumericExpression } from '../numeric-expression'
 import { vNumeric } from '../numeric-input'
 import ModalDialog from './ModalDialog.vue'
@@ -40,15 +40,16 @@ const checkAngle = computed(() => {
 })
 const primaryAngles = computed(() => arcTarget.value ? arcAngles.value ?? defaultArcAngles : circleRays)
 const checkValid = computed(() => checkAngle.value !== null && checkAngleValid(checkAngle.value, primaryAngles.value))
-const sensitive = computed(() => checkAngle.value !== null &&
-  plannedCircleGain([...primaryAngles.value, checkAngle.value]) >= circleMinResidualGain)
+const quality = computed(() => checkAngle.value === null ? null : plannedCircleQuality([...primaryAngles.value, checkAngle.value]))
+const sensitive = computed(() => (quality.value?.gain ?? 0) >= circleMinResidualGain)
+const safeCentre = computed(() => (quality.value?.centreError ?? Infinity) <= circleMaxCentreError)
 const enabledCheck = computed(() => canCheck.value && checking.value)
 const plan = computed(() => probeGuide(props.target, props.limits, angle.value, value.value,
   arcAngles.value !== null && arcAnglesValid(arcAngles.value) ? arcAngles.value : defaultArcAngles,
   enabledCheck.value && checkValid.value ? checkAngle.value ?? undefined : undefined))
 const valid = computed(() => {
   if (arcTarget.value && (arcAngles.value === null || !arcAnglesValid(arcAngles.value))) return false
-  if (enabledCheck.value && (!checkValid.value || !sensitive.value)) return false
+  if (enabledCheck.value && (!checkValid.value || !sensitive.value || !safeCentre.value)) return false
   const field = input.value
   if (field === undefined) return true
   if (value.value === null) return false
@@ -154,6 +155,8 @@ function start(): void {
           </div>
           <small v-if="checking && !checkValid">{{ t('probe.guideDialog.checkAngleRange', { separation: arcMinSeparation }) }}</small>
           <small v-else-if="checking && !sensitive">{{ t('backend.nmlPort.circleCheckSensitivity') }}</small>
+          <small v-else-if="checking && !safeCentre">{{ t('backend.nmlPort.circleCheckCentreRisk') }}</small>
+          <small v-if="checking && checkValid && arcTarget && (!sensitive || !safeCentre)">{{ t('probe.guideDialog.shortArcCheck') }}</small>
         </div>
         <dl v-if="travel || limits" class="limits">
           <template v-if="travel"><dt>{{ t('probe.guideDialog.searchTravel') }}</dt><dd>{{ t('probe.guideDialog.travelMax', { value: travel }) }}</dd></template>

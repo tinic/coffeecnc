@@ -469,6 +469,14 @@ describe('browser probe scene', () => {
     expect(sim.status().offsets).toEqual(before)
   })
 
+  it('refuses a detectable layout with too much centre shift before moving', () => {
+    const { sim, submit, result } = scene('bore')
+    const before = sim.status().offsets
+    expect(result(submit({ action: 'bore_arc', angles: [0, 10, 275], check_angle: 285 })))
+      .toMatchObject({ outcome: 'failed', localization: { key: 'backend.nmlPort.circleCheckCentreRisk' } })
+    expect(sim.status().offsets).toEqual(before)
+  })
+
   it('measures Z top and an edge without writing, and refuses a measurement from another work frame', () => {
     const { sim, cycle, send, result } = scene()
     const top = cycle({ action: 'material', direction: 'z_top', measure_only: true })

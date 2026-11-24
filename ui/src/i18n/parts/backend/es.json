@@ -265,6 +265,7 @@
       "cannotRead": "No se puede leer el archivo."
     },
     "nmlPort": {
+      "circleCheckCentreRisk": "Separe más los contactos de comprobación alrededor del círculo. Un contacto incorrecto podría desplazar el centro calculado más de 0,05 mm.",
       "circleCheckSensitivity": "Distribuya los puntos de comprobación alrededor del círculo. Con esta disposición, un contacto incorrecto puede pasar inadvertido.",
       "circleCheckResidual": "Falló la comprobación del círculo. El mayor error de contacto fue de {residual} mm, por encima de 0,02 mm. Limpie la superficie y vuelva a palpar.",
       "circleCheckFit": "Falló la comprobación del círculo. Los contactos no forman un círculo utilizable. Compruebe la superficie y vuelva a palpar.",

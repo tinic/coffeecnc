@@ -345,15 +345,24 @@ void circle_verification() {
   check(std::array{0.0, 120.0, 240.0, 60.0});
   check(std::array{0.0, 90.0, 180.0, 270.0, 45.0});
   const std::array quarters{0.0, 90.0, 180.0, 270.0};
-  const auto stable = planned_circle_residual_gain(quarters);
-  require(stable && std::abs(*stable - 0.25) < 1e-9,
+  const auto stable = planned_circle_quality(quarters);
+  require(stable && std::abs(stable->min_residual_gain - 0.25) < 1e-9 &&
+              std::abs(stable->single_contact_centre_error_mm - 0.04) < 1e-9,
           "four evenly spaced contacts retain a quarter of each error");
   for (const auto& weak :
        {std::array{0.0, 120.0, 240.0, 60.0}, std::array{195.0, 240.0, 285.0, 217.5}}) {
-    const auto gain = planned_circle_residual_gain(weak);
-    require(gain && *gain < circle_min_residual_gain,
+    const auto gain = planned_circle_quality(weak);
+    require(gain && gain->min_residual_gain < circle_min_residual_gain,
             "unbalanced full and partial arcs are refused before moving");
   }
+  const auto narrow = planned_circle_quality(std::array{0.0, 10.0, 275.0, 285.0});
+  require(narrow && narrow->min_residual_gain >= circle_min_residual_gain &&
+              narrow->single_contact_centre_error_mm > circle_max_centre_error_mm,
+          "a 95-degree layout can reveal a trip while letting it move the centre too far");
+  const auto five = planned_circle_quality(std::array{0.0, 90.0, 180.0, 270.0, 45.0});
+  require(five && five->min_residual_gain >= circle_min_residual_gain &&
+              five->single_contact_centre_error_mm < circle_max_centre_error_mm,
+          "the regular five-contact layout keeps the predicted centre shift within the limit");
   const std::array cardinal{std::array{7.0, 0.0}, std::array{0.0, 7.0}, std::array{-7.0, 0.0},
                             std::array{0.0, -7.0}};
   const auto quiet = measured_circle_quality(cardinal, {0, 0}, std::array{0.0, 0.0, 0.0, 0.0});

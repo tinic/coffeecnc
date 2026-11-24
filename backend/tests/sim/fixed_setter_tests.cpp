@@ -2160,8 +2160,16 @@ void arc_scenarios(NmlPort& port, double scale, double degrees, const auto& mdi,
                       "backend.nmlPort.circleCheckSensitivity" &&
                   port.writes().size() == writes,
               "a narrow partial arc is refused before motion");
-      partial.angles_deg = {0, 80, 170};
-      partial.check_angle_deg = 250;
+      partial.angles_deg = {0, 10, 275};
+      partial.check_angle_deg = 285;
+      const auto risky = port.fixed_setter(partial, epoch, {});
+      require(risky && risky->origin_refusal && risky->origin_refusal->localization &&
+                  risky->origin_refusal->localization->key ==
+                      "backend.nmlPort.circleCheckCentreRisk" &&
+                  port.writes().size() == writes,
+              "a 95-degree layout with excessive centre error is refused before motion");
+      partial.angles_deg = {0, 85, 175};
+      partial.check_angle_deg = 260;
       partial.measure_only = true;
       const auto sound = port.fixed_setter(partial, epoch, {});
       require(sound && sound->measured && sound->measured->faces.size() == 4,

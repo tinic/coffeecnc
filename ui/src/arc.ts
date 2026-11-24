@@ -80,6 +80,7 @@ export function measuredSpan(points: readonly [Point, Point, Point], centre: Poi
 export const circleRays = [0, 90, 180, 270] as const
 export const circleCheckLimit = 0.02
 export const circleMinResidualGain = 0.2
+export const circleMaxCentreError = 0.05
 export function checkAngleValid(angle: number, primary: readonly number[]): boolean {
   return Number.isFinite(angle) && primary.every(value => {
     const delta = ((angle - value) % 360 + 360) % 360
@@ -100,12 +101,12 @@ export function largestGapMiddle(primary: readonly number[]): number {
   return middle
 }
 
-export function plannedCircleGain(headings: readonly number[]): number {
+export function plannedCircleQuality(headings: readonly number[]): CircleQuality {
   const unit = headings.map(heading => {
     const angle = (heading % 360) * Math.PI / 180
     return [Math.cos(angle), Math.sin(angle)] as const
   })
-  return circleQuality(unit, []).gain
+  return circleQuality(unit, [])
 }
 
 export function measuredCircleQuality(points: readonly Point[], centre: Point): CircleQuality {
@@ -116,19 +117,22 @@ export function measuredCircleQuality(points: readonly Point[], centre: Point): 
   return circleQuality(unit, unit.map(() => 0))
 }
 
-interface CircleQuality { gain: number; uncertainty: number }
+interface CircleQuality { gain: number; uncertainty: number; centreError: number }
 function circleQuality(unit: readonly Point[], spreads: readonly number[]): CircleQuality {
   const size = unit.length
   const [mx, my] = unit.reduce<Point>(([x, y], [u, v]) => [x + u / size, y + v / size], [0, 0])
   const rows = unit.map(([x, y]) => [x - mx, y - my] as const)
-  let gain = 1, variance = 0
+  let gain = 1, variance = 0, centreError = 0
   for (const [i, [x, y]] of rows.entries()) {
     const move = solve2(rows, rows.map((_, j) => Number(i === j)))
-    if (!move) return { gain: 0, uncertainty: Infinity }
-    gain = Math.min(gain, 1 - 1 / size - x * move[0] - y * move[1])
-    if (spreads.length > 0) variance += contactSigma(spreads[i] ?? 0) ** 2 * (move[0] ** 2 + move[1] ** 2)
+    if (!move) return { gain: 0, uncertainty: Infinity, centreError: Infinity }
+    const ownResidual = 1 - 1 / size - x * move[0] - y * move[1]
+    const centreGain = Math.hypot(...move)
+    gain = Math.min(gain, ownResidual)
+    centreError = Math.max(centreError, ownResidual > 0 ? circleCheckLimit * centreGain / ownResidual : Infinity)
+    if (spreads.length > 0) variance += (contactSigma(spreads[i] ?? 0) * centreGain) ** 2
   }
-  return { gain, uncertainty: 1.96 * Math.sqrt(variance) }
+  return { gain, uncertainty: 1.96 * Math.sqrt(variance), centreError }
 }
 
 interface CircleFit { centre: Point; radius: number; maxResidual: number }

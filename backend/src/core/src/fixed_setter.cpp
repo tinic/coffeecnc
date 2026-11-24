@@ -92,6 +92,7 @@ auto quality(std::span<Point> units, std::span<const double> spreads)
   }
   double sensitivity = 1;
   double variance = 0;
+  double centre_error = 0;
   for (std::size_t i = 0; i < units.size(); ++i) {
     const auto& row = units[i];
     const auto gain = normal.solve(row);
@@ -99,12 +100,16 @@ auto quality(std::span<Point> units, std::span<const double> spreads)
       return std::nullopt;
     const auto own_residual = 1 - 1 / count - row[0] * (*gain)[0] - row[1] * (*gain)[1];
     sensitivity = std::min(sensitivity, own_residual);
+    const double shift =
+        own_residual > 0 ? circle_check_limit_mm * std::hypot((*gain)[0], (*gain)[1]) / own_residual
+                         : std::numeric_limits<double>::infinity();
+    centre_error = std::max(centre_error, shift);
     if (!spreads.empty()) {
       const double sigma = contact_sigma(spreads[i]);
       variance += sigma * sigma * ((*gain)[0] * (*gain)[0] + (*gain)[1] * (*gain)[1]);
     }
   }
-  return CircleQuality{sensitivity, 1.96 * std::sqrt(variance)};
+  return CircleQuality{sensitivity, 1.96 * std::sqrt(variance), centre_error};
 }
 
 } // namespace
@@ -154,7 +159,7 @@ auto fit_probe_circle(std::span<const std::array<double, 2>> points) -> std::opt
   return std::nullopt;
 }
 
-auto planned_circle_residual_gain(std::span<const double> headings) -> std::optional<double> {
+auto planned_circle_quality(std::span<const double> headings) -> std::optional<CircleQuality> {
   if (headings.size() < 4 || headings.size() > 5)
     return std::nullopt;
   std::array<Point, 5> units{};
@@ -164,8 +169,7 @@ auto planned_circle_residual_gain(std::span<const double> headings) -> std::opti
       return std::nullopt;
     units.at(i) = {std::cos(angle), std::sin(angle)};
   }
-  const auto found = quality(std::span{units}.first(headings.size()), {});
-  return found ? std::optional{found->min_residual_gain} : std::nullopt;
+  return quality(std::span{units}.first(headings.size()), {});
 }
 
 auto measured_circle_quality(std::span<const std::array<double, 2>> points, Point centre,

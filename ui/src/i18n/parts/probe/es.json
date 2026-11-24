@@ -247,6 +247,7 @@
     "guideDialog": {
       "checkCircle": "Verificar con un contacto adicional",
       "checkAngle": "Ángulo de comprobación (°)",
+      "shortArcCheck": "Si solo dispone de un arco corto, desactive el contacto adicional y revise el resultado con Solo medir.",
       "checkAngleRange": "Use un ángulo separado al menos {separation}° de los otros contactos.",
       "previous": "Movimiento anterior",
       "pause": "Pausa",

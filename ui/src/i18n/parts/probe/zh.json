@@ -247,6 +247,7 @@
     "guideDialog": {
       "checkCircle": "用额外触点校验",
       "checkAngle": "校验角度 (°)",
+      "shortArcCheck": "如果只有一小段圆弧，请关闭额外触点，并使用仅测量检查结果。",
       "checkAngleRange": "请选择与其他触点至少相差 {separation}° 的角度。",
       "previous": "上一个移动",
       "pause": "暂停",

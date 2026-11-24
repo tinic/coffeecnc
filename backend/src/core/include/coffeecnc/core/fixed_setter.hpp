@@ -263,14 +263,17 @@ struct CircleFit {
 constexpr double circle_check_limit_mm = 0.02;
 // Each bad contact must retain at least this fraction of its radial error in its own residual.
 constexpr double circle_min_residual_gain = 0.2;
+constexpr double circle_max_centre_error_mm = 0.05;
 
 struct CircleQuality {
   double min_residual_gain;
   double centre_uncertainty_mm;
+  // Worst first-order centre shift from one contact error at the residual limit.
+  double single_contact_centre_error_mm;
 };
 
-[[nodiscard]] auto planned_circle_residual_gain(std::span<const double> headings)
-    -> std::optional<double>;
+[[nodiscard]] auto planned_circle_quality(std::span<const double> headings)
+    -> std::optional<CircleQuality>;
 // Sensitivity and 95 % centre uncertainty of the fitted circle, using every contact's latch.
 [[nodiscard]] auto measured_circle_quality(std::span<const std::array<double, 2>> points,
                                            std::array<double, 2> centre,

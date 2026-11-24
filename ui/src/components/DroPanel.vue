@@ -197,7 +197,7 @@ watch([axes, touchBlock], () => {
 .number { font-size: calc(1em * var(--number-scale, 1)); line-height: calc(1.2 * var(--type-dro)); }
 .leading-zeros { opacity: var(--dro-zero-opacity); }
 .marker { position: absolute; top: 100%; right: 0; line-height: 1.2; white-space: nowrap; font: 600 var(--type-sm)/1.2 var(--sans); color: var(--warn); }
-.units { display: flex; flex: none; gap: 3px; padding: 3px; border-radius: 9px; background: var(--bg-sunken); }
+.units { display: flex; flex: none; gap: 3px; padding: 3px; }
 .display-units { display: flex; flex: none; align-items: center; gap: 8px; margin: 0 12px; padding-left: 12px; border-left: 1px solid var(--line); }
 .units button { width: var(--touch); height: 48px; padding: 0; font-size: var(--type-md); color: var(--text-dim); }
 .active-tool { display: flex; flex: 0 0 158px; flex-direction: column; justify-content: center; align-self: stretch; gap: 3px; margin-left: auto; padding: 0 12px; border-left: 1px solid var(--line); white-space: nowrap; }

@@ -184,7 +184,7 @@ const waitingLabels = { on: 'status.statusBar.waitingOn', off: 'status.statusBar
 .em-top { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 20px; padding: 8px 24px; background: var(--panel); }
 .em-brand { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
 .brand-logo { display: block; flex: none; width: 161px; height: 36px; }
-.em-nav { display: flex; padding: 3px; gap: 3px; border-radius: 10px; background: var(--bg-sunken); }
+.em-nav { display: flex; padding: 3px; gap: 3px; }
 .em-nav button { min-width: 94px; padding: 0 19px; font-weight: 600; color: var(--text-dim); }
 .machine { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
 .connection { display: flex; align-items: center; gap: 8px; font-size: var(--type-sm); color: var(--text-dim); }

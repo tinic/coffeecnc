@@ -1307,23 +1307,47 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
     checked(port.set_task_mode(TaskMode::manual, {}));
     int asked = 0;
     port.idle_maintenance([&] { return ++asked == 1; }); // the switch to MDI is withdrawn
+    const auto refused_message = told();
     written = last_write();
     idle();
     const auto backed_off = port.status();
     const bool sent_while_backing_off = last_write() != written;
-    std::this_thread::sleep_for(1200ms);
+    // Status stays polled meanwhile, as the session does: an unread status channel reads as stale.
+    for (const auto until = std::chrono::steady_clock::now() + 1200ms; std::chrono::steady_clock::now() < until;) {
+      static_cast<void>(port.status());
+      std::this_thread::sleep_for(20ms);
+    }
+    const auto ready_before = port.status();
+    written = last_write();
     idle();
+    const bool sent_after = last_write() != written;
     now = port.status();
     message = told();
-    std::cout << std::format("fact=probe_abort case=mode_refused while_backing_off=\"{}\" mode_manual={} "
-                             "sent_while_backing_off={} after=\"{}\" restored_message={}",
-                             state(backed_off), backed_off.controller.mode == TaskMode::manual,
-                             sent_while_backing_off, state(now), message.contains("Restored the distance mode"))
+    std::cout << std::format("fact=probe_abort case=mode_refused_retry live={} sent={} mode={} interp_idle={} "
+                             "in_position={} executing={} queued={} paused={} requested_tool={} "
+                             "homed={} mode_after={}",
+                             ready_before.controller.link == Link::live, sent_after,
+                             static_cast<int>(ready_before.controller.mode),
+                             ready_before.controller.interp == InterpState::idle,
+                             ready_before.controller.in_position, ready_before.task_executing,
+                             ready_before.queued_mdi, ready_before.paused,
+                             ready_before.controller.requested_tool.has_value(),
+                             std::ranges::all_of(ready_before.controller.axes, [](auto axis) { return axis.homed; }),
+                             static_cast<int>(now.controller.mode))
+              << std::endl;
+    std::cout << std::format("fact=probe_abort case=mode_refused asked={} refused_message=\"{}\" "
+                             "while_backing_off=\"{}\" mode_manual={} sent_while_backing_off={} after=\"{}\" "
+                             "message=\"{}\"",
+                             asked, refused_message, state(backed_off),
+                             backed_off.controller.mode == TaskMode::manual, sent_while_backing_off,
+                             state(now), message)
               << std::endl;
     require(!sent_while_backing_off && backed_off.controller.mode == TaskMode::manual &&
                 !backed_off.feed_override_enabled && now.feed_override_enabled &&
                 now.adaptive_feed_enabled && message.contains("Restored the distance mode"),
             "a refused switch to MDI waits a second, then the restore runs");
+    // The restore switched back to the operator's manual mode.
+    checked(port.set_task_mode(TaskMode::mdi, {}));
 
     // 5. Homing: the restore waits while an axis homes, then runs once; a second pass sends nothing.
     const auto before = stop_cycle("homing_gate");

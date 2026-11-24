@@ -428,6 +428,14 @@ void power_on(const Rig& rig) {
   check("panel_fresh_frames_before_estop_reset", frames_ready);
   if (!frames_ready)
     throw Failure("the panel watchdog did not release after the page loaded");
+  // An E-stop from another client reaches LinuxCNC before the panel has rendered it.
+  const bool reset_ready = rig.wait_js(R"((() => {
+    const button = __t.find('button.power-control', 'Reset E-stop');
+    return __t.last.status?.machine === 'estop' && button && !button.disabled;
+  })())");
+  check("panel_reset_estop_available_before_press", reset_ready);
+  if (!reset_ready)
+    throw Failure("the panel did not show an enabled Reset E-stop button");
   const auto press = rig.js(R"(
     const sent = __t.sent.length;
     const click = __t.click('button.power-control', 'Reset E-stop');

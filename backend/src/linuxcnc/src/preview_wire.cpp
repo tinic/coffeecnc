@@ -93,19 +93,21 @@ auto preview_stop_message(KnownPreviewStop reason, std::optional<int> argument) 
   }
   case KnownPreviewStop::unknown_work_system: {
     constexpr std::array names{"G54", "G55", "G56", "G57", "G58", "G59", "G59.1", "G59.2", "G59.3"};
-    if (*argument == 0)
+    const int index = argument.value_or(-1);
+    if (index == 0)
       return {"moves in another work system, whose offsets are not in the machine's parameter file",
               MessageKey{"backend.previewEngine.stopOtherSystem"}};
-    if (*argument < 1 || *argument > static_cast<int>(names.size()))
+    if (index < 1 || index > static_cast<int>(names.size()))
       return {};
-    const std::string wcs = names.at(static_cast<std::size_t>(*argument - 1));
+    const std::string wcs = names.at(static_cast<std::size_t>(index - 1));
     return {std::format("moves in {}, whose offsets are not in the machine's parameter file", wcs),
             MessageKey{"backend.previewEngine.stopUnknownSystem", {{"wcs", wcs}}}};
   }
   case KnownPreviewStop::machine_m_code: {
-    if (*argument < 100 || *argument > 199)
+    const int number = argument.value_or(-1);
+    if (number < 100 || number > 199)
       return {};
-    const auto code = std::to_string(*argument);
+    const auto code = std::to_string(number);
     return {std::format("M{} runs a program of the machine's own: what it does is not known to "
                         "the preview",
                         code),

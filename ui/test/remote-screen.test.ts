@@ -1,11 +1,13 @@
 // The LAN viewer's screen: the program name and the latest notice above the DRO.
 
-import { afterEach, describe, expect, it } from 'vitest'
-import { mount, type VueWrapper } from '@vue/test-utils'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'
 
 import RemoteScreen from '../src/components/RemoteScreen.vue'
+import RemoteProgramUpload from '../src/components/RemoteProgramUpload.vue'
 import { panelLanguage, theme } from '../src/appearance'
+import { setLanguage } from '../src/i18n'
 import { operatorSettings, panel } from '../src/machine'
 import type { Status } from '../src/protocol'
 import { SimMachine } from '../src/sim/machine'
@@ -15,6 +17,30 @@ afterEach(() => {
   wrapper?.unmount(); wrapper = undefined; panel.notice = null
   operatorSettings.chooseTheme('light')
   operatorSettings.chooseLanguage('en')
+  vi.unstubAllGlobals()
+})
+
+describe('LAN upload', () => {
+  it.each([
+    ['a keyed reply',
+      { reason: 'The filename is in use.', localization: { key: 'backend.programEdit.exists', params: { name: 'Plate 2.ngc' } } }],
+    ['a reply from an older backend',
+      { reason: 'A program named Plate 2.ngc exists already.' }],
+    ['a reply with invalid localization',
+      { reason: 'A program named Plate 2.ngc exists already.', localization: { key: 'backend.programEdit.exists', params: { name: 2 } } }],
+  ])('localizes %s', async (_name, payload) => {
+    await setLanguage('de')
+    vi.stubGlobal('fetch', vi.fn((): Promise<Response> =>
+      Promise.resolve(Response.json(payload, { status: 409 }))))
+    wrapper = mount(RemoteProgramUpload, { global: { stubs: { teleport: true } } })
+    const input = wrapper.get('input[type="file"]')
+    const file = new File(['G21\nM2\n'], 'Plate 2.ngc')
+    Object.defineProperty(input.element, 'files', { value: { length: 1, item: () => file } })
+    await input.trigger('change')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toBe('Ein Programm mit dem Namen Plate 2.ngc existiert bereits.')
+  })
 })
 
 function screen(): VueWrapper {

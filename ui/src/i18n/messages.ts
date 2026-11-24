@@ -12,7 +12,7 @@
 // by ", " (nml_port.cpp, withdraw). Every other placeholder (a path, a file or program name, a
 // tool, a G-code line, a number such as the latched probe value) is data and stays exactly as
 // it arrived, also when it is a catalog word such as "two".
-import type { CommandResult, MessageKey } from '../protocol'
+import type { CommandResult } from '../protocol'
 import { i18n, type Params } from './index'
 import backend from './parts/backend/en.json?raw'
 import panel from './parts/messages/en.json?raw'
@@ -79,8 +79,9 @@ function translateArgument(name: string, value: string): string {
   return nested.has(name) ? translateMessage(value) : value
 }
 
-function translateKey(message: MessageKey | undefined): string | undefined {
-  if (!message || typeof message.key !== 'string') return
+function translateKey(message: unknown): string | undefined {
+  if (message === null || typeof message !== 'object' ||
+    !('key' in message) || typeof message.key !== 'string' || !('params' in message)) return
   const names = argumentsByKey.get(message.key)
   const args: unknown = message.params
   if (!names || typeof args !== 'object' || args === null || Array.isArray(args)) return
@@ -94,7 +95,7 @@ function translateKey(message: MessageKey | undefined): string | undefined {
 }
 
 /** `text` in the panel's language when it is a known sentence; otherwise unchanged. */
-export function translateMessage(text: string, localization?: MessageKey): string {
+export function translateMessage(text: string, localization?: unknown): string {
   const structured = translateKey(localization)
   if (structured !== undefined) return structured
   if (i18n.global.locale.value === 'en' || text === '') return text

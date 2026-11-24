@@ -265,6 +265,12 @@
       "cannotRead": "Impossible de lire le fichier."
     },
     "nmlPort": {
+      "circleCheckCentreRisk": "Espacez davantage les contacts autour du cercle. Un mauvais contact pourrait déplacer le centre ajusté de plus de 0,05 mm.",
+      "circleCheckSensitivity": "Répartissez les contacts de vérification autour du cercle. Avec cette disposition, un mauvais contact peut passer inaperçu.",
+      "circleCheckResidual": "Échec de la vérification du cercle. Le plus grand écart de contact était de {residual} mm, au-delà de 0,02 mm. Nettoyez la surface et palpez à nouveau.",
+      "circleCheckFit": "Échec de la vérification du cercle. Les contacts ne donnent pas de cercle exploitable. Vérifiez la surface et palpez à nouveau.",
+      "circleCheckAngle": "Choisissez un angle de vérification à au moins 10° des autres contacts.",
+      "circleCheckFeature": "Le contact supplémentaire est réservé aux alésages et aux bossages.",
       "breakpointPlainProgram": "Un point d’arrêt exige un programme sans sous-programmes ni boucles.",
       "breakpointMotionBlock": "Choisissez un bloc de mouvement dans le programme chargé.",
       "commandTeleop": "le passage entre mode cartésien et mode articulaire",

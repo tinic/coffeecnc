@@ -342,6 +342,7 @@ auto encode_hello(const Hello& hello) -> EncodedMessage {
         travel <= 3 * setter.feed_mm_min) {
       message["fixed_setter"]["material_travel_mm"] = travel;
       message["fixed_setter"]["material_features"] = true;
+      message["fixed_setter"]["circle_check"] = true;
       message["fixed_setter"]["material_geometry"] = material_geometry;
     }
   }

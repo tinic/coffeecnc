@@ -265,6 +265,12 @@
       "cannotRead": "The file cannot be read."
     },
     "nmlPort": {
+      "circleCheckCentreRisk": "Spread the check contacts farther around the circle. A bad contact could move the fitted centre by more than 0.05 mm.",
+      "circleCheckSensitivity": "Spread the check contacts around the circle. A bad contact can be hidden by the current layout.",
+      "circleCheckResidual": "Circle check failed. The largest contact error was {residual} mm, over 0.02 mm. Clean the surface and probe again.",
+      "circleCheckFit": "Circle check failed. The contacts do not give a usable circle. Check the surface and probe again.",
+      "circleCheckAngle": "Choose a check angle at least 10° from the other contacts.",
+      "circleCheckFeature": "The extra contact is only available for a bore or boss.",
       "breakpointPlainProgram": "A breakpoint needs a program without subroutines or loops.",
       "breakpointMotionBlock": "Choose a motion block in the loaded program.",
       "commandTeleop": "the change between world and joint mode",

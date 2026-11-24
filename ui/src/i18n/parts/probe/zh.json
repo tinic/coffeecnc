@@ -148,6 +148,7 @@
       "measuredSet": "已在测量点设置 {wcs} 的 {axes}。"
     },
     "guide": {
+      "resultCircleCheck": "用额外触点校验圆。只要某一触点偏差大于 0.02 mm，就不会设置原点。",
       "angleFront": "前 · Y−",
       "angleLeft": "左 · X−",
       "inputDiameter": "大致直径",
@@ -244,6 +245,10 @@
       "inputAngles": "相对 +X 的方向"
     },
     "guideDialog": {
+      "checkCircle": "用额外触点校验",
+      "checkAngle": "校验角度 (°)",
+      "shortArcCheck": "验证需要接触点覆盖约 240° 的圆弧。圆弧较短时，请关闭额外触点，再使用仅测量检查结果。",
+      "checkAngleRange": "请选择与其他触点至少相差 {separation}° 的角度。",
       "previous": "上一个移动",
       "pause": "暂停",
       "play": "播放",

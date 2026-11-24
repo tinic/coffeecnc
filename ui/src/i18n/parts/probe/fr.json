@@ -148,6 +148,7 @@
       "measuredSet": "{axes} de {wcs} défini au point mesuré."
     },
     "guide": {
+      "resultCircleCheck": "Un contact supplémentaire vérifie le cercle. Un écart supérieur à 0,02 mm empêche de définir l’origine.",
       "angleFront": "Avant · Y−",
       "angleLeft": "Gauche · X−",
       "inputDiameter": "Diamètre approximatif",
@@ -244,6 +245,10 @@
       "inputAngles": "Directions depuis +X"
     },
     "guideDialog": {
+      "checkCircle": "Vérifier avec un contact supplémentaire",
+      "checkAngle": "Angle de vérification (°)",
+      "shortArcCheck": "La vérification nécessite des contacts répartis sur environ 240° du cercle. Sur un arc plus court, désactivez le contact supplémentaire et examinez le résultat avec Mesurer seulement.",
+      "checkAngleRange": "Prenez un angle à au moins {separation}° des autres contacts.",
       "previous": "Mouvement précédent",
       "pause": "Pause",
       "play": "Lecture",

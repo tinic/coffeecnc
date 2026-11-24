@@ -179,6 +179,16 @@ void protocol_forms() {
   rejected(R"({"id":42,"type":"fixed_setter","action":"ball","tool":99,"x":1,"y":2,"z":3,"gauge_width":20,"measure_only":true})", 42);
   rejected(R"({"id":42,"type":"fixed_setter","action":"touch_off","tool":98,"x":1,"y":2,"z":3,"measure_only":true})", 42);
   rejected(R"({"id":42,"type":"fixed_setter","action":"bore","tool":99,"x":1,"y":2,"z":3,"measure_only":1})", 42);
+  const auto checked = body<FixedSetterRequest>(
+      R"({"id":42,"type":"fixed_setter","action":"bore_arc","tool":99,"x":1,"y":2,"z":3,"angles":[0,120,240],"check_angle":60,"measure_only":true})");
+  require(checked.check_angle_deg == 60 && checked.measure_only,
+          "Circle verification is independent of Measure only");
+  rejected(
+      R"({"id":42,"type":"fixed_setter","action":"pocket","tool":99,"x":1,"y":2,"z":3,"check_angle":45})",
+      42);
+  rejected(
+      R"({"id":42,"type":"fixed_setter","action":"boss","tool":99,"x":1,"y":2,"z":3,"diameter":20,"check_angle":true})",
+      42);
   const auto apply = body<FixedSetterRequest>(
       R"({"id":42,"type":"fixed_setter","action":"apply_measurement","tool":99,"measurement_id":7})");
   require(apply.action == SetterAction::apply_measurement && apply.edge_measurement == 7 &&

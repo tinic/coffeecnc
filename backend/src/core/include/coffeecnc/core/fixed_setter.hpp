@@ -1,6 +1,8 @@
 #ifndef COFFEECNC_CORE_FIXED_SETTER_HPP
 #define COFFEECNC_CORE_FIXED_SETTER_HPP
 
+#include <coffeecnc/core/message_key.hpp>
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -9,6 +11,7 @@
 #include <limits>
 #include <numbers>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -253,6 +256,35 @@ inline auto circle_through(const std::array<std::array<double, 2>, 3>& points)
     return std::nullopt;
   return Circle{{points[0][0] + ux, points[0][1] + uy}, radius};
 }
+struct CircleFit {
+  Circle circle;
+  double max_residual_mm;
+};
+constexpr double circle_check_limit_mm = 0.02;
+// Each bad contact must retain at least this fraction of its radial error in its own residual.
+constexpr double circle_min_residual_gain = 0.2;
+constexpr double circle_max_centre_error_mm = 0.05;
+
+struct CircleQuality {
+  double min_residual_gain;
+  double centre_uncertainty_mm;
+  // Worst first-order centre shift from one contact error at the residual limit.
+  double single_contact_centre_error_mm;
+};
+
+[[nodiscard]] auto planned_circle_quality(std::span<const double> headings)
+    -> std::optional<CircleQuality>;
+// Sensitivity and 95 % centre uncertainty of the fitted circle, using every contact's latch.
+[[nodiscard]] auto measured_circle_quality(std::span<const std::array<double, 2>> points,
+                                           std::array<double, 2> centre,
+                                           std::span<const double> latch_spreads)
+    -> std::optional<CircleQuality>;
+
+// Orthogonal least squares on four or five ball-centre contacts. Reject a singular fit or a
+// fit that does not converge. The residual is the largest radial miss, in millimetres.
+[[nodiscard]] auto fit_probe_circle(std::span<const std::array<double, 2>> points)
+    -> std::optional<CircleFit>;
+
 // The arc the points cover seen from `centre`, degrees.
 inline auto measured_span(const std::array<std::array<double, 2>, 3>& points,
                           std::array<double, 2> centre) -> double {
@@ -296,6 +328,8 @@ struct FixedSetterRequest {
   // active work system's +X axis. A bore is probed outward from the start along them; a boss
   // inward from beyond `gauge_width_mm` / 2 along them.
   std::array<double, 3> angles_deg{};
+  // One extra contact for a bore or boss. Degrees from work +X, just as for the three angles.
+  std::optional<double> check_angle_deg{};
 };
 
 // The grid a height map probes: columns and rows of points from the first corner to the second,
@@ -390,6 +424,8 @@ struct SetterState {
     bool corner{}; // X and Y were both set
   };
   std::optional<Material> material{};
+  // The circle was sampled, but the contact check refused the origin write.
+  std::optional<LocalizedReason> origin_refusal{};
   // After a ball calibration: the effective ball diameter written to the tool table, mm.
   std::optional<double> ball_diameter{};
   // After a bore or boss: its diameter, mm (the chord through the centre). After a three-point

@@ -1955,7 +1955,7 @@ void runout_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, double 
 // obstacle (an early trip) or a notch (no contact); on a boss a burr below its top. With
 // `faults` the scenario runs those cases and a stop mid-cycle instead of the measured cycles.
 void arc_scenarios(NmlPort& port, double scale, double degrees, const auto& mdi, bool faults,
-                   HalShared& shared, const std::string& tool_table) {
+                   HalShared& shared, const std::string& tool_table, bool verify = false) {
   // The MDI blocks written since `from` that write an offset or the tool table: G10.
   const auto g10_since = [&](std::size_t from) {
     const auto all = port.writes();
@@ -2071,6 +2071,144 @@ void arc_scenarios(NmlPort& port, double scale, double degrees, const auto& mdi,
     halcmd("setp sim-arc-bv.scale 1");
   };
   box(1000, 1001, 1000, 1001); // out of the way
+
+  if (verify) {
+    // Exercise three primary contacts in mm and four in inch. Put a small obstacle exactly
+    // 1 mm ahead of the nominal contact on each ray, one ray at a time.
+    const bool three = scale == 1;
+    const std::array primary{0.0, 90.0, 180.0};
+    const double extra = three ? 270.0 : 45.0;
+    const auto headings =
+        three ? std::vector{0.0, 90.0, 180.0, extra} : std::vector{0.0, 90.0, 180.0, 270.0, extra};
+    for (const bool inside : {true, false}) {
+      const auto action = inside ? (three ? SetterAction::bore_arc : SetterAction::bore)
+                                 : (three ? SetterAction::boss_arc : SetterAction::boss);
+      const auto request = [&](bool measure_only) {
+        return FixedSetterRequest{.action = action,
+                                  .tool = 99,
+                                  .start = machine(),
+                                  .gauge_width_mm = inside ? 0.0 : 12.0,
+                                  .measure_only = measure_only,
+                                  .angles_deg = primary,
+                                  .check_angle_deg = extra};
+      };
+      probe_input(inside ? "sim-arc-wall" : "sim-arc-boss");
+      at(3.6, -1.7); // a sound circle still fits from off centre
+      const auto clear = port.fixed_setter(request(true), epoch, {});
+      if (!clear)
+        throw std::runtime_error(clear.error());
+      if (!clear->measured)
+        throw std::runtime_error(clear->origin_refusal
+                                     ? clear->origin_refusal->text
+                                     : "the sound circle did not yield a measurement");
+      require(clear->measured->faces.size() == headings.size() && clear->center_diameter &&
+                  std::abs(*clear->center_diameter - (inside ? 16 : 12)) < 0.03,
+              "the sound circle measures all contacts and its diameter");
+      const auto accepted = port.fixed_setter({.action = SetterAction::apply_measurement,
+                                               .tool = 99,
+                                               .edge_measurement = clear->measured->id},
+                                              epoch, {});
+      const auto origin = origin_of(port.status());
+      require(accepted && accepted->material && std::abs(origin[0] - 4) < 0.03 &&
+                  std::abs(origin[1] + 2) < 0.03,
+              "the sound circle can set its measured centre");
+      for (const auto heading : headings) {
+        at(4, -2);
+        const auto before = port.status();
+        const auto writes = port.writes().size();
+        const auto table = table_text();
+        const double angle = heading * std::numbers::pi / 180;
+        const double x = std::cos(angle), y = std::sin(angle);
+        constexpr double half = 0.4;
+        const double radius =
+            7 + (inside ? -1 : 1) * (1 - half / std::max(std::abs(x), std::abs(y)));
+        box(radius * x - half, radius * x + half, radius * y - half, radius * y + half);
+        probe_input(inside ? "sim-arc-wall-obstacle" : "sim-arc-boss-burr");
+        const auto refused = port.fixed_setter(request(false), epoch, {});
+        const auto after = port.status();
+        const auto fault = refused ? refused->origin_refusal : std::nullopt;
+        std::cout << std::format(
+                         "fact=circle_check bore={} contacts={} early_heading={} refused={} g10={}",
+                         inside, headings.size(), heading, fault.has_value(), g10_since(writes))
+                  << '\n';
+        require(fault && fault->localization &&
+                    fault->localization->key == "backend.nmlPort.circleCheckResidual" && refused &&
+                    !refused->material && !refused->measured && after.g5x == before.g5x &&
+                    after.g92 == before.g92 && after.rotation_xy == before.rotation_xy &&
+                    after.tool_offset == before.tool_offset && port.writes().size() > writes &&
+                    g10_since(writes) == 0 && table_text() == table,
+                refused ? "an early trip refuses the origin write with the residual key"
+                        : refused.error());
+      }
+      box(1000, 1001, 1000, 1001);
+    }
+    at(4, -2);
+    probe_input("sim-arc-wall");
+    FixedSetterRequest bore{.action = three ? SetterAction::bore_arc : SetterAction::bore,
+                            .tool = 99,
+                            .start = machine(),
+                            .angles_deg = primary,
+                            .check_angle_deg = extra};
+    if (three) {
+      auto partial = bore;
+      partial.angles_deg = {195, 240, 285};
+      partial.check_angle_deg = 217.5;
+      const auto writes = port.writes().size();
+      const auto rejected = port.fixed_setter(partial, epoch, {});
+      require(rejected && rejected->origin_refusal && rejected->origin_refusal->localization &&
+                  rejected->origin_refusal->localization->key ==
+                      "backend.nmlPort.circleCheckSensitivity" &&
+                  port.writes().size() == writes,
+              "a narrow partial arc is refused before motion");
+      partial.angles_deg = {0, 10, 275};
+      partial.check_angle_deg = 285;
+      const auto risky = port.fixed_setter(partial, epoch, {});
+      require(risky && risky->origin_refusal && risky->origin_refusal->localization &&
+                  risky->origin_refusal->localization->key ==
+                      "backend.nmlPort.circleCheckCentreRisk" &&
+                  port.writes().size() == writes,
+              "a 95-degree layout with excessive centre error is refused before motion");
+      partial.angles_deg = {0, 85, 175};
+      partial.check_angle_deg = 260;
+      partial.measure_only = true;
+      const auto sound = port.fixed_setter(partial, epoch, {});
+      require(sound && sound->measured && sound->measured->faces.size() == 4,
+              "an adequately spread partial arc passes its check");
+      at(4, -2);
+      bore.start = machine();
+      box(-1, 1, -100, -6.7);
+      probe_input("sim-arc-wall-notch");
+      const auto before = port.status().g5x;
+      const auto missed_writes = port.writes().size();
+      const auto missed = port.fixed_setter(bore, epoch, {});
+      require(!missed && missed.error().contains("Contact 4") && port.status().g5x == before &&
+                  g10_since(missed_writes) == 0,
+              "a missed verification contact aborts without writing");
+    } else {
+      int completed = 0;
+      bool active = false;
+      bool stopped = false;
+      std::optional<HalShared::Clock::time_point> fifth;
+      const auto before = port.status().g5x;
+      const auto writes = port.writes().size();
+      const auto result = port.fixed_setter(bore, epoch, [&] {
+        const auto now = HalShared::Clock::now();
+        const auto pins = shared.view(now);
+        const bool running = pins && pins->probe_cycle_active;
+        if (active && !running)
+          ++completed;
+        active = running;
+        if (completed >= 4 && running && !fifth)
+          fifth = now;
+        stopped = stopped || (fifth && now - *fifth >= 250ms);
+        return !stopped;
+      });
+      require(stopped && !result && result.error().contains("Contact 5") &&
+                  port.status().g5x == before && g10_since(writes) == 0,
+              "Stop during the extra search aborts without writing");
+    }
+    return;
+  }
 
   // A cycle that the controller refuses after moving: nothing set, the probe back at its start.
   const auto refused_run = [&](std::string_view name, SetterAction action,
@@ -2978,7 +3116,9 @@ void run(const std::string& ini, std::string_view scenario) {
   const bool measure = scenario == "measure";
   const bool measure_geometry = scenario == "measure-geometry";
   const bool rotated = scenario == "rotated" || measure || measure_geometry;
-  const bool arc = scenario == "arc" || scenario == "arc-rotated" || scenario == "arc-faults";
+  const bool verify_circle = scenario == "circle-check";
+  const bool arc =
+      scenario == "arc" || scenario == "arc-rotated" || scenario == "arc-faults" || verify_circle;
   const bool height_map = scenario == "height-map";
   const bool g0759 = std::filesystem::path(ini).filename() == "coffeecnc_g0759.ini";
   auto config = load_machine_config(ini);
@@ -2992,6 +3132,11 @@ void run(const std::string& ini, std::string_view scenario) {
   config->fixed_setter = FixedSetterLimits{15, 240, reference_tool, 0.5, 12, 60, 1};
   if (scenario == "measure-m6")
     config->fixed_setter->travel_mm = 30;
+  if (verify_circle) {
+    config->fixed_setter->feed_mm_min = 600;
+    config->fixed_setter->latch_feed_mm_min = 180;
+    config->fixed_setter->latch_backoff_mm = 0.5;
+  }
   if (material || edge || features || rotated || runout || arc || height_map)
     config->touch_probe_tool = 99;
   // The runner recreates the table, but retains files beside it between runs.
@@ -3039,6 +3184,13 @@ void run(const std::string& ini, std::string_view scenario) {
     });
   };
   mdi("G21 G90 G94 G40");
+  if (arc) {
+    const double rotation =
+        scenario == "arc-rotated" || verify_circle ? (scale == 1 ? 7.5 : -30) : 0;
+    arc_scenarios(*port, scale, rotation, mdi, scenario == "arc-faults", shared, config->tool_table,
+                  verify_circle);
+    return;
+  }
   if (rotated) {
     // Millimetres at +7.5°, inches at -30°: each rotated cycle in both units and turns.
     rotated_scenarios(*port, scale, scale == 1 ? 7.5 : -30, mdi, measure, config->tool_table,
@@ -3347,7 +3499,8 @@ auto main(int argc, char** argv) -> int {
        scenario != "features" && scenario != "rotated" && scenario != "runout" &&
        scenario != "runout-pin" && scenario != "runout-arc" && scenario != "measure" &&
        scenario != "measure-geometry" && scenario != "arc" && scenario != "arc-rotated" &&
-       scenario != "arc-faults" && scenario != "height-map" && scenario != "measure-m6") ||
+       scenario != "arc-faults" && scenario != "height-map" && scenario != "measure-m6" &&
+       scenario != "circle-check") ||
       ini.parent_path() != run_dir ||
       (ini.filename() != "coffeecnc_sim.ini" &&
        !(scenario == "edge-rotation" && ini.filename() == "coffeecnc_g0759.ini")))

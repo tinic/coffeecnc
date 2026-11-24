@@ -148,6 +148,7 @@
       "measuredSet": "測定点に {wcs} の {axes} を設定しました。"
     },
     "guide": {
+      "resultCircleCheck": "接触点を追加して円を検証します。偏差が 0.02 mm を超える場合は原点を設定しません。",
       "angleFront": "手前 · Y−",
       "angleLeft": "左 · X−",
       "inputDiameter": "おおよその直径",
@@ -244,6 +245,10 @@
       "inputAngles": "+X からの方向"
     },
     "guideDialog": {
+      "checkCircle": "接触点を追加して検証",
+      "checkAngle": "検証角度 (°)",
+      "shortArcCheck": "検証には円周の約240°にわたる接触点が必要です。円弧が短い場合は追加の接触を無効にし、測定のみで結果を確認してください。",
+      "checkAngleRange": "他の接触点から {separation}° 以上離れた角度を指定してください。",
       "previous": "前の動作",
       "pause": "一時停止",
       "play": "再生",

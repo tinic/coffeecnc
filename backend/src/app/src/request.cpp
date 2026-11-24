@@ -458,7 +458,8 @@ auto command(const Json& object) -> Command {
                                                     {"y_plus", ProbeDirection::y_plus}});
         request.gauge_width_mm = number(object, "spacing");
       } else if (action == SetterAction::boss) {
-        fields(object, {"id", "type", "action", "tool", "x", "y", "z", "diameter"}, {"measure_only"});
+        fields(object, {"id", "type", "action", "tool", "x", "y", "z", "diameter"},
+               {"measure_only", "check_angle"});
         request.gauge_width_mm = number(object, "diameter");
       } else if (action == SetterAction::runout) {
         fields(object, {"id", "type", "action", "tool", "x", "y", "z", "diameter", "outside"});
@@ -474,10 +475,11 @@ auto command(const Json& object) -> Command {
       } else if (action == SetterAction::bore_arc || action == SetterAction::boss_arc) {
         if (action == SetterAction::boss_arc) {
           fields(object, {"id", "type", "action", "tool", "x", "y", "z", "angles", "diameter"},
-                 {"measure_only"});
+                 {"measure_only", "check_angle"});
           request.gauge_width_mm = number(object, "diameter");
         } else {
-          fields(object, {"id", "type", "action", "tool", "x", "y", "z", "angles"}, {"measure_only"});
+          fields(object, {"id", "type", "action", "tool", "x", "y", "z", "angles"},
+                 {"measure_only", "check_angle"});
         }
         const auto& angles = field(object, "angles");
         if (!angles.is_array() || angles.size() != request.angles_deg.size() ||
@@ -503,13 +505,18 @@ auto command(const Json& object) -> Command {
             object, "x_direction", {{"x_minus", ProbeDirection::x_minus}, {"x_plus", ProbeDirection::x_plus}});
         request.y_direction = choice<ProbeDirection>(
             object, "y_direction", {{"y_minus", ProbeDirection::y_minus}, {"y_plus", ProbeDirection::y_plus}});
-      } else if (action == SetterAction::pocket || action == SetterAction::bore) {
+      } else if (action == SetterAction::bore) {
+        fields(object, {"id", "type", "action", "tool", "x", "y", "z"},
+               {"measure_only", "check_angle"});
+      } else if (action == SetterAction::pocket) {
         fields(object, {"id", "type", "action", "tool", "x", "y", "z"}, {"measure_only"});
       } else {
         fields(object, {"id", "type", "action", "tool", "x", "y", "z"});
       }
       if (object.contains("measure_only"))
         request.measure_only = boolean(object, "measure_only");
+      if (object.contains("check_angle"))
+        request.check_angle_deg = number(object, "check_angle");
       request.tool = integer(object, "tool");
       request.start = {number(object, "x"), number(object, "y"), number(object, "z")};
     } else {

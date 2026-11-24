@@ -435,6 +435,48 @@ describe('browser probe scene', () => {
     }
   })
 
+  it.each([
+    ['bore', { action: 'bore', check_angle: 45 }, 5],
+    ['bore', { action: 'bore_arc', angles: [0, 90, 180], check_angle: 270 }, 4],
+    ['boss', { action: 'boss', diameter: 24, check_angle: 45 }, 5],
+    ['boss', { action: 'boss_arc', angles: [0, 90, 180], diameter: 24, check_angle: 270 }, 4],
+  ] as const)('adds an opt-in check contact to the %s before offering Set', (setup, mode, count) => {
+    const { sim, cycle, send, result } = scene(setup)
+    const before = structuredClone(sim.status().offsets)
+    const direction = 'angles' in mode ? { ...mode, angles: [...mode.angles] as [number, number, number] } : mode
+    const checked = cycle({ ...direction, measure_only: true })
+    expect(checked.setter?.measured?.faces).toHaveLength(count)
+    expect(sim.status().offsets).toEqual(before)
+    const id = checked.setter?.measured?.measurement_id
+    if (id === undefined) throw new Error('Missing measurement')
+    expect(result(send({ type: 'fixed_setter', action: 'apply_measurement', tool: 99, measurement_id: id }))?.setter?.material)
+      .toMatchObject({ axis: 'XY' })
+  })
+
+  it('rejects a check contact too close to the regular search directions before moving', () => {
+    const { sim, submit, result } = scene('bore')
+    const before = structuredClone(sim.status().offsets)
+    expect(result(submit({ action: 'bore', check_angle: 4 }))?.reason)
+      .toBe('Choose a check angle at least 10° from the other contacts.')
+    expect(sim.status().offsets).toEqual(before)
+  })
+
+  it('refuses a weak four-contact layout before moving', () => {
+    const { sim, submit, result } = scene('bore')
+    const before = structuredClone(sim.status().offsets)
+    expect(result(submit({ action: 'bore_arc', angles: [0, 120, 240], check_angle: 60 }))?.reason)
+      .toContain('A bad contact can be hidden')
+    expect(sim.status().offsets).toEqual(before)
+  })
+
+  it('refuses a detectable layout with too much centre shift before moving', () => {
+    const { sim, submit, result } = scene('bore')
+    const before = sim.status().offsets
+    expect(result(submit({ action: 'bore_arc', angles: [0, 10, 275], check_angle: 285 })))
+      .toMatchObject({ outcome: 'failed', localization: { key: 'backend.nmlPort.circleCheckCentreRisk' } })
+    expect(sim.status().offsets).toEqual(before)
+  })
+
   it('measures Z top and an edge without writing, and refuses a measurement from another work frame', () => {
     const { sim, cycle, send, result } = scene()
     const top = cycle({ action: 'material', direction: 'z_top', measure_only: true })

@@ -148,6 +148,7 @@
       "measuredSet": "{wcs} {axes} set at the measured point."
     },
     "guide": {
+      "resultCircleCheck": "An extra contact checks the circle. A contact more than 0.02 mm off the fit blocks the origin write.",
       "angleFront": "Front · Y−",
       "angleLeft": "Left · X−",
       "inputDiameter": "Approximate diameter",
@@ -244,6 +245,10 @@
       "inputAngles": "Directions from +X"
     },
     "guideDialog": {
+      "checkCircle": "Verify with an extra contact",
+      "checkAngle": "Check angle (°)",
+      "shortArcCheck": "Verification needs contacts over about 240° of the circle. On a shorter arc, turn off the extra contact and use Measure only to inspect the result.",
+      "checkAngleRange": "Use an angle at least {separation}° from the other contacts.",
       "previous": "Previous move",
       "pause": "Pause",
       "play": "Play",

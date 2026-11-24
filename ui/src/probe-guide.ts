@@ -1,5 +1,5 @@
 import { t } from './i18n'
-import type { Angles } from './arc'
+import { circleRays, type Angles } from './arc'
 import type { FixedSetterLimits, ProbeAxis, ProbeDirection, Vec3 } from './protocol'
 
 type Edge = Exclude<ProbeDirection, 'z_top'>
@@ -106,7 +106,18 @@ interface Face {
 
 /** Representative workpiece geometry. Directions and move order match the native cycles. */
 export function probeGuide(target: ProbeGuideTarget, limits: FixedSetterLimits | undefined, angle: AngleEdge, distance: number | null,
-  arc: Angles = defaultArcAngles): ProbeGuidePlan {
+  arc: readonly number[] = defaultArcAngles, checkAngle?: number): ProbeGuidePlan {
+  if (checkAngle !== undefined) {
+    const regular = target.kind === 'bore' || target.kind === 'boss'
+    const radial = regular ? { kind: target.kind === 'bore' ? 'bore_arc' : 'boss_arc' } as const : target
+    const guide = probeGuide(radial, limits, angle, distance, [...(regular ? circleRays : arc), checkAngle])
+    return {
+      ...guide,
+      title: target.kind === 'bore' ? t('probe.guide.titleBore') : target.kind === 'boss' ? t('probe.guide.titleBoss') : guide.title,
+      setup: target.kind === 'bore' ? t('probe.guide.setupBore') : target.kind === 'boss' ? t('probe.guide.setupBoss') : guide.setup,
+      result: t('probe.guide.resultCircleCheck'),
+    }
+  }
   let title: string
   let setup: string
   let result: string

@@ -83,4 +83,13 @@ describe('illustrated probe motion', () => {
     expect(plan.steps.filter(step => step.label.startsWith('Move above')).every(step => step.point[2] >= 5)).toBe(true)
     expect(plan.steps.at(-1)?.point[2]).toBe(9)
   })
+
+  it('shows the extra search as a fifth bore contact or fourth arc contact', () => {
+    const bore = probeGuide({ kind: 'bore' }, undefined, 'y_plus', null, undefined, 45)
+    const arc = probeGuide({ kind: 'boss_arc' }, undefined, 'y_plus', 24, [0, 120, 240], 60)
+    expect(bore.steps.filter(step => step.kind === 'search')).toHaveLength(5)
+    expect(arc.steps.filter(step => step.kind === 'search')).toHaveLength(4)
+    expect(bore.result).toContain('0.02 mm')
+  })
+
 })

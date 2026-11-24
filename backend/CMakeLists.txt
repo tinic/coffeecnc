@@ -349,6 +349,11 @@ if(BUILD_TESTING)
           $<TARGET_FILE:coffeecnc_fixed_setter_tests> measure)
         set_tests_properties(linuxcnc_probe_measure_${units} PROPERTIES LABELS linuxcnc
           RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 810)
+        add_test(NAME linuxcnc_probe_measure_geometry_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+          -u ${units} -t 120 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_probe_measure_geometry_${units}
+          $<TARGET_FILE:coffeecnc_fixed_setter_tests> measure-geometry)
+        set_tests_properties(linuxcnc_probe_measure_geometry_${units} PROPERTIES LABELS linuxcnc
+          RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 460)
         add_test(NAME linuxcnc_jog_contact_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
           -u ${units} -t 25 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_jog_contact_${units}
           $<TARGET_FILE:coffeecnc_sim_tests> jog-contact)

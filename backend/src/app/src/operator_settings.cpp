@@ -234,7 +234,7 @@ auto read_document(const Json& value, Damaged damaged) -> OperatorPreferences {
       fall_back("Safe Z for Go to must be a machine Z in mm.");
   }
   if (const auto error = operator_preferences_error(document); !error.empty())
-    throw std::runtime_error(error);
+    throw std::runtime_error(error.text);
   return document;
 }
 // The settings file leaves the language out: 0.1.3 and earlier read only the other fields and
@@ -268,49 +268,60 @@ template <typename Read> auto checked(Read read) -> std::expected<decltype(read(
 }
 } // namespace
 
-auto operator_preferences_error(const OperatorPreferences& document) -> std::string {
+auto operator_preferences_error(const OperatorPreferences& document) -> LocalizedReason {
   if (layout_name(document.program_layout).empty() || theme_name(document.theme).empty() ||
       language_name(document.language).empty())
-    return "Invalid panel presentation.";
+    return {"Invalid panel presentation.",
+            MessageKey{"backend.operatorSettings.invalidPresentation"}};
   if (document.recent_programs.size() > max_recent_programs ||
       !std::ranges::all_of(document.recent_programs,
                            [](const std::string& path) -> bool { return recent_path(path); }))
-    return "Recent programs must be at most eight absolute paths.";
+    return {"Recent programs must be at most eight absolute paths.",
+            MessageKey{"backend.operatorSettings.recentPrograms"}};
   if (document.saved_positions.size() > max_saved_positions ||
       !std::ranges::all_of(document.saved_positions, saved_position))
-    return "Saved positions must be at most sixteen named, finite machine positions.";
+    return {"Saved positions must be at most sixteen named, finite machine positions.",
+            MessageKey{"backend.operatorSettings.savedPositions"}};
   if (units(document.startup_units).empty())
-    return "Invalid startup units.";
+    return {"Invalid startup units.", MessageKey{"backend.operatorSettings.invalidStartupUnits"}};
   if (document.enabled_wcs.empty() || document.enabled_wcs.size() > 9 ||
       std::set<int>(document.enabled_wcs.begin(), document.enabled_wcs.end()).size() !=
           document.enabled_wcs.size() ||
       !std::ranges::all_of(document.enabled_wcs,
                            [](int value) -> bool { return value >= 1 && value <= 9; }))
-    return "Choose one to nine unique work system shortcuts.";
+    return {"Choose one to nine unique work system shortcuts.",
+            MessageKey{"backend.operatorSettings.chooseUniqueShortcuts"}};
   if (!std::isfinite(document.default_spindle_rpm) || document.default_spindle_rpm < 0 ||
       document.default_spindle_rpm > 1e9)
-    return "Default spindle speed must be between zero and 1,000,000,000 rpm.";
+    return {"Default spindle speed must be between zero and 1,000,000,000 rpm.",
+            MessageKey{"backend.operatorSettings.spindleSpeedRange"}};
   if (!std::isfinite(document.default_jog_velocity) || document.default_jog_velocity <= 0 ||
       document.default_jog_velocity > 1e9)
-    return "Default jog speed must be above zero and at most 1,000,000,000 mm/min.";
+    return {"Default jog speed must be above zero and at most 1,000,000,000 mm/min.",
+            MessageKey{"backend.operatorSettings.jogSpeedRange"}};
   if (!std::isfinite(document.tool_reference_height) || document.tool_reference_height < 0 ||
       document.tool_reference_height > 1e9)
-    return "Tool reference height must be between zero and 1,000,000,000 mm.";
+    return {"Tool reference height must be between zero and 1,000,000,000 mm.",
+            MessageKey{"backend.operatorSettings.referenceHeightRange"}};
   if (document.go_to_safe_z &&
       (!std::isfinite(*document.go_to_safe_z) || std::abs(*document.go_to_safe_z) > 1e9))
-    return "Safe Z for Go to must be a machine Z in mm.";
+    return {"Safe Z for Go to must be a machine Z in mm.",
+            MessageKey{"backend.operatorSettings.safeZ"}};
   return {};
 }
 auto operator_settings_command_error(const SetOperatorSettings& command, const Limits& limits)
-    -> std::string {
+    -> LocalizedReason {
   if (!valid_machine_id(command.machine_id) || command.base_revision > max_tool_model_revision)
-    return "Invalid settings identity or revision.";
+    return {"Invalid settings identity or revision.",
+            MessageKey{"backend.operatorSettings.invalidIdentity"}};
   if (auto error = operator_preferences_error(command.document); !error.empty())
     return error;
   if (command.document.default_spindle_rpm > limits.max_spindle_rpm)
-    return "Default spindle speed exceeds the configured machine limit.";
+    return {"Default spindle speed exceeds the configured machine limit.",
+            MessageKey{"backend.operatorSettings.spindleSpeedLimit"}};
   if (command.document.default_jog_velocity > limits.max_jog_velocity)
-    return "Default jog speed exceeds the configured machine limit.";
+    return {"Default jog speed exceeds the configured machine limit.",
+            MessageKey{"backend.operatorSettings.jogSpeedLimit"}};
   return {};
 }
 auto decode_operator_preferences(std::string_view text)
@@ -327,7 +338,7 @@ auto encode_operator_settings(const OperatorSettings& settings) -> Encoded {
       throw std::runtime_error("Invalid settings snapshot.");
     if (settings.document)
       if (auto error = operator_preferences_error(*settings.document); !error.empty())
-        throw std::runtime_error(error);
+        throw std::runtime_error(error.text);
     Json snapshot{
         {"type", "operator_settings"},
         {"machine_id", settings.machine_id ? Json(*settings.machine_id) : Json(nullptr)},
@@ -349,7 +360,7 @@ auto encode_operator_settings_file(const OperatorSettingsFile& file) -> Encoded 
         file.revision > max_tool_model_revision)
       throw std::runtime_error("Invalid settings file identity or revision.");
     if (auto error = operator_preferences_error(file.document); !error.empty())
-      throw std::runtime_error(error);
+      throw std::runtime_error(error.text);
     // The reader takes at most 16 KiB: a longer file would leave the settings unavailable.
     auto text = Json{{"machine_id", file.machine_id},
                      {"revision", file.revision},

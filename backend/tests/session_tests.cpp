@@ -505,10 +505,11 @@ public:
   };
   std::vector<Submitted> submitted;
   std::vector<SetOperatorSettings> operator_submitted;
+  std::optional<LocalizedReason> settings_refusal;
   auto submit_operator_settings(PageToken, RequestId, SetOperatorSettings&& command)
-      -> std::optional<std::string> override {
+      -> std::optional<LocalizedReason> override {
     operator_submitted.push_back(std::move(command));
-    return refusal;
+    return settings_refusal;
   }
   std::vector<std::uint64_t> ended;
   // Not empty: the next commands are refused with it.
@@ -650,6 +651,18 @@ void operator_settings_go_to_storage() {
       at(0ms));
   require(outcome.messages.empty() && models.operator_submitted.size() == 1,
           "Operator preferences go directly to storage");
+  models.settings_refusal =
+      LocalizedReason{"Default jog speed exceeds the configured machine limit.",
+                      MessageKey{"backend.operatorSettings.jogSpeedLimit"}};
+  const auto denied = results(driver.handle(
+      page,
+      R"({"id":3,"type":"set_operator_settings","machine_id":"mill-1","base_revision":0,"document":)"
+      R"({"version":1,"startup_units":"inch","enabled_wcs":[1,9],"default_spindle_rpm":1800,"default_jog_velocity":1001}})",
+      at(0ms)));
+  require(denied.size() == 1 && denied.front().at("outcome") == "rejected" &&
+              denied.front().at("reason") == models.settings_refusal->text &&
+              denied.front().at("refusal").at("key") == "backend.operatorSettings.jogSpeedLimit",
+          "An immediate settings validation failure carries its English fallback and refusal key");
   require(port.calls.empty() && port.snapshots == 0,
           "Saving preferences issues no controller commands or reads");
 }

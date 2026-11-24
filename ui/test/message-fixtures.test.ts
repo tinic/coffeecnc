@@ -1364,6 +1364,16 @@ const examples = [
     }
   },
   {
+    "type": "result",
+    "id": 53,
+    "outcome": "rejected",
+    "reason": "Default jog speed exceeds the configured machine limit.",
+    "refusal": {
+      "key": "backend.operatorSettings.jogSpeedLimit",
+      "params": {}
+    }
+  },
+  {
     "type": "offset_history",
     "revision": 4,
     "storage": "saved",

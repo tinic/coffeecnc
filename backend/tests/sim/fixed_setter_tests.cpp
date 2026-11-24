@@ -1185,8 +1185,8 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
 // (no spindle orientation): every result sees the surfaces around C - e, where the spindle is
 // when the ball centre is on C.
 void runout_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, double scale,
-                      double degrees, const std::string& runout_file, const auto& mdi,
-                      const auto& reconnect) {
+                      double degrees, bool pin_run, const std::string& runout_file,
+                      const auto& mdi, const auto& reconnect) {
   checked(port->set_tool({98, 98, 50, 0, "Setter reference"}, {}));
   checked(port->set_tool({99, 99, 45, 2, "Ruby probe"}, {}));
   constexpr double none = std::numeric_limits<double>::quiet_NaN();
@@ -1354,90 +1354,72 @@ void runout_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, double 
             result ? std::format("{} is refused", name) : result.error());
   };
 
-  ring();
-  // Uncompensated: the diameter large by twice the trigger radius left over.
-  bore("bore_uncompensated", 0, 20.02, 0.01);
-  const auto ring_radius = calibrate("ring", false, {5, -1.5});
-  bore("bore_compensated", 0, 20, tight);
-  bore("bore_compensated_rotated", degrees, 20, tight);
-  const auto kept = status();
-  require(kept && kept->runout && kept->runout->radius_mm == ring_radius, "status reports the correction in use");
+  // Two runs, each within the sim's 480 s: the ring (bores, ring features, refusals, abort) and
+  // the pin (pin features, measure-only, tool mismatch, travel, miss, ball, Clear).
+  if (!pin_run) {
+    ring();
+    // Uncompensated: the diameter large by twice the trigger radius left over.
+    bore("bore_uncompensated", 0, 20.02, 0.01);
+    const auto ring_radius = calibrate("ring", false, {5, -1.5});
+    bore("bore_compensated", 0, 20, tight);
+    bore("bore_compensated_rotated", degrees, 20, tight);
+    const auto kept = status();
+    require(kept && kept->runout && kept->runout->radius_mm == ring_radius, "status reports the correction in use");
 
-  // Every lateral result in the ring is corrected, along its travel.
-  const auto edge = cycle("edge", {.action = SetterAction::material, .direction = ProbeDirection::x_plus}, seen);
-  expect("edge_x_plus", {{"face_x", seen[0] + 10, edge.origin[0]}}, tight);
-  const auto pocket = cycle("pocket", {.action = SetterAction::pocket}, seen);
-  expect("pocket", {{"centre_x", seen[0], pocket.origin[0]}, {"centre_y", seen[1], pocket.origin[1]},
-                    {"size_x", 20, pocket.state.feature_size[0].value_or(none)},
-                    {"size_y", 20, pocket.state.feature_size[1].value_or(none)}},
-         tight);
-  const auto slot = cycle("slot", {.action = SetterAction::slot, .direction = ProbeDirection::x_plus}, seen);
-  expect("slot_x", {{"centre_x", seen[0], slot.origin[0]}, {"width", 20, slot.state.feature_size[0].value_or(none)}},
-         tight);
+    // Every lateral result in the ring is corrected, along its travel.
+    const auto edge = cycle("edge", {.action = SetterAction::material, .direction = ProbeDirection::x_plus}, seen);
+    expect("edge_x_plus", {{"face_x", seen[0] + 10, edge.origin[0]}}, tight);
+    const auto pocket = cycle("pocket", {.action = SetterAction::pocket}, seen);
+    expect("pocket", {{"centre_x", seen[0], pocket.origin[0]}, {"centre_y", seen[1], pocket.origin[1]},
+                      {"size_x", 20, pocket.state.feature_size[0].value_or(none)},
+                      {"size_y", 20, pocket.state.feature_size[1].value_or(none)}},
+           tight);
+    const auto slot = cycle("slot", {.action = SetterAction::slot, .direction = ProbeDirection::x_plus}, seen);
+    expect("slot_x", {{"centre_x", seen[0], slot.origin[0]}, {"width", 20, slot.state.feature_size[0].value_or(none)}},
+           tight);
 
-  // A measure-only bore (#313) is corrected the same way: its centre, size and faces; nothing
-  // is written (G56 keeps its origin at C).
-  const auto only = cycle("bore_measure_only", {.action = SetterAction::bore, .measure_only = true}, {5, -1.5});
-  const auto& found = only.state.measured;
-  const auto face = [&](std::size_t i, std::size_t axis) {
-    return found && i < found->faces.size() ? found->faces.at(i).machine.at(axis) : none;
-  };
-  expect("bore_measure_only",
-         {{"centre_x", seen[0], found && found->machine ? found->machine->at(0) : none},
-          {"centre_y", seen[1], found && found->machine ? found->machine->at(1) : none},
-          {"diameter", 20, only.state.center_diameter.value_or(none)},
-          {"face_y_plus", seen[1] + 10, face(2, 1)}, {"face_y_minus", seen[1] - 10, face(3, 1)},
-          {"origin_x", centre[0], only.origin[0]}, {"origin_y", centre[1], only.origin[1]}},
-         tight);
-  require(found && found->faces.size() == 4 && !only.state.material, "measure-only writes nothing");
+    // Refused, the saved correction kept: a diameter typo of 0.1 mm after the contacts (the
+    // radius part is then more than 0.05 mm); before any motion a ring beyond the search travel
+    // and a rotated work system.
+    at(5, -1.5, 20);
+    refused("ring_typo", {.action = SetterAction::runout, .gauge_width_mm = 19.9}, "more than 0.05 mm", true);
+    require(status().value().runout == kept->runout, "a refused calibration keeps the correction");
+    refused("ring_beyond_travel", {.action = SetterAction::runout, .gauge_width_mm = 44},
+            "shorter than the ring radius");
+    mdi("G21 G10 L2 P3 R10");
+    mdi("G56");
+    refused("ring_rotated", {.action = SetterAction::runout, .gauge_width_mm = 20}, "without rotation");
+    mdi("G55");
 
-  // Refused, the saved correction kept: a diameter typo of 0.1 mm after the contacts (the
-  // radius part is then more than 0.05 mm); before any motion a ring beyond the search travel
-  // and a rotated work system.
-  at(5, -1.5, 20);
-  refused("ring_typo", {.action = SetterAction::runout, .gauge_width_mm = 19.9}, "more than 0.05 mm", true);
-  require(status().value().runout == kept->runout, "a refused calibration keeps the correction");
-  refused("ring_beyond_travel", {.action = SetterAction::runout, .gauge_width_mm = 44},
-          "shorter than the ring radius");
-  mdi("G21 G10 L2 P3 R10");
-  mdi("G56");
-  refused("ring_rotated", {.action = SetterAction::runout, .gauge_width_mm = 20}, "without rotation");
-  mdi("G55");
-
-  // A file for another tool is not this probe's: no correction.
-  const auto file = saved();
-  require(file.starts_with("tool 99\n"), "the file names the probe");
-  std::ofstream{runout_file} << "tool 98\n" << file.substr(8);
-  const auto other = status();
-  const auto unmatched = cycle("slot_other_tool", {.action = SetterAction::slot, .direction = ProbeDirection::x_plus}, seen);
-  expect("slot_other_tool", {{"width", 20 - 2 * ring_radius[0], unmatched.state.feature_size[0].value_or(none)}}, tight);
-  require(other && !other->runout && !unmatched.state.runout, "another tool number turns the correction off");
-  std::ofstream{runout_file} << file;
-
-  // Stopped part way: an abort after the third probe trip saves nothing.
-  at(5, -1.5, 20);
-  int trips = 0;
-  bool tripped = false;
-  FixedSetterRequest stopped{.action = SetterAction::runout, .tool = 99, .start = machine()};
-  stopped.gauge_width_mm = 20;
-  const auto aborted = port->fixed_setter(stopped, epoch, [&] {
-    const auto pins = shared.view(HalShared::Clock::now());
-    const bool now = pins && pins->probe_input && *pins->probe_input;
-    trips += now && !tripped ? 1 : 0;
-    tripped = now;
-    return trips < 3;
-  });
-  std::cout << std::format("fact=runout action=abort trips={} refused={} file_kept={}", trips, !aborted,
-                           saved() == file)
-            << std::endl;
-  require(!aborted && trips >= 3 && saved() == file &&
-              port->status().controller.machine != MachineState::on,
-          "an aborted calibration stops the machine and leaves the file as it was");
-  // Reset only this simulation, as after the interrupted setter descent.
-  checked(port->set_machine_state(MachineState::off, {}));
-  checked(port->set_machine_state(MachineState::on, {}));
-  checked(port->set_task_mode(TaskMode::mdi, {}));
-  mdi("G21 G90 G94");
+    // Stopped part way: an abort after the third probe trip saves nothing.
+    const auto file = saved();
+    at(5, -1.5, 20);
+    int trips = 0;
+    bool tripped = false;
+    FixedSetterRequest stopped{.action = SetterAction::runout, .tool = 99, .start = machine()};
+    stopped.gauge_width_mm = 20;
+    const auto aborted = port->fixed_setter(stopped, epoch, [&] {
+      const auto pins = shared.view(HalShared::Clock::now());
+      const bool now = pins && pins->probe_input && *pins->probe_input;
+      trips += now && !tripped ? 1 : 0;
+      tripped = now;
+      return trips < 3;
+    });
+    std::cout << std::format("fact=runout action=abort trips={} refused={} file_kept={}", trips, !aborted,
+                             saved() == file)
+              << std::endl;
+    require(!aborted && trips >= 3 && saved() == file &&
+                port->status().controller.machine != MachineState::on,
+            "an aborted calibration stops the machine and leaves the file as it was");
+    // Reset only this simulation, as after the interrupted setter descent.
+    checked(port->set_machine_state(MachineState::off, {}));
+    checked(port->set_machine_state(MachineState::on, {}));
+    checked(port->set_task_mode(TaskMode::mdi, {}));
+    mdi("G21 G90 G94");
+    mdi("G54");
+    require(port->status().g5x == g54, "runout calibration changes no other work system");
+    return;
+  }
 
   // The pin from outside, below Z0 (machine Z 12), its centre found, then the pin features.
   pin();
@@ -1455,10 +1437,37 @@ void runout_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, double 
   expect("ridge_x", {{"centre_x", seen[0], ridge.origin[0]}, {"width", 12, ridge.state.feature_size[0].value_or(none)}},
          tight);
 
+  // A measure-only boss (#313) is corrected the same way: its centre, size and faces; nothing
+  // is written (G56 keeps its origin at C).
+  const auto only = cycle("boss_measure_only", {.action = SetterAction::boss, .gauge_width_mm = 12,
+                                                .measure_only = true}, seen);
+  const auto& found = only.state.measured;
+  const auto face = [&](std::size_t i, std::size_t axis) {
+    return found && i < found->faces.size() ? found->faces.at(i).machine.at(axis) : none;
+  };
+  expect("boss_measure_only",
+         {{"centre_x", seen[0], found && found->machine ? found->machine->at(0) : none},
+          {"centre_y", seen[1], found && found->machine ? found->machine->at(1) : none},
+          {"diameter", 12, only.state.center_diameter.value_or(none)},
+          {"face_y_plus", seen[1] - 6, face(2, 1)}, {"face_y_minus", seen[1] + 6, face(3, 1)},
+          {"origin_x", centre[0], only.origin[0]}, {"origin_y", centre[1], only.origin[1]}},
+         tight);
+  require(found && found->faces.size() == 4 && !only.state.material, "measure-only writes nothing");
+
+  // A file for another tool is not this probe's: no correction.
+  const auto file = saved();
+  require(file.starts_with("tool 99\n"), "the file names the probe");
+  std::ofstream{runout_file} << "tool 98\n" << file.substr(8);
+  const auto other = status();
+  const auto unmatched = cycle("ridge_other_tool", {.action = SetterAction::ridge, .direction = ProbeDirection::x_plus,
+                                                    .gauge_width_mm = 12}, seen);
+  expect("ridge_other_tool", {{"width", 12 + 2 * pin_radius[0], unmatched.state.feature_size[0].value_or(none)}}, tight);
+  require(other && !other->runout && !unmatched.state.runout, "another tool number turns the correction off");
+  std::ofstream{runout_file} << file;
+
   // A search travel of 14 mm: too short beside the pin (14 + 1 mm), refused before motion; in
   // the ring 5.5 mm off centre the -X wall is 14.5 mm away, a miss after the +X contact.
   reconnect(14);
-  const auto pin_file = saved();
   at(4.5, -2.5, 20);
   refused("pin_beyond_travel", {.action = SetterAction::runout, .gauge_width_mm = 12, .outside = true},
           "too short to probe beside the work");
@@ -1468,9 +1477,9 @@ void runout_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, double 
   far.gauge_width_mm = 20;
   const auto missed = port->fixed_setter(far, epoch, {});
   std::cout << std::format("fact=runout action=miss refused={} reason=\"{}\" file_kept={}", !missed,
-                           missed ? "" : missed.error(), saved() == pin_file)
+                           missed ? "" : missed.error(), saved() == file)
             << std::endl;
-  require(!missed && missed.error().starts_with("−X face") && saved() == pin_file,
+  require(!missed && missed.error().starts_with("−X face") && saved() == file,
           "a miss part way leaves the file as it was");
   reconnect(20);
 
@@ -1820,7 +1829,7 @@ void run(const std::string& ini, std::string_view scenario) {
   const bool material = scenario == "material";
   const bool edge = scenario == "edge-rotation";
   const bool features = scenario == "features";
-  const bool runout = scenario == "runout";
+  const bool runout = scenario == "runout" || scenario == "runout-pin";
   const bool measure = scenario == "measure";
   const bool rotated = scenario == "rotated" || measure;
   const bool g0759 = std::filesystem::path(ini).filename() == "coffeecnc_g0759.ini";
@@ -1890,7 +1899,8 @@ void run(const std::string& ini, std::string_view scenario) {
   if (runout) {
     // The compensated bore also in G56 rotated +7.5° (mm) or -30° (inch).
     // A reconnect changes the material search travel.
-    runout_scenarios(port, shared, scale, scale == 1 ? 7.5 : -30, config->probe_runout_file(), mdi,
+    runout_scenarios(port, shared, scale, scale == 1 ? 7.5 : -30, scenario == "runout-pin",
+                     config->probe_runout_file(), mdi,
                      [&](double travel) {
                        config->fixed_setter->material_travel_mm = travel;
                        port.reset();
@@ -2180,7 +2190,7 @@ auto main(int argc, char** argv) -> int {
   const std::filesystem::path ini = argv[2];
   if ((scenario != "" && scenario != "material" && scenario != "edge-rotation" &&
        scenario != "features" && scenario != "rotated" && scenario != "runout" &&
-       scenario != "measure" &&
+       scenario != "runout-pin" && scenario != "measure" &&
        scenario != "measure-m6") ||
       ini.parent_path() != run_dir ||
       (ini.filename() != "coffeecnc_sim.ini" &&

@@ -1125,8 +1125,8 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
       checked(port.set_task_mode(TaskMode::automatic, {}));
       checked(port.open_program(path, {}));
       checked(port.run({}));
-      wait_for(port, [](const NmlStatus& s) {
-        return s.controller.interp == InterpState::idle && s.controller.in_position && !s.task_executing;
+      wait_for(port, [](const NmlStatus& current) {
+        return current.controller.interp == InterpState::idle && current.controller.in_position && !current.task_executing;
       });
       checked(port.set_task_mode(TaskMode::mdi, {}));
     }
@@ -1146,16 +1146,16 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
     const auto before = stop_cycle("homing_gate");
     checked(port.set_task_mode(TaskMode::manual, {}));
     checked(port.home({}, {}));
-    wait_for(port, [](const NmlStatus& s) {
-      return std::ranges::any_of(s.controller.axes, [](const auto& axis) { return axis.homing; });
+    wait_for(port, [](const NmlStatus& current) {
+      return std::ranges::any_of(current.controller.axes, [](const auto& axis) { return axis.homing; });
     });
     written = last_write();
     idle();
     const auto homing = port.status();
     const bool pending_while_homing = last_write() == written;
-    wait_for(port, [](const NmlStatus& s) {
-      return std::ranges::all_of(s.controller.axes, [](auto axis) { return axis.homed && !axis.homing; }) &&
-             s.controller.in_position;
+    wait_for(port, [](const NmlStatus& current) {
+      return std::ranges::all_of(current.controller.axes, [](auto axis) { return axis.homed && !axis.homing; }) &&
+             current.controller.in_position;
     });
     idle();
     const auto restored = port.status();

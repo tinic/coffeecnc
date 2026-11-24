@@ -16,6 +16,7 @@
     "no": "Nein",
     "off": "Aus",
     "saving": "Wird gespeichert …",
+    "detailListSeparator": "; ",
     "listSeparator": ", "
   }
 }

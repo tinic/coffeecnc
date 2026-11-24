@@ -97,7 +97,7 @@ class AlarmLog {
 public:
   using Deliver = std::function<void(PageToken, std::vector<std::string>)>;
   // Waits until the lock is decided: no value when this process holds it, else why not.
-  using Lock = std::function<std::optional<std::string>()>;
+  using Lock = std::function<std::optional<LocalizedReason>()>;
   using Clock = std::chrono::steady_clock;
   static constexpr std::size_t max_file_bytes = std::size_t{512} * 1024;
   static constexpr std::size_t max_entries = 500; // in a view

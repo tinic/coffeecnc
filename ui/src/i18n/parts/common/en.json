@@ -16,6 +16,7 @@
     "no": "No",
     "off": "Off",
     "saving": "Saving…",
+    "detailListSeparator": "; ",
     "listSeparator": ", "
   }
 }

@@ -157,14 +157,18 @@ auto replace_file(ToolModelFiles& files, const std::string& target, std::string_
   return files.sync_directory(parent(target));
 }
 
-auto file_step(const std::string& path, const std::string& detail) -> LocalizedReason {
-  return {std::format("{}: {}", path, detail),
-          MessageKey{"backend.machineData.fileStep", {{"path", path}, {"detail", detail}}}};
+auto file_step(const std::string& path, const LocalizedReason& detail) -> LocalizedReason {
+  return {std::format("{}: {}", path, detail.text),
+          MessageKey{"backend.machineData.fileStep",
+                     {{"path", path}, {"detail", detail.text}},
+                     parameter_localization("detail", detail.localization)}};
 }
 
-auto cannot_read(const std::string& path, const std::string& detail) -> LocalizedReason {
-  return {std::format("{} cannot be read: {}", path, detail),
-          MessageKey{"backend.machineData.cannotRead", {{"path", path}, {"detail", detail}}}};
+auto cannot_read(const std::string& path, const LocalizedReason& detail) -> LocalizedReason {
+  return {std::format("{} cannot be read: {}", path, detail.text),
+          MessageKey{"backend.machineData.cannotRead",
+                     {{"path", path}, {"detail", detail.text}},
+                     parameter_localization("detail", detail.localization)}};
 }
 
 auto too_large(const std::string& path) -> LocalizedReason {
@@ -361,14 +365,22 @@ void MachineData::report_last_restore(const Pause& pause) {
           true,
           std::format("The restore was not completed: {} The files are as they were.", reason),
           MessageKey{"backend.machineData.notCompleted", {{"detail", reason}}, std::move(details)}};
-    else
+    else {
+      const auto files = joined(kept);
+      MessageKey localized{"backend.machineData.notPutBack",
+                           {{"detail", reason}, {"files", files}, {"path", copy}},
+                           std::move(details)};
+      if (const auto metadata = result.find("not_put_back_list"); metadata != result.end())
+        if (auto items = message_list_from_json(*metadata);
+            items &&
+            std::ranges::equal(*items, kept, std::ranges::equal_to{}, &MessageListItem::text))
+          localized.params_lists.emplace("files", std::move(*items));
       notice_ = {true,
                  std::format("The restore was not completed: {} These files could not be put "
                              "back: {}. The files from before the restore are in {}.",
-                             reason, joined(kept), copy),
-                 MessageKey{"backend.machineData.notPutBack",
-                            {{"detail", reason}, {"files", joined(kept)}, {"path", copy}},
-                            std::move(details)}};
+                             reason, files, copy),
+                 std::move(localized)};
+    }
   } else if (applying.is_object()) {
     const auto pre_restore = applying.value("pre_restore", std::string{});
     notice_ = {true,
@@ -750,9 +762,9 @@ auto MachineData::restore(const std::string& path, const std::string& token, std
   };
   // The data folder too, where nothing was saved in it yet: each missing folder 0700.
   if (const auto made = prepare_data_directory(files_, paths_.data_directory); !made)
-    return failed({made.error()});
+    return failed(made.error());
   if (const auto made = files_.make_directory(staging); !made)
-    return failed({made.error()});
+    return failed(made.error());
   const auto plan_file = staging + '/' + std::string(restore_plan_name);
   abandon_locked();
   files_.discard(plan_file);
@@ -815,7 +827,7 @@ auto apply_staged_restore(ToolModelFiles& files, const std::string& data_directo
   const auto result_file = staging + '/' + std::string(restore_result_name);
   const auto plan_content = files.read(plan_file, max_record_bytes);
   if (!plan_content)
-    return std::unexpected(plan_content.error());
+    return std::unexpected(plan_content.error().text);
   struct Replacement {
     std::string role;
     std::string name;
@@ -830,7 +842,7 @@ auto apply_staged_restore(ToolModelFiles& files, const std::string& data_directo
   LocalizedReason reason;
   std::string copy_path;
   std::size_t written = 0;
-  std::vector<std::string> not_put_back;
+  std::vector<LocalizedReason> not_put_back;
   std::vector<std::string> group_not_kept;
   const auto& plan_found = *plan_content;
   if (!plan_found)
@@ -970,9 +982,10 @@ auto apply_staged_restore(ToolModelFiles& files, const std::string& data_directo
                 MessageKey{"backend.machineData.copyNotSaved", {{"detail", detail}}}};
     } else if (const auto saved = replace_file(files, copy_path, *archive); !saved) {
       reason = {std::format("the files before the restore could not be saved: {}: {}", copy_path,
-                            saved.error()),
+                            saved.error().text),
                 MessageKey{"backend.machineData.copyNotSavedFile",
-                           {{"path", copy_path}, {"detail", saved.error()}}}};
+                           {{"path", copy_path}, {"detail", saved.error().text}},
+                           parameter_localization("detail", saved.error().localization)}};
     }
   }
   if (reason.empty() && !steps.empty() && hooks.may_write)
@@ -988,9 +1001,10 @@ auto apply_staged_restore(ToolModelFiles& files, const std::string& data_directo
         {"pre_restore", copy_path}, {"files", std::move(targets)}, {"time", now.count()}};
     if (auto marked = replace_file(files, applying_file, dump(applying) + '\n'); !marked)
       reason = {std::format("the restore could not be marked as started: {}: {}", applying_file,
-                            marked.error()),
+                            marked.error().text),
                 MessageKey{"backend.machineData.notMarkedFile",
-                           {{"path", applying_file}, {"detail", marked.error()}}}};
+                           {{"path", applying_file}, {"detail", marked.error().text}},
+                           parameter_localization("detail", marked.error().localization)}};
   }
   if (reason.empty()) {
     for (; written < steps.size(); ++written) {
@@ -1022,17 +1036,17 @@ auto apply_staged_restore(ToolModelFiles& files, const std::string& data_directo
         const auto& step = steps[i];
         if (!step.before) {
           if (auto removed = files.remove_beneath(step.root, step.relative); !removed)
-            not_put_back.push_back(removed.error());
+            not_put_back.push_back(std::move(removed.error()));
         } else if (step.before->symlink && !step.before->link.empty()) {
           // The restore replaced a link by the file: the same link again, not its content.
           if (auto relinked = files.link_beneath(step.root, step.relative, step.before->link);
               !relinked)
-            not_put_back.push_back(relinked.error());
+            not_put_back.push_back(std::move(relinked.error()));
         } else if (auto back =
                        files.replace_beneath(step.root, step.relative, step.before->content.bytes,
                                              step.before->mode, step.before->group);
                    !back && !back.error().renamed) {
-          not_put_back.push_back(std::move(back.error().reason.text));
+          not_put_back.push_back(std::move(back.error().reason));
         }
       }
       written = 0;
@@ -1040,16 +1054,33 @@ auto apply_staged_restore(ToolModelFiles& files, const std::string& data_directo
     }
   }
   const bool ok = reason.empty();
-  const Json kept = not_put_back;
+  auto kept = Json::array();
+  std::vector<MessageListItem> kept_messages;
+  kept_messages.reserve(not_put_back.size());
+  for (auto& warning : not_put_back) {
+    kept.push_back(warning.text);
+    MessageListItem item{std::move(warning.text)};
+    if (warning.localization)
+      item.localization = MessageParameterKey{std::move(warning.localization->key),
+                                              std::move(warning.localization->params)};
+    kept_messages.push_back(std::move(item));
+  }
   Json result{{"ok", ok},
               {"written", written},
               {"reason", reason.text},
               {"pre_restore", copy_path},
-              {"not_put_back", kept},
+              {"not_put_back", std::move(kept)},
               {"group_not_kept", group_not_kept},
               {"time", now.count()}};
   if (reason.localization)
     result["reason_localization"] = message_key_json(*reason.localization);
+  if (std::ranges::any_of(kept_messages,
+                          [](const auto& item) { return item.localization.has_value(); })) {
+    result["not_put_back_list"] = message_list_json(kept_messages);
+    // Keep the existing record readable even when the additional metadata is too large.
+    if (dump(result).size() >= max_record_bytes)
+      result.erase("not_put_back_list");
+  }
   const auto said = replace_file(files, result_file, dump(result) + '\n');
   // The marker goes only once the result is on the disk: without one the next start says the
   // write was interrupted.
@@ -1067,7 +1098,7 @@ auto apply_staged_restore(ToolModelFiles& files, const std::string& data_directo
   if (!ok)
     return std::unexpected(std::move(reason.text));
   if (!said)
-    return std::unexpected(std::format("{}: {}", result_file, said.error()));
+    return std::unexpected(std::format("{}: {}", result_file, said.error().text));
   return written;
 }
 

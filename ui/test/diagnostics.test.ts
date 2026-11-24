@@ -12,6 +12,11 @@ import type { DiagnosticInput, Diagnostics, FromMachine, ToMachine } from '../sr
 import { diagnosticsMs, hello, SimMachine } from '../src/sim/machine'
 import { rig } from './harness'
 
+// Compile the lazy catalogs during collection. The first import can exceed a test's timeout
+// under load (#267, #393). The test still awaits the language change and the DOM update.
+await Promise.all([setLanguage('de'), setLanguage('ja')])
+await setLanguage('en')
+
 const wire = vi.hoisted(() => ({ receive: (message: FromMachine): void => { throw new Error(`No listener for ${message.type}`) }, send: vi.fn<(command: ToMachine) => void>() }))
 vi.mock('../src/machine', async () => {
   const { computed } = await import('vue')

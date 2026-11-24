@@ -16,6 +16,7 @@
     "no": "いいえ",
     "off": "オフ",
     "saving": "保存中…",
+    "detailListSeparator": "；",
     "listSeparator": "、"
   }
 }

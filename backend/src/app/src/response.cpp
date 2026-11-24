@@ -175,6 +175,13 @@ auto encode_result(RequestId id, CommandOutcome outcome, std::string_view reason
   return text(message);
 }
 
+auto encode_upload_reply(const LocalizedReason& reason) -> std::string {
+  Json reply{{"reason", reason.text}};
+  if (reason.localization)
+    reply["localization"] = message_key_json(*reason.localization);
+  return text(reply);
+}
+
 auto encode_message(MessageLevel level, std::string_view text_for_operator,
                     std::chrono::milliseconds unix_time,
                     const std::optional<MessageKey>& localization) -> std::string {

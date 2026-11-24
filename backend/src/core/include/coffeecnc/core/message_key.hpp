@@ -5,6 +5,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace coffeecnc {
 
@@ -12,7 +13,15 @@ namespace coffeecnc {
 struct MessageParameterKey {
   std::string key;
   std::map<std::string, std::string> params{};
+  std::map<std::string, MessageParameterKey> params_localization{};
   friend auto operator==(const MessageParameterKey&, const MessageParameterKey&) -> bool = default;
+};
+
+// One item in a list argument. An opaque item can carry just its literal fallback.
+struct MessageListItem {
+  std::string text;
+  std::optional<MessageParameterKey> localization{};
+  friend auto operator==(const MessageListItem&, const MessageListItem&) -> bool = default;
 };
 
 // A catalog key and named arguments, carried alongside English fallback text.
@@ -20,6 +29,7 @@ struct MessageKey {
   std::string key;
   std::map<std::string, std::string> params{};
   std::map<std::string, MessageParameterKey> params_localization{};
+  std::map<std::string, std::vector<MessageListItem>> params_lists{};
   friend auto operator==(const MessageKey&, const MessageKey&) -> bool = default;
 };
 
@@ -28,7 +38,7 @@ struct MessageKey {
     -> std::map<std::string, MessageParameterKey> {
   if (!key)
     return {};
-  return {{std::string(name), {key->key, key->params}}};
+  return {{std::string(name), {key->key, key->params, key->params_localization}}};
 }
 
 // A reason produced by the backend. Adapters may have only an opaque fallback string.

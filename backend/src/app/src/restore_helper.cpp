@@ -164,7 +164,7 @@ auto run_restore_helper(ToolModelFiles& files, const std::string& directory, lon
     if (locked)
       break;
     if (!locked.error().in_use || tries > 50)
-      return {1, std::format("restore=not_written reason={}", locked.error().reason)};
+      return {1, std::format("restore=not_written reason={}", locked.error().reason.text)};
     host.pause(restore_helper_poll);
   }
   RestoreHooks hooks;

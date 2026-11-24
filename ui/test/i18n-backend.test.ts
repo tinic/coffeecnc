@@ -87,13 +87,7 @@ const completed: Record<string, string[]> = {
   ],
 }
 
-/**
- * Calls that add to the text they are given, by file: tool_model_store.cpp's failure() and the
- * lock's error() append ": " and the system's error text.
- */
-const appending: Record<string, RegExp> = {
-  'tool_model_store.cpp': /\b(?:failure|error)\(\s*(?:std::format\(\s*)?$/,
-}
+const fileDiagnostic = /\b(io_reason|directory_reason)\(\s*"(backend\.toolModelStore\.\w+)",\s*$/
 
 /** The source with comments blanked out; string and character literals kept. */
 function withoutComments(source: string): string {
@@ -208,7 +202,12 @@ function sentences(file: string, raw: string): string[] {
     }
     const suffix = /^\s*\+(?!\+)\s*(\w*)/.exec(source.slice(last.end))
     if (suffix) text += operand(suffix[1] ?? '')
-    if (appending[file]?.test(before)) text += `: ${sample}`
+    const diagnostic = file === 'tool_model_store.cpp' ? fileDiagnostic.exec(before) : null
+    if (diagnostic) {
+      const [,, key = ''] = diagnostic
+      text = text.replace('{}', sample) + `: ${sample}`
+      expect(english.get(key)?.replace(/\{\w+\}/g, sample), key).toBe(text)
+    }
     if (/[a-z]{3,}/.test(text) && text.trim().includes(' ')) found.push(text)
   }
   return found

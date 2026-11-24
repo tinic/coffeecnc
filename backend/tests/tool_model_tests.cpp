@@ -15,6 +15,7 @@
 #include <array>
 #include <atomic>
 #include <bit>
+#include <cerrno>
 #include <chrono>
 #include <cmath>
 #include <condition_variable>
@@ -35,6 +36,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -851,6 +853,21 @@ void archive_reads() {
                         steps(rig.files)));
   }
   {
+    const auto unknown_holder = altered(good, [](Json& value) {
+      value["document"]["assignments"][0]["holder"] = "retired-holder";
+    });
+    Rig rig{unknown_holder};
+    const auto state = Json::parse(encode_tool_models_reason(rig.archive.models()).value_or("null"));
+    const auto& localization = state.at("localization");
+    const auto& tool = localization.at("params_localization").at("detail");
+    const auto& holder = tool.at("params_localization").at("detail");
+    require(localization.at("key") == "backend.toolModelStore.notUsable" &&
+                tool.at("key") == "backend.toolModels.toolProblem" &&
+                holder.at("key") == "backend.toolModels.unknownHolder" &&
+                has(rig.archive.models().reason, "Unknown tool holder."),
+            "A saved model wraps the typed codec detail and retains the English fallback");
+  }
+  {
     FakeDisk disk;
     disk.files[file] = good;
     FakeToolModelFiles files{disk};
@@ -1401,7 +1418,9 @@ void store_orders_messages() {
     require(invalid && invalid->text == std::string("drill: ") + angle_reason &&
                 invalid->localization ==
                     MessageKey{"backend.toolModels.familyProblem",
-                               {{"family", "drill"}, {"detail", angle_reason}}} &&
+                               {{"family", "drill"}, {"detail", angle_reason}},
+                               parameter_localization(
+                                   "detail", MessageKey{"backend.toolModels.angleRange"})} &&
                 store.submit(PageToken{1}, 4, SetToolModelAssignment{machine, 0, row(0), {}, {}})
                     .has_value(),
             "An invalid command is refused at once");
@@ -1650,6 +1669,14 @@ void on_the_host(const std::filesystem::path& scratch) {
 
     // A second instance, as a second process has it: its own open file of the same lock.
     LocalToolModelFiles second_files;
+    const auto held = second_files.lock(folder.string());
+    const auto contention = std::generic_category().message(EWOULDBLOCK);
+    require(!held && held.error().in_use &&
+                held.error().reason ==
+                    LocalizedReason{"the lock cannot be taken: " + contention,
+                                    MessageKey{"backend.toolModelStore.lockNotTaken",
+                                               {{"osError", contention}}}},
+            "Real lock contention retains its key and the operating-system error");
     ToolModelArchive second{second_files, where};
     second.open();
     require(second.models().availability == ToolModelAvailability::unavailable &&
@@ -1775,7 +1802,27 @@ void on_the_host(const std::filesystem::path& scratch) {
     require(archive.models().availability == ToolModelAvailability::unavailable &&
                 has(archive.models().reason, "cannot be read"),
             "What is not a regular file cannot be read: " + archive.models().reason);
+    const auto state = Json::parse(encode_tool_models_reason(archive.models()).value_or("null"));
+    require(state.at("localization").at("params_localization").at("detail").at("key") ==
+                "backend.toolModelStore.notRegularFile",
+            "The native read failure retains its storage detail key");
     LocalToolModelFiles blocked_files;
+    const auto below_file = (folder / "lock" / "below").string();
+    const auto not_directory = std::generic_category().message(ENOTDIR);
+    const auto made = blocked_files.make_directory(below_file);
+    require(!made &&
+                made.error() ==
+                    LocalizedReason{std::format("the directory {} cannot be made: {}", below_file,
+                                                not_directory),
+                                    MessageKey{"backend.toolModelStore.directoryNotMade",
+                                               {{"path", below_file}, {"osError", not_directory}}}},
+            "The failed mkdir retains the original path and operating-system error");
+    const auto opened = blocked_files.read(below_file, 10);
+    require(!opened &&
+                opened.error() == LocalizedReason{"it cannot be opened: " + not_directory,
+                                                  MessageKey{"backend.toolModelStore.fileNotOpened",
+                                                             {{"osError", not_directory}}}},
+            "The failed open retains the key and does not rewrite the operating-system error");
     ToolModelArchive blocked{blocked_files,
                              resolve_tool_model_location(
                                  {"m", (folder / "lock" / "below").string(), {}, {}})};

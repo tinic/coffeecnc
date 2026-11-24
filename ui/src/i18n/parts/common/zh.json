@@ -16,6 +16,7 @@
     "no": "否",
     "off": "关",
     "saving": "正在保存…",
+    "detailListSeparator": "；",
     "listSeparator": "、"
   }
 }

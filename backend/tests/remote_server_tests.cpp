@@ -33,7 +33,10 @@ using coffeecnc::LocalizedReason;
 using coffeecnc::MessageKey;
 using coffeecnc::PanelRecord;
 using coffeecnc::RemoteServer;
+using coffeecnc::RemoteServerTiming;
 using namespace std::chrono_literals;
+
+constexpr RemoteServerTiming viewer_timing{600ms, 250ms};
 
 void require(bool condition, const char* why) {
   if (!condition)
@@ -113,6 +116,14 @@ void program_uploads(const std::string& assets) {
                       [&](std::string_view name, std::string_view bytes,
                           bool replace) -> std::expected<void, LocalizedReason> {
                         ++calls;
+                        if (name == "Running.ngc")
+                          return std::unexpected(LocalizedReason{
+                              "Saved on disk, but not reopened. The program is running.",
+                              MessageKey{
+                                  "messages.session.savedNotReopened",
+                                  {{"detail", "The program is running."}},
+                                  parameter_localization(
+                                      "detail", MessageKey{"backend.programFiles.running"})}});
                         if (name != "Plate 2.ngc" || bytes != "G21\r\nM2\r\n" || replace)
                           return std::unexpected(LocalizedReason{
                               "A program named Plate 2.ngc exists already.",
@@ -147,6 +158,15 @@ void program_uploads(const std::string& assets) {
                         {{"key", "backend.programEdit.exists"},
                          {"params", {{"name", "Plate 2.ngc"}}}}}},
           "A writer refusal is reported to the browser");
+
+  const auto wrote = upload(io, server.port(), host, "http://" + host, "Running.ngc", true);
+  const auto reply = Json::parse(wrote.body());
+  require(wrote.result() == http::status::conflict && calls == 3 &&
+              reply.at("reason") == "Saved on disk, but not reopened. The program is running." &&
+              reply.at("localization").at("key") == "messages.session.savedNotReopened" &&
+              reply.at("localization").at("params_localization").at("detail").at("key") ==
+                  "backend.programFiles.running",
+          "The LAN reply carries both the save warning and its named reopen failure");
   trace("Destroy upload server");
 }
 
@@ -193,16 +213,20 @@ void slow_model_download(net::io_context& io, std::uint16_t port, const std::str
   header.skip(true);
   trace("Read slow STEP headers");
   http::read_header(socket, input, header);
-  require(header.get().result() == http::status::ok && header.content_length() == size,
+  const auto content_length = header.content_length();
+  require(header.get().result() == http::status::ok && content_length && *content_length == size,
           "The slow STEP viewer receives the full length in the header.");
   std::vector<char> chunk(2uz * 1024 * 1024);
+  const auto started = std::chrono::steady_clock::now();
   for (std::size_t received = input.size(); received < size;) {
-    // Slow, steady reads take longer than one five-second write deadline.
-    std::this_thread::sleep_for(900ms);
+    // Steady reads keep each write moving while the full transfer exceeds a single deadline.
+    std::this_thread::sleep_for(125ms);
     const auto count = std::min(chunk.size(), size - received);
     trace("Read slow STEP chunk at byte", std::to_string(received));
     received += net::read(socket, net::buffer(chunk.data(), count));
   }
+  require(std::chrono::steady_clock::now() - started > viewer_timing.file_write_timeout,
+          "The complete STEP download outlasts one write deadline.");
   trace("Finish slow STEP download");
 }
 
@@ -273,12 +297,15 @@ void input_frames_close(net::io_context& io, std::uint16_t port, const std::stri
   }
   {
     trace("Check WebSocket partial frame timeout");
-    // The first byte of a pong header, then nothing: the rest of a frame is due within 2 s.
+    // The first byte of a pong header can arrive before the rest of the frame.
     Viewer stalled{io};
     connect(stalled, port, host);
     constexpr std::array<unsigned char, 1> header{0x8a};
+    const auto started = std::chrono::steady_clock::now();
     net::write(stalled.next_layer(), net::buffer(header));
-    require(server_closes(io, stalled, 4s), "A partial frame that stalls closes the socket.");
+    require(server_closes(io, stalled), "A partial frame that stalls closes the socket.");
+    require(std::chrono::steady_clock::now() - started >= viewer_timing.partial_frame_timeout,
+            "The server gives the rest of the partial frame time to arrive.");
   }
   {
     trace("Check WebSocket pong keeps the viewer connected");
@@ -286,7 +313,8 @@ void input_frames_close(net::io_context& io, std::uint16_t port, const std::stri
     Viewer quiet{io};
     connect(quiet, port, host);
     quiet.pong({});
-    require(!server_closes(io, quiet), "A pong does not close the viewer.");
+    require(!server_closes(io, quiet, viewer_timing.partial_frame_timeout + 500ms),
+            "A pong keeps the viewer open past the partial-frame deadline.");
   }
 }
 
@@ -300,7 +328,7 @@ void test(const std::filesystem::path& root, std::string_view discovered,
   std::ofstream(root / "remote-server-private.txt") << "outside the panel";
   const std::array aliases{std::string{"shop.mill.example"}, std::string{"Friendly.Example."}};
   trace("Start viewer server");
-  RemoteServer server{assets.string(), 0, aliases};
+  RemoteServer server{assets.string(), 0, aliases, {}, viewer_timing};
   // Only the test constructs a server with port zero, to get a free TCP port.
   const auto port = server.port();
   const auto suffix = ":" + std::to_string(port);

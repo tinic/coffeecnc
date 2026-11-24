@@ -327,6 +327,10 @@ void helper_setup_error_codes() {
       write_preview_setup_error(PreviewSetupError::read_source, true, {.detail = "Étage A.ngc"}) ==
           "setup_known 0 3 12 Étage A.ngc 0 \n",
       "A filename's length is its byte count");
+  constexpr std::string_view nul_detail{"x\0y", 3};
+  require(write_preview_setup_error(PreviewSetupError::open_program, true,
+                                    {.detail = nul_detail}) == "setup_known 0 7 3 x y 0 \n",
+          "A NUL in diagnostic text becomes a space in the coded record");
   const std::string largest(4096, 'x');
   const auto largest_record =
       write_preview_setup_error(PreviewSetupError::open_program, true, {.detail = largest});
@@ -359,6 +363,8 @@ void helper_setup_error_codes() {
     require_invalid(malformed);
   }
   require_invalid(std::format("setup_known 0 3 4097 {} 0 \n", oversized));
+  constexpr char nul_record[] = "setup_known 0 3 3 x\0y 0 \n";
+  require_invalid(std::string_view{nul_record, sizeof(nul_record) - 1});
 }
 
 void helper_problem_code_ids() {

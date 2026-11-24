@@ -110,7 +110,7 @@ watch((): unknown => panel.hello, () => { reviewing.value = null })
   </ModalDialog>
   <ModalDialog v-else key="list" :title="t('probe.history.title')" size="large" expanded contained @close="emit('close')">
     <div class="bar">
-      <div class="segmented" role="group" :aria-label="t('probe.history.show')">
+      <div class="button-group" role="group" :aria-label="t('probe.history.show')">
         <button v-for="[value, label] in filters" :key="value" class="btn" type="button" :class="{ on: filter === value }" :aria-pressed="filter === value" @click="filter = value">{{ label }}</button>
       </div>
       <span v-if="storage" class="hint storage">{{ storage }}</span>

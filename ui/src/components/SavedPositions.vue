@@ -247,7 +247,7 @@ const steps = computed(() => {
     <p v-else>{{ t('manual.positions.alreadyThere') }}</p>
     <div class="z-choice">
       <span class="label">{{ t('manual.positions.zAtEnd') }}</span>
-      <div class="segmented" role="group" :aria-label="t('manual.positions.zAtEnd')">
+      <div class="button-group" role="group" :aria-label="t('manual.positions.zAtEnd')">
         <button class="btn" type="button" :class="{ on: !includeZ }" :aria-pressed="!includeZ" @click="includeZ = false">{{ t('manual.positions.staysSafe') }}</button>
         <button class="btn" type="button" :class="{ on: includeZ }" :aria-pressed="includeZ" @click="includeZ = true">{{ goTo && typeof goTo !== 'string' && target.position[2] > goTo.safeZ ? t('manual.positions.upToSaved', { z: length(target.position[2]) }) : t('manual.positions.downToSaved', { z: length(target.position[2]) }) }}</button>
       </div>
@@ -288,7 +288,7 @@ p { margin: 0; }
 .refusal { color: var(--stop); }
 .z-choice { display: flex; flex-direction: column; gap: 6px; }
 .z-choice .label { color: var(--text-dim); font-size: 12px; }
-.z-choice .segmented { display: flex; }
-.z-choice .segmented .btn { flex: 1; min-height: 48px; padding-inline: 8px; }
+.z-choice .button-group { display: flex; }
+.z-choice .button-group .btn { flex: 1; min-height: 48px; padding-inline: 8px; }
 .wide { min-height: 48px; }
 </style>

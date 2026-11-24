@@ -72,7 +72,7 @@ const faults = computed(() => [
     <template v-if="panel.simulated" #footer>
       <div class="fault">
         <span class="label">{{ t('status.log.simulatorControl') }}</span>
-        <div class="segmented">
+        <div class="button-group">
           <button
             v-for="[fault, label, title] in faults"
             :key="fault"

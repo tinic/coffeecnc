@@ -448,7 +448,7 @@ function coolant(which: 'flood' | 'mist'): void {
     <section class="card jog">
       <div class="jog-heading">
         <h2 v-if="touchOff">{{ t('manual.tab.jog') }}</h2>
-        <div v-else class="segmented modes" role="tablist" :aria-label="t('manual.tab.manualMotion')">
+        <div v-else class="button-group modes" role="tablist" :aria-label="t('manual.tab.manualMotion')">
           <button
             v-for="[value, label, tip] in motionModes"
             :key="value"

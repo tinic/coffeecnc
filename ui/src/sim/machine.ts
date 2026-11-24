@@ -1433,6 +1433,12 @@ export class SimMachine {
       refused('The fixed setter is unavailable in this simulator scene.')
       return
     }
+    // As the controller's policy: an action that writes never runs as a measurement (#247).
+    const measureOnly = (command as { measure_only?: unknown }).measure_only === true
+    if (measureOnly && ['status', 'touch_off', 'check', 'ball', 'apply_angle', 'apply_measurement'].includes(command.action)) {
+      this.emit({ type: 'result', id, ...reject('This probe action always writes its result.', 'messages.policy.probeAlwaysWrites') })
+      return
+    }
     if (command.action === 'status') {
       this.emit({ type: 'result', id, outcome: 'accepted', reason: '', setter: probe.state(this.modal) })
       return

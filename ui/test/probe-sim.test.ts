@@ -266,6 +266,19 @@ describe('browser probe scene', () => {
     expect(left.sim.modal.offsets[0]?.[0]).toBe(x)
   })
 
+  it.each(['ball', 'touch_off', 'check'] as const)('refuses %s as measure-only, as the controller does', (action) => {
+    const { sim, send, result } = scene('top')
+    const before = structuredClone(sim.status().offsets)
+    const tools = JSON.stringify(sim.modal.tools)
+    const [x, y, z] = sim.status().axes.map(axis => axis.machine) as Vec3
+    const command = { type: 'fixed_setter', action, tool: 99, x, y, z, gauge_width: 24, measure_only: true }
+    const reply = result(send(command as unknown as CommandBody))
+    expect(reply).toMatchObject({ outcome: 'rejected', reason: 'This probe action always writes its result.',
+      refusal: { key: 'messages.policy.probeAlwaysWrites' } })
+    expect(sim.status().offsets).toEqual(before)
+    expect(JSON.stringify(sim.modal.tools)).toBe(tools)
+  })
+
   it('reports both edge-angle contacts in measure-only mode and offers no origin', () => {
     const { sim, cycle } = scene('angle')
     const measured = cycle({ action: 'angle', direction: 'y_plus', spacing: 50, measure_only: true })

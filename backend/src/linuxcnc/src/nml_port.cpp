@@ -718,7 +718,10 @@ struct NmlPort::Impl {
       const std::scoped_lock lock{trace_mutex};
       if (trace.size() == NmlPort::max_trace)
         trace.erase(trace.begin());
-      trace.push_back({message.type, message.serial_number, Clock::now()});
+      trace.push_back({message.type, message.serial_number, Clock::now(),
+                       message.type == EMC_TASK_PLAN_EXECUTE_TYPE
+                           ? text_of(static_cast<const EMC_TASK_PLAN_EXECUTE&>(message).command)
+                           : std::string{}});
     }
     return {};
   }
@@ -1840,6 +1843,11 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
 
   const bool apply_angle = request.action == SetterAction::apply_angle;
   const bool apply_measurement = request.action == SetterAction::apply_measurement;
+  // The decoder and the policy refuse it too: an action that writes never runs as a measurement.
+  if (request.measure_only &&
+      (!is_material_probe(request.action) || request.action == SetterAction::ball ||
+       apply_angle || apply_measurement))
+    return std::unexpected("This probe action always writes its result.");
   if (!apply_angle && request.action != SetterAction::status)
     impl_->edge_measurement.reset();
   if (!apply_measurement && request.action != SetterAction::status)

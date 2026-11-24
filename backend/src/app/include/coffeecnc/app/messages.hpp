@@ -22,21 +22,22 @@ namespace coffeecnc {
 // `null` when the struct has none. `truncated` of ProgramText and Directory is always sent.
 // `available` of every work system is always sent.
 using Encoded = std::expected<std::string, std::string>;
+using EncodedMessage = std::expected<std::string, LocalizedReason>;
 
-[[nodiscard]] auto encode_hello(const Hello& hello) -> Encoded;
+[[nodiscard]] auto encode_hello(const Hello& hello) -> EncodedMessage;
 // `seq` must increase by one with every status sent; see StatusPublisher.
-[[nodiscard]] auto encode_status(const Status& status, std::uint64_t seq) -> Encoded;
-[[nodiscard]] auto encode_tool_table(const ToolTable& table) -> Encoded;
-[[nodiscard]] auto encode_work_offsets(const WorkOffsets& offsets) -> Encoded;
-[[nodiscard]] auto encode_program(const ProgramText& program) -> Encoded;
-[[nodiscard]] auto encode_preview(const Preview& preview) -> Encoded;
-[[nodiscard]] auto encode_directory(const Directory& directory) -> Encoded;
+[[nodiscard]] auto encode_status(const Status& status, std::uint64_t seq) -> EncodedMessage;
+[[nodiscard]] auto encode_tool_table(const ToolTable& table) -> EncodedMessage;
+[[nodiscard]] auto encode_work_offsets(const WorkOffsets& offsets) -> EncodedMessage;
+[[nodiscard]] auto encode_program(const ProgramText& program) -> EncodedMessage;
+[[nodiscard]] auto encode_preview(const Preview& preview) -> EncodedMessage;
+[[nodiscard]] auto encode_directory(const Directory& directory) -> EncodedMessage;
 // `before` and `after` of a change are `null` when the history has none; `restores` likewise.
-[[nodiscard]] auto encode_offset_history(const OffsetHistory& history) -> Encoded;
+[[nodiscard]] auto encode_offset_history(const OffsetHistory& history) -> EncodedMessage;
 
 // `value` is a boolean, a number or `null` (missing, or a float that is not finite); `joint`
 // and `axis` are sent on the joint rows only, `label` on the configured rows only.
-[[nodiscard]] auto encode_diagnostics(const Diagnostics& diagnostics) -> Encoded;
+[[nodiscard]] auto encode_diagnostics(const Diagnostics& diagnostics) -> EncodedMessage;
 // The wire names of the diagnostics message.
 [[nodiscard]] auto diagnostic_name(DiagnosticRole role) -> std::string_view;
 [[nodiscard]] auto diagnostic_name(DiagnosticState state) -> std::string_view;

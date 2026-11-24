@@ -367,6 +367,37 @@
       "diameter": "Diameter",
       "toolRemoved": "The tool was removed",
       "noEarlier": "No earlier value is known"
+    },
+    "heightMap": {
+      "button": "Height map…",
+      "title": "Z height map",
+      "setup": "Probes Z top at each point of a grid in {wcs} work coordinates. Touch off the probe and apply its length first. Between the points the probe moves at the clearance Z: keep it above the work.",
+      "xFrom": "X from",
+      "xTo": "X to",
+      "yFrom": "Y from",
+      "yTo": "Y to",
+      "step": "Step",
+      "clearance": "Clearance Z",
+      "points": "{columns} × {rows} points, about {minutes} min.",
+      "invalid": "Choose a rectangle and a step for 2 to {max} points.",
+      "tooLong": "Up to {minutes} min, more than the {limit} min limit. Use fewer points.",
+      "progress": "Probing the height map: point {point} of {total}…",
+      "done": "Height map: {count} points, Z {low} to {high} {unit}. Nothing was set.",
+      "failed": "The height map did not complete.",
+      "partial": "{reason} Kept {count} of {total} points as a partial map.",
+      "result": "Map",
+      "stop": "Stop",
+      "resultTitle": "Height map",
+      "summary": "{wcs}, {count} points: Z {low} to {high} {unit}, a spread of {spread} {unit}. The grid below is as seen from above.",
+      "partialSummary": "Partial map: {count} of {total} points. {reason} Saved files say so.",
+      "heights": "Heights",
+      "show": "Show in 3D",
+      "hide": "Hide in 3D",
+      "saveCsv": "Save CSV",
+      "saveProbe": "Save LinuxCNC probe file",
+      "saving": "Saving {name}…",
+      "saved": "Saved {name} in the program folder.",
+      "notSaved": "The file was not saved."
     }
   }
 }

@@ -6,6 +6,7 @@ import ProbeGuideDialog from '../src/components/ProbeGuideDialog.vue'
 import { panel, send } from '../src/machine'
 import type { CommandResult, ProbeDirection } from '../src/protocol'
 import { setterState } from '../src/setter-state'
+import { heightMap } from '../src/height-map'
 import { hello, SimMachine } from '../src/sim/machine'
 import type { ResultListener } from '../src/store'
 
@@ -299,6 +300,125 @@ describe('recess and ridge setup', () => {
   })
 })
 
+describe('height map', () => {
+  it('sends the grid in work millimetres and shows the map', async () => {
+    panel.unit = 'inch'
+    const fixture = wrapper = mount(MaterialProbeControls, { props: { tool: 99 }, global })
+    await fixture.get('.probe-utilities button[aria-haspopup=dialog]').trigger('click')
+    await findButton(fixture, 'Height map…')?.trigger('click')
+    const fields = fixture.findAll('.grid-fields input')
+    for (const [index, value] of ['0', '1', '0', '0.5', '0.5', '0.5'].entries()) await fields[index]?.setValue(value)
+    expect(fixture.get('.summary').text()).toBe('3 × 2 points, about 1 min.')
+    await fixture.get('.start-map').trigger('click')
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'fixed_setter', action: 'height_map', tool: 99, x: 0, y: 0, z: 0,
+      x_min: 0, x_max: 25.4, y_min: 0, y_max: 12.7, step: 12.7, clearance: 12.7 })
+    const map = { wcs: 1, columns: 2, rows: 1, points: [
+      { work: [0, 0, 0.0254], machine: [0, 0, 1] }, { work: [25.4, 0, -0.0254], machine: [25.4, 0, 1] },
+    ] as { work: [number, number, number]; machine: [number, number, number] }[] }
+    await answer({ outcome: 'accepted', reason: '', setter: { calibration: null, measurement: null, height_map: map } })
+    expect(fixture.get('.setter-band.done p').text()).toBe('Height map: 2 points, Z -0.0010 to 0.0010 in. Nothing was set.')
+    expect(heightMap.value).toEqual(map)
+    await findButton(fixture, 'Map')?.trigger('click')
+    expect(fixture.get('[role="dialog"]').text()).toContain('G54, 2 points: Z -0.0010 to 0.0010 in, a spread of 0.0020 in.')
+    vi.mocked(send).mockClear()
+    await findButton(fixture, 'Save CSV')?.trigger('click')
+    const saved = vi.mocked(send).mock.lastCall?.[0]
+    expect(saved).toMatchObject({ type: 'save_program' })
+    expect(saved?.type === 'save_program' && saved.path).toMatch(/^heightmap-\d{8}-\d{6}\.csv$/)
+    const lines = saved?.type === 'save_program' ? saved.text.split('\n') : []
+    expect(lines[0]).toMatch(/^# CoffeeCNC height map system=G54 unit=in rotation_deg=0 date=\S+ points=2 grid_points=2$/)
+    expect(lines[1]).toBe('work_x_in,work_y_in,work_z_in,machine_x_in,machine_y_in,machine_z_in')
+    // The probe file stays LinuxCNC's own format; its frame goes beside it.
+    vi.mocked(send).mockClear()
+    await findButton(fixture, 'Save LinuxCNC probe file')?.trigger('click')
+    const paths = vi.mocked(send).mock.calls.map(([command]) => command.type === 'save_program' ? command.path : '')
+    expect(paths).toHaveLength(2)
+    expect(paths[0]).toMatch(/^heightmap-\d{8}-\d{6}\.txt\.json$/)
+    expect(paths[1]).toBe(paths[0]?.replace(/\.json$/, ''))
+  })
+
+  async function startMap(fixture: VueWrapper): Promise<void> {
+    await fixture.get('.probe-utilities button[aria-haspopup=dialog]').trigger('click')
+    await findButton(fixture, 'Height map…')?.trigger('click')
+    const fields = fixture.findAll('.grid-fields input')
+    // X 0 to 20, Y 0 to 10 at 10 mm: 3 × 2 points.
+    for (const [index, value] of ['0', '20', '0', '10', '10', '5'].entries()) await fields[index]?.setValue(value)
+    await fixture.get('.start-map').trigger('click')
+  }
+  const at = async (x: number, y: number): Promise<void> => {
+    for (const axis of panel.status?.axes ?? []) {
+      if (axis.axis === 'x') axis.work = x
+      if (axis.axis === 'y') axis.work = y
+    }
+    await nextTick()
+  }
+
+  it('sends no measure_only with a height map: it never writes', async () => {
+    const fixture = wrapper = mount(MaterialProbeControls, { props: { tool: 99 }, global })
+    await fixture.get('.measure-only').trigger('click')
+    expect(fixture.get('.measure-only').attributes('aria-pressed')).toBe('true')
+    await startMap(fixture)
+    const request = vi.mocked(send).mock.lastCall?.[0]
+    expect(request).toMatchObject({ type: 'fixed_setter', action: 'height_map' })
+    expect(request).not.toHaveProperty('measure_only')
+  })
+
+  it('shows the point it probes and stops on the band', async () => {
+    const fixture = wrapper = mount(MaterialProbeControls, { props: { tool: 99 }, global })
+    await startMap(fixture)
+    expect(fixture.get('.setter-band p').text()).toBe('Probing the height map: point 1 of 6…')
+    // Probing order: the first row out, the second back. Between points the count holds.
+    await at(10, 0)
+    expect(fixture.get('.setter-band p').text()).toBe('Probing the height map: point 2 of 6…')
+    await at(15, 5)
+    expect(fixture.get('.setter-band p').text()).toBe('Probing the height map: point 2 of 6…')
+    await at(20, 10)
+    expect(fixture.get('.setter-band p').text()).toBe('Probing the height map: point 4 of 6…')
+    expect(findButton(fixture, 'Map')).toBeUndefined()
+    vi.mocked(send).mockClear()
+    await findButton(fixture, 'Stop')?.trigger('click')
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'abort' })
+  })
+
+  it('keeps the points of a stopped map as a partial map, and saves them labelled partial', async () => {
+    const fixture = wrapper = mount(MaterialProbeControls, { props: { tool: 99 }, global })
+    await startMap(fixture)
+    const map = { wcs: 1, columns: 3, rows: 2, rotation: 0, partial: 'The height map was stopped.', points: [
+      { work: [0, 0, 0.1], machine: [0, 0, 1] }, { work: [10, 0, 0.2], machine: [10, 0, 1] }, null, null, null, null,
+    ] as ({ work: [number, number, number]; machine: [number, number, number] } | null)[] }
+    await answer({ outcome: 'failed', reason: 'The height map was stopped.', setter: { calibration: null, measurement: null, height_map: map } })
+    expect(fixture.get('.setter-band p').text()).toBe('The height map was stopped. Kept 2 of 6 points as a partial map.')
+    expect(heightMap.value).toEqual(map)
+    expect(findButton(fixture, 'Stop')).toBeUndefined()
+    await findButton(fixture, 'Map')?.trigger('click')
+    const card = fixture.get('[role="dialog"]').text()
+    expect(card).toContain('G54, 2 points: Z 0.100 to 0.200 mm')
+    expect(card).toContain('Partial map: 2 of 6 points. The height map was stopped.')
+    vi.mocked(send).mockClear()
+    await findButton(fixture, 'Save CSV')?.trigger('click')
+    const saved = vi.mocked(send).mock.lastCall?.[0]
+    expect(saved?.type === 'save_program' && saved.path).toMatch(/^heightmap-\d{8}-\d{6}-partial\.csv$/)
+    const lines = saved?.type === 'save_program' ? saved.text.split('\n') : []
+    expect(lines[0]).toContain(' points=2 grid_points=6 partial="The height map was stopped."')
+    expect(lines).toHaveLength(5)
+  })
+
+  it('refuses a grid whose worst case exceeds the 2 h limit', async () => {
+    // A 5 mm/min latch: about 98 s a point, so 150 points are over 4 h.
+    panel.hello = { ...hello, fixed_setter: { reference_tool: 98, travel_mm: 15, feed_mm_min: 240, xy_tolerance_mm: 0.5,
+      latch_feed_mm_min: 5, latch_backoff_mm: 1, material_travel_mm: 20 } }
+    const fixture = wrapper = mount(MaterialProbeControls, { props: { tool: 99 }, global })
+    await fixture.get('.probe-utilities button[aria-haspopup=dialog]').trigger('click')
+    await findButton(fixture, 'Height map…')?.trigger('click')
+    const fields = fixture.findAll('.grid-fields input')
+    // 15 × 10 points, 244.7 min of probing and the XY traverses; the clearance stays at the
+    // present Z, so there is no descent.
+    for (const [index, value] of ['0', '140', '0', '90', '10'].entries()) await fields[index]?.setValue(value)
+    expect(fixture.get('.summary').text()).toBe('Up to 246 min, more than the 120 min limit. Use fewer points.')
+    expect(fixture.get('.start-map').attributes('disabled')).toBeDefined()
+  })
+})
+
 describe('measure only', () => {
   // Every probe button the panel offers, found from the rendered panel: a new action that does
   // not carry measure_only fails here instead of writing an offset while Measure only is on.
@@ -315,7 +435,10 @@ describe('measure only', () => {
     vi.mocked(send).mockClear()
     const openFeatures = async (): Promise<ReturnType<VueWrapper['findAll']>> => {
       await fixture.get('.probe-utilities button[aria-haspopup=dialog]').trigger('click')
-      return fixture.findAll('.feature-options button').filter(button => button.attributes('disabled') === undefined)
+      // The height map writes nothing, so it takes no measure_only: 'height map' tests that. The
+      // runout buttons are disabled in Measure only, as the ball calibration.
+      return fixture.findAll('.feature-options button')
+        .filter(button => button.attributes('disabled') === undefined && button.text() !== 'Height map…')
     }
     const featureCount = (await openFeatures()).length
     // The runout calibration is a calibration, as the ball's: not measure-only.

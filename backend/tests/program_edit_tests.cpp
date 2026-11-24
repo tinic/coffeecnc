@@ -306,28 +306,40 @@ void manages_program_files(const fs::path& base) {
               writer.manage({Op::remove, folder.string()}, "").has_value() && !fs::exists(folder),
           "The file and the empty folder can be deleted");
 
-  const auto refused = writer.receive("part.ngc", "M30\n", true,
-      [](const std::string&, const ProgramWriter::Commit&) -> std::expected<void, std::string> {
-        return std::unexpected("Stop the loaded program before replacing it.");
+  const auto refused = writer.receive(
+      "part.ngc", "M30\n", true,
+      [](const std::string&, const ProgramWriter::Commit&) -> std::expected<void, LocalizedReason> {
+        return std::unexpected(LocalizedReason{"Stop the loaded program before replacing it."});
       });
   require(!refused && read(programs / "part.ngc") == bytes &&
               std::distance(fs::directory_iterator{programs}, fs::directory_iterator{}) == 1,
           "Refusal leaves old bytes and removes the staged upload");
   require(writer.receive("part.ngc", "M30\n", true,
-      [](const std::string&, const ProgramWriter::Commit& commit) { return commit(); }).has_value() &&
+                         [](const std::string&, const ProgramWriter::Commit& commit) {
+                           return commit().transform_error(
+                               [](std::string error) { return LocalizedReason{std::move(error)}; });
+                         })
+                  .has_value() &&
               read(programs / "part.ngc") == "M30\n",
           "Accepted replacement publishes the new bytes");
-  const auto reopened = writer.receive("part.ngc", bytes, true,
-      [](const std::string&, const ProgramWriter::Commit& commit) -> std::expected<void, std::string> {
+  const auto reopened = writer.receive(
+      "part.ngc", bytes, true,
+      [](const std::string&,
+         const ProgramWriter::Commit& commit) -> std::expected<void, LocalizedReason> {
         if (auto saved = commit(); !saved)
-          return saved;
-        return std::unexpected("Saved on disk, but not reopened. LinuxCNC refused the open.");
+          return std::unexpected(LocalizedReason{std::move(saved.error())});
+        return std::unexpected(
+            LocalizedReason{"Saved on disk, but not reopened. LinuxCNC refused the open.",
+                            MessageKey{"messages.session.savedNotReopened",
+                                       {{"detail", "LinuxCNC refused the open."}}}});
       });
-  require(!reopened &&
-              reopened.error().text ==
-                  "Saved on disk, but not reopened. LinuxCNC refused the open." &&
-              read(programs / "part.ngc") == bytes,
-          "A failed reopen preserves the published file and reports the failure accurately");
+  require(
+      !reopened &&
+          reopened.error().text == "Saved on disk, but not reopened. LinuxCNC refused the open." &&
+          reopened.error().localization == MessageKey{"messages.session.savedNotReopened",
+                                                      {{"detail", "LinuxCNC refused the open."}}} &&
+          read(programs / "part.ngc") == bytes,
+      "A failed reopen preserves the published file and reports the failure accurately");
   fs::remove_all(root);
 }
 

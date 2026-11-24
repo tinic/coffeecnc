@@ -367,6 +367,37 @@
       "diameter": "直径",
       "toolRemoved": "工具は削除されました",
       "noEarlier": "以前の値は不明です"
+    },
+    "heightMap": {
+      "button": "高さマップ…",
+      "title": "Z 高さマップ",
+      "setup": "{wcs} のワーク座標でグリッドの各点の Z 上面をプローブします。先にプローブを測定し、その長さを適用してください。点の間はクリアランス Z で移動します。ワークより上にしてください。",
+      "xFrom": "X 開始",
+      "xTo": "X 終了",
+      "yFrom": "Y 開始",
+      "yTo": "Y 終了",
+      "step": "間隔",
+      "clearance": "クリアランス Z",
+      "points": "{columns} × {rows} 点、約 {minutes} 分。",
+      "invalid": "2〜{max} 点になる長方形と間隔を選んでください。",
+      "tooLong": "最大 {minutes} 分で、上限の {limit} 分を超えます。点を減らしてください。",
+      "progress": "高さマップをプローブ中：{total} 点中 {point} 点目…",
+      "done": "高さマップ：{count} 点、Z {low}〜{high} {unit}。何も設定していません。",
+      "failed": "高さマップは完了しませんでした。",
+      "partial": "{reason} {total} 点中 {count} 点を部分マップとして保持しました。",
+      "result": "マップ",
+      "stop": "停止",
+      "resultTitle": "高さマップ",
+      "summary": "{wcs}、{count} 点：Z {low}〜{high} {unit}、差 {spread} {unit}。下のグリッドは上から見た配置です。",
+      "partialSummary": "部分マップ：{total} 点中 {count} 点。{reason} 保存したファイルにもそう記されます。",
+      "heights": "高さ",
+      "show": "3D に表示",
+      "hide": "3D で非表示",
+      "saveCsv": "CSV を保存",
+      "saveProbe": "LinuxCNC プローブファイルを保存",
+      "saving": "{name} を保存中…",
+      "saved": "{name} をプログラムフォルダーに保存しました。",
+      "notSaved": "ファイルは保存されませんでした。"
     }
   }
 }

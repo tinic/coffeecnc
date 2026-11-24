@@ -68,7 +68,7 @@ struct Sent {
 
 auto compose(PanelComposer& composer, const PanelReading& r, std::uint64_t page = 1) -> Sent {
   const auto messages = composer.compose(r, PageToken{page}, false, 1234ms);
-  require(messages.has_value(), "Composing succeeds: " + messages.error_or(""));
+  require(messages.has_value(), "Composing succeeds: " + messages.error_or(LocalizedReason{}).text);
   Sent sent;
   for (const auto& text : messages.value_or(std::vector<std::string>{})) {
     sent.messages.push_back(Json::parse(text));
@@ -270,7 +270,7 @@ void a_status_that_cannot_be_sent() {
   auto r = reading();
   r.status.axes.at(2).machine = std::numeric_limits<double>::quiet_NaN();
   const auto refused = composer.compose(r, PageToken{1}, false, 0ms);
-  require(!refused && refused.error().find("axes.machine") != std::string::npos,
+  require(!refused && refused.error().text.find("axes.machine") != std::string::npos,
           "A number that is not finite is refused, naming the field");
   r.status.axes.at(2).machine = 0;
   const auto sent = compose(composer, r);
@@ -377,6 +377,18 @@ void feed_thread() {
     std::this_thread::sleep_for(300ms);
     require(delivered.count(8, "message") == 1,
             "A status that cannot be encoded is reported once, not every period");
+    const std::scoped_lock lock{delivered.mutex};
+    const auto warning = std::ranges::find_if(delivered.messages, [](const auto& entry) {
+      return entry.first == 8 && entry.second.at("type") == "message";
+    });
+    require(
+        warning != delivered.messages.end() &&
+            warning->second.at("text") == "The machine status cannot be shown: status: "
+                                          "motion.velocity is not a finite number." &&
+            warning->second.at("localization").at("params_localization").at("detail") ==
+                Json{{"key", "messages.wire.notFinite"},
+                     {"params", {{"field", "status: motion.velocity"}}}},
+        "The status warning sends English text, the encoding key, and its record and field name");
   }
   const auto after = delivered.total();
   std::this_thread::sleep_for(120ms);

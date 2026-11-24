@@ -277,6 +277,64 @@ describe('browser probe scene', () => {
     expect(result(id)?.reason).toBe('The X trigger radius correction is 0.070 mm, more than 0.05 mm. Check the diameter and the ball calibration.')
   })
 
+  it.each([0, 7.5])('maps the stock top and the pocket floor, rotated %s°, without writing', (degrees) => {
+    const { sim, cycle } = scene('pocket')
+    sim.modal.rotations[0] = degrees
+    const before = structuredClone(sim.status().offsets)
+    // Over the stock, the pocket floor and the stock again: 154, 170 and 186 machine X, 16 mm apart.
+    const work = toWork(sim.modal, [154, 83, 0])
+    const map = cycle({ action: 'height_map', x_min: work[0], y_min: work[1], x_max: work[0] + 32, y_max: work[1] + 4,
+      step: 16, clearance: 5 }).setter?.height_map
+    expect(sim.status().offsets).toEqual(before)
+    expect(map).toMatchObject({ wcs: 1, columns: 3, rows: 2 })
+    expect(map?.points).toHaveLength(6)
+    expect(map?.rotation).toBe(degrees)
+    expect(map?.partial).toBeUndefined()
+    for (const [index, point] of (map?.points ?? []).entries()) {
+      expect(point?.work[0]).toBeCloseTo(work[0] + 16 * (index % 3))
+      expect(point?.work[1]).toBeCloseTo(work[1] + 4 * Math.floor(index / 3))
+    }
+    // The middle column is over the pocket floor, the outer ones over the stock top.
+    const heights = map?.points.map(point => Math.round((point?.work[2] ?? NaN) * 1000) / 1000) ?? []
+    expect(heights[1]).toBeLessThan(heights[0] ?? 0)
+    expect(heights[0]).toBeCloseTo(heights[2] ?? NaN)
+  })
+
+  it('refuses a height map beyond the travel before moving, as the controller does', () => {
+    const { sim, submit, result } = scene('pocket')
+    const work = toWork(sim.modal, [154, 83, 0])
+    const before = sim.status().axes.map(axis => axis.machine)
+    // Machine X 154 to 454: past X max 400.
+    const wide = submit({ action: 'height_map', x_min: work[0], y_min: work[1], x_max: work[0] + 300, y_max: work[1], step: 100, clearance: 5 })
+    expect(result(wide)?.reason).toMatch(/^Grid point X-?\d+\.\d{3} Y-?\d+\.\d{3} mm is outside the configured travel at the clearance or the search depth\.$/)
+    // The clearance at machine Z -190: the search ends below Z min -200.
+    const deep = submit({ action: 'height_map', x_min: work[0], y_min: work[1], x_max: work[0] + 10, y_max: work[1], step: 10, clearance: work[2] - 190 })
+    expect(result(deep)?.reason).toContain('is outside the configured travel at the clearance or the search depth.')
+    sim.advance(1000)
+    expect(sim.status().axes.map(axis => axis.machine)).toEqual(before)
+  })
+
+  it('keeps the measured points of a height map that misses a point, labelled partial', () => {
+    const { sim, submit, result } = scene('pocket')
+    // Machine X 154 over the stock, then 204 between the stock and the slanted block: no top.
+    const work = toWork(sim.modal, [154, 83, 0])
+    const id = submit({ action: 'height_map', x_min: work[0], y_min: work[1], x_max: work[0] + 50, y_max: work[1], step: 50, clearance: 5 })
+    sim.advanceUntil(() => result(id) !== undefined, 30_000)
+    const reply = result(id)
+    expect(reply?.outcome).toBe('failed')
+    expect(reply?.reason).toMatch(/^Point X-?\d+\.\d{3} Y-?\d+\.\d{3} mm: No probe contact/)
+    const map = reply?.setter?.height_map
+    expect(map?.partial).toBe(reply?.reason)
+    expect(map?.points[0]?.machine[0]).toBeCloseTo(154)
+    expect(map?.points[1]).toBeNull()
+  })
+
+  it('refuses a height map with too many points before moving', () => {
+    const { submit, result } = scene('top')
+    const id = submit({ action: 'height_map', x_min: 0, y_min: 0, x_max: 100, y_max: 100, step: 5, clearance: 5 })
+    expect(result(id)?.reason).toBe('Choose a rectangle and a step of 0.5 mm or more for 2 to 150 points.')
+  })
+
   it.each([0, 7.5, -30])('finds the bore and boss from three contacts, also on a partial arc, rotated %s°', (degrees) => {
     const cases = [
       ['bore', [155, 108], 19.96, { action: 'bore_arc', angles: [0, 120, 240] }],
@@ -401,6 +459,19 @@ describe('browser probe scene', () => {
     expect(left.result(left.send({ type: 'fixed_setter', action: 'apply_measurement', tool: 99, measurement_id: stale }))?.reason)
       .toBe('The work frame or tool changed. Probe the feature again.')
     expect(left.sim.modal.offsets[0]?.[0]).toBe(x)
+  })
+
+  it('refuses measure_only on a height map as an unexpected field, as the controller does', () => {
+    const { sim, send, result } = scene('top')
+    const before = structuredClone(sim.status().offsets)
+    const [x, y, z] = sim.status().axes.map(axis => axis.machine) as Vec3
+    for (const measure_only of [true, false]) {
+      const command = { type: 'fixed_setter', action: 'height_map', tool: 99, x, y, z, x_min: 0, y_min: 0,
+        x_max: 10, y_max: 10, step: 5, clearance: 2, measure_only }
+      expect(result(send(command as unknown as CommandBody))).toMatchObject({ outcome: 'rejected',
+        reason: 'Unexpected field in request.', refusal: { key: 'messages.request.unexpectedField' } })
+    }
+    expect(sim.status().offsets).toEqual(before)
   })
 
   it.each(['ball', 'touch_off', 'check'] as const)('refuses %s as measure-only, as the controller does', (action) => {

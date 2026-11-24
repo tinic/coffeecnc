@@ -87,7 +87,7 @@ public:
 
   // Waits on the disk worker, never on the network or panel thread.
   [[nodiscard]] auto publish_program(const std::string& path, const Session::Publication& publish)
-      -> std::expected<void, std::string>;
+      -> std::expected<void, LocalizedReason>;
 
   // Since the start or the last call of reset_timing.
   [[nodiscard]] auto timing() const -> Timing;

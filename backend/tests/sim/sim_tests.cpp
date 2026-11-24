@@ -3010,6 +3010,18 @@ void g0759_program(Rig& rig) {
         std::format("requested={} in_spindle={}",
                     status.controller.requested_tool ? *status.controller.requested_tool : -1,
                     status.controller.tool_in_spindle));
+  if (asked) {
+    rig.direct([&]() -> void {
+      const auto expired = rig.port.tool_changed(2, 0, always());
+      rig.direct_pump(20ms);
+      check("obsolete_tool_change_confirmation_is_localized",
+            expired.status == ActionStatus::failed &&
+                expired.reason == "LinuxCNC is not waiting for that tool change any more." &&
+                expired.localization == MessageKey{"backend.nmlPort.toolChangeGone"} &&
+                rig.probe.tool_change() && !rig.probe.tool_changed(),
+            expired.reason);
+    });
+  }
   const auto confirmed = rig.send(R"("type":"tool_changed")");
   const bool finished = traced(rig, 30s, [&]() -> bool {
     return rig.idle() && !rig.status().paused && near(rig.status().work[1], 4);
@@ -4072,8 +4084,11 @@ void restart_cuts(Rig& rig) {
 
   if (setup) {
     const auto [canned, unused] = plan("G21 G90 G17\nG0 Z20\nG81 X1 Y1 Z5 R10 F100\nG80\nM2\n", 3);
-    check("restart_canned_block", canned.reason.find("canned cycle") != std::string::npos,
-          canned.text());
+    check("restart_canned_block",
+          canned.outcome == "rejected" && canned.reason == "This line is inside a canned cycle." &&
+              canned.refusal ==
+                  Json{{"key", "backend.previewRestart.cannedCycle"}, {"params", Json::object()}},
+          canned.text() + " " + canned.refusal.dump());
     const auto missing = rig.send(R"("type":"plan_restart","line":23,"preview_context":7)");
     check("restart_preview_pending",
           missing.outcome == "rejected" && missing.reason.find("preview") != std::string::npos,
@@ -4700,9 +4715,12 @@ void cam_programs(Rig& rig) {
   const auto other = rig.send(
       std::format(R"("type":"plan_restart","line":10,"preview_context":{})", context));
   check("cam_restart_needs_its_work_system",
-        other.outcome == "rejected" && other.reason == "This line runs in G55. Select G55, then "
-                                                       "choose the line again.",
-        other.text());
+        other.outcome == "rejected" &&
+            other.reason == "This line runs in G55. Select G55, then "
+                            "choose the line again." &&
+            other.refusal ==
+                Json{{"key", "backend.nmlPort.restartSelectWcs"}, {"params", {{"wcs", "G55"}}}},
+        other.text() + " " + other.refusal.dump());
   // G10 in MDI changes G55 in task's interpreter; task writes the parameter file at its next
   // synchronisation. A Run with the preview made before must not start.
   const auto shown = context;
@@ -5024,7 +5042,7 @@ void whole_job(Rig& rig) {
     progress.observe(reading, time);
     const auto messages = composer.compose(reading, rig.page, false, 0ms);
     if (!messages)
-      throw std::runtime_error(messages.error());
+      throw std::runtime_error(messages.error().text);
     for (const auto& message : *messages) {
       auto packet = Json::parse(message);
       if (packet.at("type") == "status") {
@@ -6354,7 +6372,7 @@ void macros(Rig& rig, const MachineConfig& config) {
                                     {"Corner", "O<Coffeecnc_Macro> call"}};
   check("macros_config", loaded && loaded->macros == expected,
         loaded ? std::format("macros={}", loaded->macros.size()) : word(loaded.error()));
-  const auto hello = loaded ? encode_hello(to_hello(*loaded)) : Encoded{};
+  const auto hello = loaded ? encode_hello(to_hello(*loaded)) : EncodedMessage{};
   const auto wire = hello ? Json::parse(*hello).value("macros", Json()) : Json();
   check("macros_hello",
         wire == Json::parse(R"([{"label":"Park Z","mdi":"G53 G0 Z-5"},

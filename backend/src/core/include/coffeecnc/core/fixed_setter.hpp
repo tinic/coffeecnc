@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <numbers>
 #include <optional>
 #include <string>
@@ -58,6 +59,8 @@ enum class SetterAction : std::uint8_t {
   // clear_runout forgets it.
   runout,
   clear_runout,
+  // A Z height map (#247): Z top at every point of a grid over an XY rectangle. Writes nothing.
+  height_map,
   // Sets the work origin of a measure-only result (FixedSetterRequest::measure_only).
   apply_measurement
 };
@@ -279,6 +282,11 @@ struct FixedSetterRequest {
   double gauge_width_mm{};
   // For a runout: a pin probed from outside rather than a ring from inside.
   bool outside{};
+  // For a height map: the rectangle's corners X, Y and X, Y in the active work system, the
+  // grid step and the work Z to traverse at between the points. Millimetres.
+  std::array<double, 4> grid_mm{};
+  double step_mm{};
+  double clearance_mm{};
   // Controller-issued ID: of an `angle` result for apply_angle, of a measure-only result for
   // apply_measurement.
   std::uint64_t edge_measurement{};
@@ -289,6 +297,68 @@ struct FixedSetterRequest {
   // inward from beyond `gauge_width_mm` / 2 along them.
   std::array<double, 3> angles_deg{};
 };
+
+// The grid a height map probes: columns and rows of points from the first corner to the second,
+// both included, at most `step` apart. Nothing when the rectangle, step or count is unusable.
+struct HeightGrid {
+  int columns;
+  int rows;
+};
+constexpr int max_height_map_points = 150;
+inline auto height_grid(const std::array<double, 4>& corners, double step)
+    -> std::optional<HeightGrid> {
+  if (!std::ranges::all_of(corners, [](double value) { return std::isfinite(value); }) ||
+      !std::isfinite(step) || step < 0.5 || step > 500)
+    return std::nullopt;
+  const auto count = [&](double from, double to) {
+    return static_cast<int>(std::ceil(std::abs(to - from) / step - 1e-9)) + 1;
+  };
+  const double width = std::abs(corners[2] - corners[0]);
+  const double depth = std::abs(corners[3] - corners[1]);
+  if (width > 2000 || depth > 2000)
+    return std::nullopt;
+  const HeightGrid grid{count(corners[0], corners[2]), count(corners[1], corners[3])};
+  const int points = grid.columns * grid.rows;
+  if (points < 2 || points > max_height_map_points)
+    return std::nullopt;
+  return grid;
+}
+
+// The longest a height map may take, in seconds, and the longest one of its points can take with
+// these limits, at a point. A point is a search over the whole material travel, three latch
+// passes (back-off at twice the search feed, up to 2 s for the release, then twice the back-off
+// at the latch feed), the retract over the travel at twice the search feed with its 2 s release,
+// and 10 s for the lift and the feed and interlock blocks. The panel computes the same
+// (ui/src/height-map.ts) for its answer deadline.
+constexpr double max_height_map_seconds = 7200;
+inline auto height_map_point_seconds(const FixedSetterLimits& limits) -> double {
+  if (!(limits.feed_mm_min > 0) || !(limits.latch_feed_mm_min > 0))
+    return std::numeric_limits<double>::infinity();
+  const double fast = 2 * limits.feed_mm_min;
+  const double search = limits.material_travel_mm / limits.feed_mm_min * 60;
+  const double pass = (limits.latch_backoff_mm / fast * 60) + 2 +
+                      (2 * limits.latch_backoff_mm / limits.latch_feed_mm_min * 60);
+  const double retract = (limits.material_travel_mm / fast * 60) + 2;
+  return search + (3 * pass) + retract + 10;
+}
+// Every point; the XY traverses at `xy_rapid_mm_min` (`first_mm` from the start to the first
+// point, then at most one `step_mm` to each next one); and the first feed down from the start to
+// the clearance (`descent_mm`).
+struct HeightMapTravel {
+  int points;
+  double step_mm;
+  double first_mm;
+  double descent_mm;
+  double xy_rapid_mm_min;
+};
+inline auto height_map_seconds(const FixedSetterLimits& limits, const HeightMapTravel& travel)
+    -> double {
+  if (!(travel.xy_rapid_mm_min > 0))
+    return std::numeric_limits<double>::infinity();
+  const double xy_mm = std::max(0.0, travel.first_mm) + (std::max(0, travel.points - 1) * travel.step_mm);
+  return (travel.points * height_map_point_seconds(limits)) + (xy_mm / travel.xy_rapid_mm_min * 60) +
+         (std::max(0.0, travel.descent_mm) / (2 * limits.feed_mm_min) * 60);
+}
 
 struct SetterEpoch {
   std::uint64_t page;
@@ -347,6 +417,23 @@ struct SetterState {
   // The touch probe's runout compensation in use for its XY results; none when not calibrated
   // or no longer valid (another ball diameter).
   std::optional<ProbeRunout> runout{};
+  // After a height map: each point's top, in the work system and in machine coordinates, mm;
+  // row by row from the first corner. A map that stopped after some points is partial: it keeps
+  // the points measured so far, and `partial` says why it stopped.
+  struct HeightMap {
+    int wcs{};
+    int columns{};
+    int rows{};
+    double rotation_deg{}; // the work system's XY rotation
+    struct Point {
+      std::array<double, 3> work;
+      std::array<double, 3> machine;
+      bool measured{};
+    };
+    std::vector<Point> points;
+    std::optional<std::string> partial{};
+  };
+  std::optional<HeightMap> height_map{};
   // A point on a probed surface: the ball-centre contact moved one ball radius along the travel.
   struct ProbedPoint {
     ProbeDirection direction; // the probe's travel

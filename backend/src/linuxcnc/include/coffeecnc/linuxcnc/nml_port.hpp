@@ -186,6 +186,10 @@ struct FixedSetterMove {
   double retract_above_contact_mm{};
   std::optional<ProbeDirection> material{};
   bool return_to_clearance{}; // lift on the search-start XY with the probe interlock still active
+  // A height map's later point: at the start the Z encoder may differ from the command by up to
+  // this much in either direction, mm (the last retract's settling). Zero for every other probe: the command and the encoder
+  // must agree within the position tolerance.
+  double start_z_lag_mm{};
   // A material search along this direction instead of `material`'s axis: degrees
   // counterclockwise from the active work system's +X axis, turned by its rotation.
   std::optional<double> heading_deg{};
@@ -332,7 +336,7 @@ public:
                                        int line, const Wanted& current, const Wanted& wanted)
       -> ActionResult override;
   [[nodiscard]] auto validate_restart(RestartPoint& point, const PreviewInputs& inputs)
-      -> std::string override;
+      -> LocalizedReason override;
   [[nodiscard]] auto start_restart(const RestartPoint& point, const PreviewInputs& inputs,
                                    bool after_change, const Wanted& files_current,
                                    const Wanted& wanted) -> ActionResult override;

@@ -367,6 +367,37 @@
       "diameter": "Diamètre",
       "toolRemoved": "L’outil a été supprimé",
       "noEarlier": "Aucune valeur antérieure connue"
+    },
+    "heightMap": {
+      "button": "Carte des hauteurs…",
+      "title": "Carte des hauteurs Z",
+      "setup": "Palpe le dessus Z à chaque point d’une grille en coordonnées pièce {wcs}. Mesurez d’abord le palpeur et appliquez sa longueur. Entre les points, le palpeur se déplace à la Z de dégagement : gardez-la au-dessus de la pièce.",
+      "xFrom": "X de",
+      "xTo": "X à",
+      "yFrom": "Y de",
+      "yTo": "Y à",
+      "step": "Pas",
+      "clearance": "Z de dégagement",
+      "points": "{columns} × {rows} points, environ {minutes} min.",
+      "invalid": "Choisissez un rectangle et un pas pour 2 à {max} points.",
+      "tooLong": "Jusqu’à {minutes} min, plus que la limite de {limit} min. Utilisez moins de points.",
+      "progress": "Palpage de la carte des hauteurs : point {point} sur {total}…",
+      "done": "Carte des hauteurs : {count} points, Z de {low} à {high} {unit}. Rien n’a été défini.",
+      "failed": "La carte des hauteurs n’a pas abouti.",
+      "partial": "{reason} {count} points sur {total} sont gardés comme carte partielle.",
+      "result": "Carte",
+      "stop": "Arrêter",
+      "resultTitle": "Carte des hauteurs",
+      "summary": "{wcs}, {count} points : Z de {low} à {high} {unit}, un écart de {spread} {unit}. La grille ci-dessous est vue de dessus.",
+      "partialSummary": "Carte partielle : {count} points sur {total}. {reason} Les fichiers enregistrés l’indiquent.",
+      "heights": "Hauteurs",
+      "show": "Afficher en 3D",
+      "hide": "Masquer en 3D",
+      "saveCsv": "Enregistrer en CSV",
+      "saveProbe": "Enregistrer le fichier de palpage LinuxCNC",
+      "saving": "Enregistrement de {name}…",
+      "saved": "{name} enregistré dans le dossier des programmes.",
+      "notSaved": "Le fichier n’a pas été enregistré."
     }
   }
 }

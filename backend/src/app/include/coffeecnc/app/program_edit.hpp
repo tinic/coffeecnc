@@ -27,7 +27,8 @@ namespace coffeecnc {
 class ProgramWriter {
 public:
   using Commit = std::function<std::expected<void, std::string>()>;
-  using Publish = std::function<std::expected<void, std::string>(const std::string&, const Commit&)>;
+  using Publish =
+      std::function<std::expected<void, LocalizedReason>(const std::string&, const Commit&)>;
 
   // Both must outlive the writer. One caller at a time.
   ProgramWriter(const ProgramStore& programs, ToolModelFiles& files);

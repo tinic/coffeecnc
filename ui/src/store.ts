@@ -23,6 +23,7 @@ import type {
   Status,
   ToolTable,
   ToolModels,
+  Vec3,
   WorkOffsets,
 } from './protocol'
 import { protocolVersion } from './protocol'
@@ -30,6 +31,7 @@ import { defaultOperatorPreferences, decodeOperatorSettings, type OperatorPrefer
 import { decodeToolModels, validMachineId } from './tool-model-settings'
 import type { LinkFault } from './sim/machine'
 import { baseName, wcsName } from './units'
+import { heightMapAbortMs, heightMapAnswerMs, probeAnswerMs } from './height-map'
 
 export type Tab = 'manual' | 'program' | 'tools' | 'probe'
 export const tabs: readonly Tab[] = ['manual', 'program', 'tools', 'probe']
@@ -309,7 +311,8 @@ export function createPanel(options: PanelOptions): Panel {
     simulatorFault: transport.simulator?.fault() ?? 'none',
   })
 
-  const pending = new Map<number, { command: CommandBody; deadline: number }>()
+  // `aborted`: a height map past its deadline, stopped, and waiting for its partial result.
+  const pending = new Map<number, { command: CommandBody; deadline: number; aborted?: true }>()
   const resultListeners = new Set<ResultListener>()
   let nextId = 1
   let nextLogId = 1
@@ -516,6 +519,14 @@ export function createPanel(options: PanelOptions): Panel {
     const time = now()
     for (const [id, entry] of pending) {
       if (time > entry.deadline) {
+        // A height map past its deadline is stopped, and its result, with the points measured so
+        // far, is awaited a while longer (#247).
+        if (entry.command.type === 'fixed_setter' && entry.command.action === 'height_map' && entry.aborted === undefined) {
+          entry.aborted = true
+          entry.deadline = time + heightMapAbortMs
+          sendCommand({ type: 'abort' })
+          continue
+        }
         // A local deadline must also end held controls through their result listeners. It
         // does not prove the controller cancelled the command; a release is still necessary.
         result({ type: 'result', id, outcome: 'timed_out', reason: 'No answer from the machine' })
@@ -525,38 +536,44 @@ export function createPanel(options: PanelOptions): Panel {
 
   transport.listen(receive)
 
+  function sendCommand(command: CommandBody): number {
+    const id = nextId
+    nextId += 1
+    const pausedZMove = command.type === 'jog_paused_z' ||
+      command.type === 'resume' && (state.status?.paused_z?.displaced === true ||
+        state.status?.paused_z?.spindle === 'restore')
+    const restartMove = command.type === 'start_restart' ||
+      command.type === 'tool_changed' && restartToolChange
+    if (command.type === 'tool_changed' || command.type === 'abort') restartToolChange = false
+    if (command.type === 'abort' || command.type === 'set_machine' && command.state !== 'on') {
+      state.motionStopRequest += 1
+    }
+    const measureChange = command.type === 'tool_changed' && command.measure_request !== undefined
+    // A height map can take far longer than one probe cycle: its worst case decides (#247).
+    const work = (['x', 'y', 'z'] as const).map((letter) => state.status?.axes.find((axis) => axis.axis === letter)?.work ?? 0) as Vec3
+    const timeout = command.type === 'fixed_setter' && command.action === 'height_map'
+      ? heightMapAnswerMs(state.hello, command, work)
+      : measureChange || command.type === 'fixed_setter' && command.action !== 'status'
+        ? probeAnswerMs : pausedZMove ? 160_000 : restartMove ? restartTimeoutMs
+          : command.type === 'manage_program_file' ? programFileTimeoutMs : answerTimeoutMs
+    pending.set(id, { command, deadline: now() + timeout })
+    if (command.type === 'mdi') {
+      state.mdi.push({ id, text: command.text, outcome: 'pending', reason: '' })
+      if (state.mdi.length > maxMdiEntries) {
+        state.mdi.splice(0, state.mdi.length - maxMdiEntries)
+      }
+    }
+    if (protocolError !== null && !allowedWhileIncompatible(command)) {
+      result({ type: 'result', id, outcome: 'rejected', reason: protocolError })
+      return id
+    }
+    transport.send({ ...command, id })
+    return id
+  }
+
   return {
     state,
-    send: (command): number => {
-      const id = nextId
-      nextId += 1
-      const pausedZMove = command.type === 'jog_paused_z' ||
-        command.type === 'resume' && (state.status?.paused_z?.displaced === true ||
-          state.status?.paused_z?.spindle === 'restore')
-      const restartMove = command.type === 'start_restart' ||
-        command.type === 'tool_changed' && restartToolChange
-      if (command.type === 'tool_changed' || command.type === 'abort') restartToolChange = false
-      if (command.type === 'abort' || command.type === 'set_machine' && command.state !== 'on') {
-        state.motionStopRequest += 1
-      }
-      const measureChange = command.type === 'tool_changed' && command.measure_request !== undefined
-      const timeout = measureChange || command.type === 'fixed_setter' && command.action !== 'status'
-        ? 1_600_000 : pausedZMove ? 160_000 : restartMove ? restartTimeoutMs
-          : command.type === 'manage_program_file' ? programFileTimeoutMs : answerTimeoutMs
-      pending.set(id, { command, deadline: now() + timeout })
-      if (command.type === 'mdi') {
-        state.mdi.push({ id, text: command.text, outcome: 'pending', reason: '' })
-        if (state.mdi.length > maxMdiEntries) {
-          state.mdi.splice(0, state.mdi.length - maxMdiEntries)
-        }
-      }
-      if (protocolError !== null && !allowedWhileIncompatible(command)) {
-        result({ type: 'result', id, outcome: 'rejected', reason: protocolError })
-        return id
-      }
-      transport.send({ ...command, id })
-      return id
-    },
+    send: sendCommand,
     start: (): void => {
       watchdog ??= timers.setInterval(() => {
         updateLink()

@@ -1059,10 +1059,72 @@ const examples = [
     }
   },
   {
+    "type": "message",
+    "level": "error",
+    "text": "Panel request ignored: Missing required field: id.",
+    "time": 1700000001200,
+    "localization": {
+      "key": "messages.session.requestIgnored",
+      "params": { "detail": "Missing required field: id." },
+      "params_localization": {
+        "detail": { "key": "messages.request.missingField", "params": { "field": "id" } }
+      }
+    }
+  },
+  {
+    "type": "message",
+    "level": "error",
+    "text": "The machine status cannot be shown: status: motion.velocity is not a finite number.",
+    "time": 1700000001300,
+    "localization": {
+      "key": "messages.panelFeed.statusCannotShow",
+      "params": { "detail": "status: motion.velocity is not a finite number." },
+      "params_localization": {
+        "detail": { "key": "messages.wire.notFinite", "params": { "field": "status: motion.velocity" } }
+      }
+    }
+  },
+  {
+    "type": "message",
+    "level": "error",
+    "text": "Jog stop failed on X: LinuxCNC did not answer.",
+    "time": 1700000001400,
+    "localization": {
+      "key": "messages.session.jogStopFailed",
+      "params": { "axis": "X", "detail": "LinuxCNC did not answer." },
+      "params_localization": {
+        "detail": { "key": "messages.session.linuxcncNoAnswer", "params": {} }
+      }
+    }
+  },
+  {
+    "type": "result",
+    "id": 53,
+    "outcome": "failed",
+    "reason": "Saved on disk, but not reopened. LinuxCNC did not open the program.",
+    "localization": {
+      "key": "messages.session.savedNotReopened",
+      "params": { "detail": "LinuxCNC did not open the program." },
+      "params_localization": {
+        "detail": { "key": "backend.nmlPort.notOpened", "params": {} }
+      }
+    }
+  },
+  {
     "type": "result",
     "id": 41,
     "outcome": "accepted",
     "reason": ""
+  },
+  {
+    "type": "result",
+    "id": 58,
+    "outcome": "rejected",
+    "reason": "This line is inside a canned cycle.",
+    "refusal": {
+      "key": "backend.previewRestart.cannedCycle",
+      "params": {}
+    }
   },
   {
     "type": "result",
@@ -1108,6 +1170,16 @@ const examples = [
   },
   {
     "type": "result",
+    "id": 56,
+    "outcome": "timed_out",
+    "reason": "The previous jog stop on X is not confirmed: LinuxCNC did not answer.",
+    "localization": {
+      "key": "messages.session.previousStopAxis",
+      "params": { "axis": "X", "detail": "LinuxCNC did not answer." }
+    }
+  },
+  {
+    "type": "result",
     "id": 47,
     "outcome": "timed_out",
     "reason": "LinuxCNC did not answer.",
@@ -1124,6 +1196,16 @@ const examples = [
     "localization": {
       "key": "backend.programEdit.exists",
       "params": { "name": "part.ngc" }
+    }
+  },
+  {
+    "type": "result",
+    "id": 57,
+    "outcome": "rejected",
+    "reason": "This line runs in G55. Select G55, then choose the line again.",
+    "refusal": {
+      "key": "backend.nmlPort.restartSelectWcs",
+      "params": { "wcs": "G55" }
     }
   },
   {
@@ -1599,6 +1681,16 @@ const examples = [
     "refusal": {
       "key": "backend.halDiagnostics.notInstalled",
       "params": { "name": "halscope", "path": "/usr/bin:/bin" }
+    }
+  },
+  {
+    "type": "result",
+    "id": 55,
+    "outcome": "failed",
+    "reason": "LinuxCNC is not waiting for that tool change any more.",
+    "localization": {
+      "key": "backend.nmlPort.toolChangeGone",
+      "params": {}
     }
   }
 ] satisfies FromMachine[]

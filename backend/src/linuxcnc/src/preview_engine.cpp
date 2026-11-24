@@ -564,18 +564,19 @@ auto run_helper(const PreviewSettings& settings, const fs::path& directory,
   // Everything the child needs is made before the fork: after it only system calls.
   const std::string home = "HOME=" + directory.string();
   const std::string ini = "INI_FILE_NAME=" + (directory / "preview.ini").string();
+  const auto restart_refusals = std::format("{}=1", preview_restart_refusals_env);
   std::array<char*, 4> arguments{const_cast<char*>("coffeecnc-preview"), // NOLINT: execve's type
                                  const_cast<char*>(request_file.c_str()), // NOLINT
                                  const_cast<char*>("3"), nullptr};        // NOLINT
-  std::array<char*, 8> environment{
-      const_cast<char*>(home.c_str()), // NOLINT
-      const_cast<char*>(ini.c_str()),  // NOLINT
-      const_cast<char*>("PATH=/usr/bin:/bin"),          // NOLINT
-      const_cast<char*>("LC_ALL=C"),                    // NOLINT
-      const_cast<char*>("PYTHONDONTWRITEBYTECODE=1"),   // NOLINT
-      const_cast<char*>("PYTHONNOUSERSITE=1"),          // NOLINT
-      const_cast<char*>("PYTHONSAFEPATH=1"),            // NOLINT
-      nullptr};
+  std::array<char*, 9> environment{const_cast<char*>(home.c_str()),       // NOLINT
+                                   const_cast<char*>(ini.c_str()),        // NOLINT
+                                   const_cast<char*>(restart_refusals.c_str()),    // NOLINT
+                                   const_cast<char*>("PATH=/usr/bin:/bin"),        // NOLINT
+                                   const_cast<char*>("LC_ALL=C"),                  // NOLINT
+                                   const_cast<char*>("PYTHONDONTWRITEBYTECODE=1"), // NOLINT
+                                   const_cast<char*>("PYTHONNOUSERSITE=1"),        // NOLINT
+                                   const_cast<char*>("PYTHONSAFEPATH=1"),          // NOLINT
+                                   nullptr};
   const auto cpu_seconds =
       static_cast<rlim_t>(std::chrono::duration_cast<std::chrono::seconds>(settings.timeout).count() + 2);
 
@@ -892,6 +893,7 @@ auto outcome_of(const PreviewSettings& settings, const PreviewInputs& inputs, He
     outcome.state = PreviewState::ready;
     outcome.restart = output.restart;
     outcome.restart_blocked = std::move(output.restart_blocked);
+    outcome.restart_blocked_localization = std::move(output.restart_blocked_localization);
   }
   else if (output.end == HelperEnd::error && output.problem)
     // The interpreter's own error, with its line: that is the reason, however the helper
@@ -1218,7 +1220,10 @@ auto HelperPreviewEngine::compute(const PreviewInputs& inputs,
         (settings_.tool_change_at_g30 || settings_.tool_change_position ||
          settings_.tool_change_quill_up)) {
       outcome.restart.reset();
-      outcome.restart_blocked = "The configured tool change moves the machine independently.";
+      LocalizedReason reason{"The configured tool change moves the machine independently.",
+                             MessageKey{"backend.previewEngine.toolChangeMoves"}};
+      outcome.restart_blocked = std::move(reason.text);
+      outcome.restart_blocked_localization = std::move(reason.localization);
     }
     // The result stands only for files that are still what was read.
     auto changed = watch(manifest, last_tools);

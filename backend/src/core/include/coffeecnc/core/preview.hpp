@@ -128,6 +128,7 @@ struct PreviewOutcome {
   std::string restart_blocked;
   std::vector<PreviewDwell> dwells;
   std::optional<ProgramCheck> check{};
+  std::optional<MessageKey> restart_blocked_localization{};
   friend auto operator==(const PreviewOutcome&, const PreviewOutcome&) -> bool = default;
 };
 

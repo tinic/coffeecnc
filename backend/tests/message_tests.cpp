@@ -9,6 +9,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -28,16 +29,19 @@ constexpr auto nan = std::numeric_limits<double>::quiet_NaN();
 constexpr auto infinity = std::numeric_limits<double>::infinity();
 constexpr std::uint64_t max_safe_integer = 9007199254740991;
 
-auto parsed(const Encoded& encoded) -> Json {
-  require(encoded.has_value(), "Message encodes: " + encoded.error_or(""));
+auto parsed(const EncodedMessage& encoded) -> Json {
+  require(encoded.has_value(), "Message encodes: " + encoded.error_or(LocalizedReason{}).text);
   return Json::parse(encoded.value_or("null"));
 }
 
 // The message is refused and the reason names the field.
-void refused(const Encoded& encoded, const std::string& field) {
+void refused(const EncodedMessage& encoded, const std::string& field, std::string_view key = {}) {
   require(!encoded.has_value(), "Refused, not sent: " + field);
-  require(encoded.error_or("").starts_with(field + ' '),
-          "The reason names " + field + ": " + encoded.error_or(""));
+  const auto error = encoded.error_or(LocalizedReason{});
+  require(error.text.starts_with(field + ' '), "The reason names " + field + ": " + error.text);
+  require(error.localization && error.localization->params.at("field") == field &&
+              (key.empty() || error.localization->key == key),
+          "The localization uses the same field and the expected error key");
 }
 
 auto valid_hello() -> Hello {
@@ -81,7 +85,8 @@ void hello_rules() {
           "Spindle preset ceiling is sent");
   for (const auto bad : {0.0, -1.0, nan, infinity}) {
     limited.max_spindle_rpm = bad;
-    refused(encode_hello(limited), "max_spindle_rpm");
+    refused(encode_hello(limited), "max_spindle_rpm",
+            bad <= 0 ? "messages.wire.notPositive" : "messages.wire.notFinite");
   }
   require(!hello.contains("coolant"), "Unknown coolant outputs are not sent");
   auto cooled = valid_hello();
@@ -108,7 +113,7 @@ void hello_rules() {
 
   auto missing = valid_hello();
   missing.axis_max_jog_velocity.at(2).reset();
-  refused(encode_hello(missing), "axis_max_jog_velocity");
+  refused(encode_hello(missing), "axis_max_jog_velocity", "messages.wire.noAxis");
   for (const auto bad : {0.0, -1.0, nan, infinity}) {
     auto invalid = valid_hello();
     invalid.axis_max_jog_velocity.at(1) = bad;
@@ -211,7 +216,6 @@ void status_rules() {
       {"spindle.commanded_rpm", [](Status& s) -> void { s.spindle.commanded_rpm = nan; }},
       {"spindle.override", [](Status& s) -> void { s.spindle.override = nan; }},
       {"spindle.actual_rpm", [](Status& s) -> void { s.spindle.actual_rpm = nan; }},
-      {"spindle.actual_rpm", [](Status& s) -> void { s.spindle.actual_rpm = -0.5; }},
       {"wait.seconds_left", [](Status& s) -> void { s.wait = WaitDwell{nan}; }},
       {"program.revision", [](Status& s) -> void { s.program.revision = max_safe_integer + 1; }},
       {"preview_context", [](Status& s) -> void { s.preview_context = max_safe_integer + 1; }},
@@ -221,7 +225,10 @@ void status_rules() {
     spoil(invalid);
     refused(encode_status(invalid, 1), field);
   }
-  refused(encode_status(valid_status(), max_safe_integer + 1), "seq");
+  auto negative = valid_status();
+  negative.spindle.actual_rpm = -0.5;
+  refused(encode_status(negative, 1), "spindle.actual_rpm", "messages.wire.negative");
+  refused(encode_status(valid_status(), max_safe_integer + 1), "seq", "messages.wire.aboveSafe");
   auto largest = valid_status();
   largest.program.revision = max_safe_integer;
   largest.preview_context = max_safe_integer;
@@ -295,7 +302,7 @@ void table_rules() {
   refused(encode_offset_history(history), "entries.changes.before");
   history.entries[0].changes[0].before = 0;
   history.entries[0].time = -1;
-  refused(encode_offset_history(history), "entries.time");
+  refused(encode_offset_history(history), "entries.time", "messages.wire.outsideUnsigned");
   history.entries[0].time = 0;
   history.entries[0].restores = max_safe_integer + 1;
   refused(encode_offset_history(history), "entries.restores");
@@ -355,9 +362,9 @@ void directory_rules() {
   refused(encode_directory(directory), "entries.bytes");
   directory.entries.front().bytes = max_safe_integer;
   directory.entries.front().modified = std::numeric_limits<std::int64_t>::max();
-  refused(encode_directory(directory), "entries.modified");
+  refused(encode_directory(directory), "entries.modified", "messages.wire.outsideSigned");
   directory.entries.front().modified = std::numeric_limits<std::int64_t>::min();
-  refused(encode_directory(directory), "entries.modified");
+  refused(encode_directory(directory), "entries.modified", "messages.wire.outsideSigned");
 }
 } // namespace
 

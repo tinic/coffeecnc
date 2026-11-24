@@ -48,7 +48,7 @@ async function send(): Promise<void> {
       const result: unknown = await response.json().catch(() => null)
       problem.value = result !== null && typeof result === 'object' && 'reason' in result &&
         typeof result.reason === 'string' && result.reason
-        ? translateMessage(result.reason)
+        ? translateMessage(result.reason, 'localization' in result ? result.localization : undefined)
         : t('program.upload.failed')
       return
     }

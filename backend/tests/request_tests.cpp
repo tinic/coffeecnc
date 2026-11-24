@@ -140,6 +140,14 @@ void protocol_forms() {
   require(body<FixedSetterRequest>(R"({"id":42,"type":"fixed_setter","action":"clear_runout","tool":99})").action ==
               SetterAction::clear_runout,
           "Clearing the runout names only the probe");
+  const auto map = body<FixedSetterRequest>(
+      R"({"id":42,"type":"fixed_setter","action":"height_map","tool":99,"x":1,"y":2,"z":3,"x_min":-5,"y_min":-4,"x_max":15,"y_max":12,"step":10,"clearance":3})");
+  require(map.action == SetterAction::height_map && map.grid_mm == std::array{-5.0, -4.0, 15.0, 12.0} &&
+              map.step_mm == 10 && map.clearance_mm == 3,
+          "A height map names its rectangle, step and clearance in work millimetres");
+  rejected(R"({"id":42,"type":"fixed_setter","action":"height_map","tool":99,"x":1,"y":2,"z":3,"x_min":-5,"y_min":-4,"x_max":15,"y_max":12,"step":10})", 42);
+  // A height map never writes: it takes no measure_only.
+  rejected(R"({"id":42,"type":"fixed_setter","action":"height_map","tool":99,"x":1,"y":2,"z":3,"x_min":-5,"y_min":-4,"x_max":15,"y_max":12,"step":10,"clearance":3,"measure_only":true})", 42);
   const auto bore_arc = body<FixedSetterRequest>(
       R"({"id":42,"type":"fixed_setter","action":"bore_arc","tool":99,"x":1,"y":2,"z":3,"angles":[-80,-40,0]})");
   require(bore_arc.action == SetterAction::bore_arc &&

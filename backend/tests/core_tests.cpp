@@ -194,6 +194,50 @@ void runout_travel() {
           "beside a pin, the travel must reach from outside to the surface, as for a boss");
 }
 
+// The height-map grid (#247): both corners included, at most one step apart, 2 to 150 points.
+void height_map_grid() {
+  const auto grid = height_grid({0, 0, 20, 16}, 10);
+  require(grid && grid->columns == 3 && grid->rows == 3, "20 x 16 at 10 mm: 3 x 3 points");
+  const auto uneven = height_grid({-5, 2, 12, 2}, 4);
+  require(uneven && uneven->columns == 6 && uneven->rows == 1,
+          "17 mm at 4 mm: 6 columns, a single row when Y is the same");
+  const auto reversed = height_grid({20, 16, 0, 0}, 10);
+  require(reversed && reversed->columns == 3 && reversed->rows == 3, "the corners may come in any order");
+  require(!height_grid({0, 0, 0, 0}, 10), "one point is not a map");
+  require(!height_grid({0, 0, 100, 100}, 5), "21 x 21 points is more than 150");
+  require(!height_grid({0, 0, 20, 16}, 0.25), "a step below 0.5 mm is refused");
+  require(!height_grid({0, 0, std::numeric_limits<double>::infinity(), 16}, 10), "corners are finite");
+  // The worst case of one point: 20 mm at 240 mm/min (5 s), three passes of 1 mm back at
+  // 480 mm/min, 2 s release and 2 mm at 60 mm/min (4.125 s each), the 20 mm retract at 480 mm/min
+  // and its 2 s release (4.5 s), and 10 s: 31.875 s.
+  const FixedSetterLimits limits{.travel_mm = 15, .feed_mm_min = 240, .latch_feed_mm_min = 60,
+                                 .latch_backoff_mm = 1, .material_travel_mm = 20};
+  require(std::abs(height_map_point_seconds(limits) - 31.875) < 1e-9, "one point takes at most 31.875 s");
+  // 15 x 10 points 10 mm apart, the first 50 mm away, XY at 6000 mm/min: 50 + 149 x 10 =
+  // 1540 mm in 15.4 s.
+  const HeightMapTravel small{.points = 150, .step_mm = 10, .first_mm = 50, .descent_mm = 5,
+                              .xy_rapid_mm_min = 6000};
+  require(std::abs(height_map_seconds(limits, small) - ((150 * 31.875) + 15.4 + 0.625)) < 1e-9,
+          "150 points, 1540 mm of XY at 6000 mm/min and a 5 mm descent at 480 mm/min");
+  require(height_map_seconds(limits, small) <= max_height_map_seconds,
+          "150 points at these limits fit the 2 h limit");
+  // The review's case: 9 x 9 points 250 mm apart. The 80 traverses of 250 mm at 10000 mm/min
+  // add 120 s to the 81 points' 2581.875 s.
+  const HeightMapTravel wide{.points = 81, .step_mm = 250, .first_mm = 0, .descent_mm = 0,
+                             .xy_rapid_mm_min = 10000};
+  require(std::abs(height_map_seconds(limits, wide) - (2581.875 + 120)) < 1e-9,
+          "81 points 250 mm apart take 2701.875 s with their XY traverses");
+  require(!std::isfinite(height_map_seconds(limits, {.points = 2, .step_mm = 10, .first_mm = 0,
+                                                     .descent_mm = 0, .xy_rapid_mm_min = 0})),
+          "no XY speed: no bound");
+  auto slow = limits;
+  slow.latch_feed_mm_min = 5; // 24 s a latch pass
+  require(height_map_seconds(slow, small) > max_height_map_seconds,
+          "a slow latch makes 150 points exceed the 2 h limit");
+  slow.latch_feed_mm_min = 0;
+  require(!std::isfinite(height_map_point_seconds(slow)), "no latch feed: no bound");
+}
+
 // Three-point bore and boss geometry (#247): the circle, the arc it covers, the spread checks.
 void arc_geometry() {
   const auto on_circle = [](double degrees) {
@@ -846,6 +890,7 @@ auto main() -> int {
     runout_correction();
     search_line_heading();
     runout_travel();
+    height_map_grid();
     fixed_setter_homing();
     edge_rotation_wraps();
     arc_geometry();

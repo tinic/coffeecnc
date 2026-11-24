@@ -996,6 +996,14 @@ void decode_errors() {
                         message.at("localization").at("params").at("detail").get<std::string>(),
             "It is an operator error stamped with the wall clock");
   }
+  const auto missing_id = rig.handle(rig.page, R"({"type":"abort"})", at(250ms));
+  const auto warning = Json::parse(missing_id.messages.at(0));
+  require(warning.at("text") == "Panel request ignored: Missing required field: id." &&
+              warning.at("localization").at("params").at("detail") ==
+                  "Missing required field: id." &&
+              warning.at("localization").at("params_localization").at("detail") ==
+                  Json{{"key", "messages.request.missingField"}, {"params", {{"field", "id"}}}},
+          "An ignored request retains the missing-ID decoder key and its English fallback");
   require(rig.port.calls.empty(), "A request without an ID is not executed");
   rig.accepted(R"("type":"abort")");
 
@@ -1235,6 +1243,16 @@ void directory_listing() {
                        {"params", {{"detail", "Permission denied"}}}},
           "A directory error carries the original detail and its catalog key");
   rig.acted({}, "A refused listing is not a controller action either");
+
+  rig.files.file("/home/cnc/nc_files/invalid-time/part.ngc", "", 9007199254740992);
+  const auto encoded = rig.result(R"("type":"list_directory","path":"invalid-time")");
+  require(encoded.at("outcome") == "rejected" &&
+              encoded.at("reason") ==
+                  "Directory cannot be sent: entries.modified is outside ±(2^53 - 1)." &&
+              encoded.at("localization").at("params_localization").at("detail") ==
+                  Json{{"key", "messages.wire.outsideSigned"},
+                       {"params", {{"field", "entries.modified"}}}},
+          "The listing's encoding failure carries the field and reason key");
 
   // The listing does not need the machine.
   rig.port.state.link = Link::down;
@@ -1495,6 +1513,7 @@ void late_jog_starts() {
     std::string_view outcome;
     std::string_view reason;
     Calls calls;
+    bool watchdog{};
   };
   const std::vector<Row> rows{
       {"released in flight",
@@ -1550,7 +1569,8 @@ void late_jog_starts() {
        "failed",
        "Jog stopped by the HAL watchdog: CoffeeCNC's heartbeat stalled for longer than the "
        "watchdog timeout.",
-       {"start_jog x 1 600 axis", "stop_jog x"}},
+       {"start_jog x 1 600 axis", "stop_jog x"},
+       true},
       {"released, then the watchdog tripped",
        [](Rig& rig) -> void {
          static_cast<void>(rig.session.submit(
@@ -1560,7 +1580,8 @@ void late_jog_starts() {
        "failed",
        "Jog stopped by the HAL watchdog: CoffeeCNC's heartbeat stalled for longer than the "
        "watchdog timeout.",
-       {"start_jog x 1 600 axis", "stop_jog x"}},
+       {"start_jog x 1 600 axis", "stop_jog x"},
+       true},
   };
   for (const auto& row : rows) {
     Rig rig;
@@ -1582,6 +1603,10 @@ void late_jog_starts() {
     require(press && press->at("outcome") == row.outcome && press->at("reason") == row.reason,
             std::format("{}: the press is {} \"{}\", got {}", row.name, row.outcome, row.reason,
                         press ? press->dump() : std::string("none")));
+    if (row.watchdog)
+      require(press && press->at("localization") ==
+                           Json{{"key", "backend.jogStop.watchdog"}, {"params", Json::object()}},
+              row.name + ": the press result can identify the watchdog");
     require(!error, row.name + ": no operator message");
     rig.acted(row.calls, row.name + ": the axis still gets its accepted stop");
     rig.clock += 10ms;
@@ -1670,14 +1695,19 @@ void lease_expiry() {
   require(outcome.messages.size() == 1 && !outcome.send_snapshots,
           "A stop that failed is reported");
   const auto message = Json::parse(outcome.messages.front());
-  require(message == Json{{"type", "message"},
-                          {"level", "error"},
-                          {"text", "Jog stop failed on X: LinuxCNC did not answer."},
-                          {"localization",
-                           {{"key", "messages.session.jogStopFailed"},
-                            {"params", {{"axis", "X"}, {"detail", "LinuxCNC did not answer."}}}}},
-                          {"time", (epoch + 20s + 150ms).count()}},
-          "As an operator error, since no request owns it");
+  require(
+      message ==
+          Json{{"type", "message"},
+               {"level", "error"},
+               {"text", "Jog stop failed on X: LinuxCNC did not answer."},
+               {"localization",
+                {{"key", "messages.session.jogStopFailed"},
+                 {"params", {{"axis", "X"}, {"detail", "LinuxCNC did not answer."}}},
+                 {"params_localization",
+                  {{"detail",
+                    {{"key", "messages.session.linuxcncNoAnswer"}, {"params", Json::object()}}}}}}},
+               {"time", (epoch + 20s + 150ms).count()}},
+      "As an operator error, since no request owns it");
 }
 
 void lost_machine_cancels_jogs() {
@@ -2330,8 +2360,13 @@ void no_start_over_an_unconfirmed_stop() {
                                  {ActionStatus::failed, "Still not connected."}};
   rig.expect(release_x, "failed", "Not connected.");
   rig.port.calls.clear();
-  rig.expect(hold_x, "failed",
-             "The previous jog stop on this axis is not confirmed: Still not connected.");
+  const auto denied = rig.result(hold_x);
+  require(denied.at("outcome") == "failed" &&
+              denied.at("reason") ==
+                  "The previous jog stop on this axis is not confirmed: Still not connected." &&
+              denied.at("localization") == Json{{"key", "messages.session.previousStopThisAxis"},
+                                                {"params", {{"detail", "Still not connected."}}}},
+          "The denied press names the unconfirmed stop on the same axis");
   rig.acted({"stop_jog x"}, "A new press first retries the stop and does not start");
   rig.accepted(hold_x);
   rig.acted({"stop_jog x", "start_jog x 1 600 axis"},
@@ -3059,6 +3094,23 @@ void editor_saves_over_the_loaded_program() {
                        {"params", {{"detail", "LinuxCNC refused the open."}}}} &&
               disk.files.at(part) == "G0 X2\nM2\n",
           "A reopen failure reports the disk save separately: " + refused_reopen.dump());
+
+  disk.files[part] = before;
+  port.script["open_program"].push_back({ActionStatus::failed, "LinuxCNC did not open the program.",
+                                         MessageKey{"backend.nmlPort.notOpened"}});
+  const auto keyed_reopen = send(save(part, stamp));
+  require(keyed_reopen.at("outcome") == "failed" &&
+              keyed_reopen.at("reason") ==
+                  "Saved on disk, but not reopened. LinuxCNC did not open the program." &&
+              keyed_reopen.at("localization") ==
+                  Json{{"key", "messages.session.savedNotReopened"},
+                       {"params", {{"detail", "LinuxCNC did not open the program."}}},
+                       {"params_localization",
+                        {{"detail",
+                          {{"key", "backend.nmlPort.notOpened"}, {"params", Json::object()}}}}}} &&
+              disk.files.at(part) == "G0 X2\nM2\n",
+          "A keyed reopen failure preserves its catalog detail and fallback: " +
+              keyed_reopen.dump());
 }
 
 void uploads_do_not_replace_the_running_program() {
@@ -3102,7 +3154,10 @@ void uploads_do_not_replace_the_running_program() {
   port.script["open_program"].push_back({ActionStatus::failed, "LinuxCNC refused the open."});
   const auto failed = publish(part);
   require(!failed && published == 3 &&
-              failed.error() == "Saved on disk, but not reopened. LinuxCNC refused the open.",
+              failed.error().text ==
+                  "Saved on disk, but not reopened. LinuxCNC refused the open." &&
+              failed.error().localization == MessageKey{"messages.session.savedNotReopened",
+                                                        {{"detail", "LinuxCNC refused the open."}}},
           "A failed reopen reports the successful disk publication");
 }
 

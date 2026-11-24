@@ -367,6 +367,37 @@
       "diameter": "Diâmetro",
       "toolRemoved": "A ferramenta foi removida",
       "noEarlier": "Não se conhece nenhum valor anterior"
+    },
+    "heightMap": {
+      "button": "Mapa de alturas…",
+      "title": "Mapa de alturas Z",
+      "setup": "Apalpa o topo Z em cada ponto de uma grelha em coordenadas da peça {wcs}. Meça primeiro o apalpador e aplique o seu comprimento. Entre os pontos desloca-se à Z de segurança: mantenha-a acima da peça.",
+      "xFrom": "X de",
+      "xTo": "X até",
+      "yFrom": "Y de",
+      "yTo": "Y até",
+      "step": "Passo",
+      "clearance": "Z de segurança",
+      "points": "{columns} × {rows} pontos, cerca de {minutes} min.",
+      "invalid": "Escolha um retângulo e um passo para 2 a {max} pontos.",
+      "tooLong": "Até {minutes} min, mais do que o limite de {limit} min. Use menos pontos.",
+      "progress": "A apalpar o mapa de alturas: ponto {point} de {total}…",
+      "done": "Mapa de alturas: {count} pontos, Z de {low} a {high} {unit}. Nada foi definido.",
+      "failed": "O mapa de alturas não foi concluído.",
+      "partial": "{reason} Ficam {count} de {total} pontos como mapa parcial.",
+      "result": "Mapa",
+      "stop": "Parar",
+      "resultTitle": "Mapa de alturas",
+      "summary": "{wcs}, {count} pontos: Z de {low} a {high} {unit}, uma diferença de {spread} {unit}. A grelha abaixo é vista de cima.",
+      "partialSummary": "Mapa parcial: {count} de {total} pontos. {reason} Os ficheiros guardados indicam-no.",
+      "heights": "Alturas",
+      "show": "Mostrar em 3D",
+      "hide": "Ocultar em 3D",
+      "saveCsv": "Guardar CSV",
+      "saveProbe": "Guardar ficheiro de apalpação LinuxCNC",
+      "saving": "A guardar {name}…",
+      "saved": "{name} guardado na pasta de programas.",
+      "notSaved": "O ficheiro não foi guardado."
     }
   }
 }

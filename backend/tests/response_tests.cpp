@@ -80,6 +80,22 @@ void command_results() {
   const auto runout = Json::parse(encode_result(42, CommandOutcome::accepted, "", compensated)).at("setter").at("runout");
   require(runout == Json{{"tool", 99}, {"table_diameter", 2.0}, {"radius", {{"x", -0.008}, {"y", -0.009}}}},
           "The runout in use reports only its trigger radius correction per axis in mm");
+  SetterState mapped{};
+  mapped.height_map = SetterState::HeightMap{
+      .wcs = 2, .columns = 2, .rows = 1, .rotation_deg = 7.5,
+      .points = {{{0.0, 0.0, 0.01}, {5.0, -7.0, 12.01}, true}, {{10.0, 0.0, -0.02}, {15.0, -7.0, 11.98}, true}}};
+  const auto map = Json::parse(encode_result(42, CommandOutcome::accepted, "", mapped)).at("setter").at("height_map");
+  require(map.at("wcs") == 2 && map.at("columns") == 2 && map.at("rows") == 1 && map.at("rotation") == 7.5 &&
+              map.at("points").size() == 2 && map.at("points").at(1).at("work").at(2) == -0.02 &&
+              map.at("points").at(1).at("machine").at(0) == 15.0 && !map.contains("partial"),
+          "A height map reports every point in work and machine millimetres, row by row");
+  mapped.height_map->points.at(1).measured = false;
+  mapped.height_map->partial = "The height map was stopped.";
+  const auto partial = Json::parse(encode_result(42, CommandOutcome::failed, "The height map was stopped.", mapped));
+  const auto& stopped = partial.at("setter").at("height_map");
+  require(partial.at("outcome") == "failed" && stopped.at("partial") == "The height map was stopped." &&
+              stopped.at("points").at(0).at("work").at(2) == 0.01 && stopped.at("points").at(1).is_null(),
+          "A partial height map fails with the points measured so far and null for the rest");
   SetterState arc{};
   arc.material = SetterState::Material{2, 'X', true};
   arc.center_diameter = 16;

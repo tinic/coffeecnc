@@ -375,15 +375,6 @@ void program_text() {
     return program ? *program : ProgramText{};
   };
 
-  files.file(in_root("blocked.ngc"), "M2\n");
-  files.unreadable_files.push_back(in_root("blocked.ngc"));
-  const auto blocked = store.read_program("blocked.ngc", 9);
-  require(!blocked &&
-              blocked.error() == LocalizedReason{"Program cannot be read: Permission denied",
-                                                 MessageKey{"backend.programStore.cannotRead",
-                                                            {{"detail", "Permission denied"}}}},
-          "The program read error carries a key and the filesystem detail.");
-
   const auto plain = read("G0 X1\nM2\n");
   require(plain.revision == 9 && plain.file == in_root("p.ngc") && !plain.truncated,
           "The text carries the caller's revision and the resolved path");
@@ -460,6 +451,19 @@ void program_text() {
   for (const auto& call : files.calls)
     require(!call.starts_with("read ") || call == "read " + in_root("p.ngc"),
             "Only the resolved program is read: " + call);
+}
+
+void unreadable_program_text() {
+  FakeFileSystem files;
+  const ProgramStore store{files, root};
+  files.file(in_root("blocked.ngc"), "M2\n");
+  files.unreadable_files.push_back(in_root("blocked.ngc"));
+  const auto blocked = store.read_program("blocked.ngc", 9);
+  require(!blocked &&
+              blocked.error() == LocalizedReason{"Program cannot be read: Permission denied",
+                                                 MessageKey{"backend.programStore.cannotRead",
+                                                            {{"detail", "Permission denied"}}}},
+          "The program read error carries a key and the filesystem detail.");
 }
 
 // The same rules on the host's file system, in a directory made for the test.
@@ -605,6 +609,7 @@ auto main(int argc, char** argv) -> int {
     open_rules();
     new_program_rules();
     program_text();
+    unreadable_program_text();
     if (argc > 1)
       on_the_host(argv[1]);
     else

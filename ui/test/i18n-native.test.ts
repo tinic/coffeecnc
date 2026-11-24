@@ -265,7 +265,7 @@ describe('native and store sentences', () => {
     function constant(path: string, name: string): string | undefined {
       const local = constantsByFile.get(path)?.get(name)
       if (local !== undefined) return local
-      const stem = path.split('/').at(-1)?.replace(/\.[^.]+$/, '')
+      const stem = path.slice(path.lastIndexOf('/') + 1).replace(/\.[^.]+$/, '')
       // A class member can be declared in its header, as with ToolModelStore::busy_reason.
       for (const [file, constants] of constantsByFile) {
         if (file.endsWith(`/${stem}.hpp`) && constants.has(name)) return constants.get(name)

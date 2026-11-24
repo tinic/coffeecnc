@@ -2,6 +2,7 @@
 
 #include <coffeecnc/app/panel_assets.hpp>
 #include <coffeecnc/app/program_store.hpp>
+#include <coffeecnc/app/response.hpp>
 #include <coffeecnc/core/remote_hosts.hpp>
 
 #include "viewer_boost.hpp"
@@ -395,13 +396,10 @@ private:
     return {"The program is longer than 16 MiB.", MessageKey{"backend.programFiles.size"}};
   }
 
-  void upload_reply(http::status status, LocalizedReason reason = {}) {
+  void upload_reply(http::status status, const LocalizedReason& reason = {}) {
     http::response<http::string_body> response{status, request_.get().version()};
     response.set(http::field::content_type, "application/json");
-    nlohmann::json payload{{"reason", std::move(reason.text)}};
-    if (const auto& key = reason.localization)
-      payload["localization"] = {{"key", key->key}, {"params", key->params}};
-    response.body() = payload.dump();
+    response.body() = encode_upload_reply(reason);
     response.prepare_payload();
     respond(std::move(response), {}, !request_.is_done());
   }
@@ -485,7 +483,7 @@ private:
       }
       auto& io = self->owner_.io;
       net::post(io, [self = std::move(self), status, reason = std::move(reason)]() mutable -> void {
-        self->upload_reply(status, std::move(reason));
+        self->upload_reply(status, reason);
       });
     });
   }

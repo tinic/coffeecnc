@@ -1071,9 +1071,11 @@ void NmlPort::restore_probe_modal(const Wanted& wanted) {
       return;
   }
   const auto before = status();
-  if (!ready(before) || !wanted())
+  const auto pending = impl_->probe_modal;
+  if (!pending || !ready(before) || !wanted())
     return;
-  const auto modal = *std::exchange(impl_->probe_modal, std::nullopt);
+  const auto modal = *pending;
+  impl_->probe_modal.reset();
   const auto not_restored = [&] {
     impl_->messages.push_back(
         {true,

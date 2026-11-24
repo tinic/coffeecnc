@@ -1448,6 +1448,15 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   bool traversing_xy = false;
   std::optional<std::array<double, 3>> vertical_at;
   bool lifting = false;
+  // Z held at `z`: measured there, or commanded there with the encoder within the backlash of it
+  // (the Z encoder lags the command after an upward move: 0.125 mm on the G0759).
+  const auto z_held = [&](const EMC_STAT& current, double z) {
+    const double commanded = current.motion.traj.position.tran.z * machine_scale;
+    const double measured = current.motion.traj.actualPosition.tran.z * machine_scale;
+    return near(measured, z) ||
+           (near(commanded, z) &&
+            std::abs(measured - z) <= impl_->config.motion_tolerances.probe_backlash_mm);
+  };
   const auto steady_context = [&](const EMC_STAT& current) -> bool {
     const auto s = to_status(current, impl_->config, hal, Link::live);
     return normal_mode(s) && std::ranges::contains(s.active_codes, "G40") &&
@@ -1457,7 +1466,7 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
            s.controller.program_units == c.program_units && s.feed_mode == before.feed_mode &&
            s.wcs == before.wcs && s.g5x == before.g5x && s.g92 == before.g92 &&
            s.tool_offset == before.tool_offset && s.rotation_xy == before.rotation_xy &&
-           (traversing_xy ? near(s.controller.axes[2].machine, lift_z)
+           (traversing_xy ? z_held(current, lift_z)
             : lifting     ? near(s.controller.axes[0].machine, move.start[0]) &&
                                near(s.controller.axes[1].machine, move.start[1])
             : vertical_at ? near(s.controller.axes[0].machine, (*vertical_at)[0]) &&
@@ -1584,10 +1593,19 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
     return interrupt(std::format("Could not prepare the probing feed ({}).", block_failure));
   raw = live_cycle();
   const auto probe_pin = interlock();
+  // The start is measured. Along Z the command may lead it by the encoder's lag after an upward
+  // move (a height map's later points start from the last retract); along X or Y it may not.
+  const auto commanded_at_start = [&](const EMC_STAT& current) {
+    const auto commanded = machine_position(current.motion.traj.position);
+    if (line.axis != 2)
+      return near(line.distance(move.start, commanded), 0);
+    return std::abs(commanded[2] - machine_position(current.motion.traj.actualPosition)[2]) <=
+           impl_->config.motion_tolerances.probe_backlash_mm;
+  };
   if (raw == nullptr || !probe_pin || probe_pin->probe_input.value_or(true) || raw->motion.traj.probeval != 0 ||
       raw->motion.traj.feed_override_enabled || raw->motion.traj.adaptive_feed_enabled ||
       !near(line.distance(move.start, machine_position(raw->motion.traj.actualPosition)), 0) ||
-      !near(line.distance(move.start, machine_position(raw->motion.traj.position)), 0))
+      !commanded_at_start(*raw))
     return interrupt("Probe input, position or feed controls changed before descent.");
 
   // Back-offs and the final retract move away from the setter: twice the search feed (turo).
@@ -2139,49 +2157,103 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
       return true;
     };
     const double search = limits->material_travel_mm;
-    const double lift = std::max(request.start[2], machine_of(x0, y0, request.clearance_mm)[2]);
+    const double clearance_z = machine_of(x0, y0, request.clearance_mm)[2];
+    const double lift = std::max(request.start[2], clearance_z);
+    // Lengths in the operator's messages are in the machine's units.
+    const bool inch = std::abs(machine_scale - 25.4) < 1e-9;
+    const auto length = [&](double mm) {
+      return inch ? std::format("{:.4f}", mm / 25.4) : std::format("{:.3f}", mm);
+    };
+    const std::string unit = inch ? "in" : "mm";
+    const auto where = [&](int column, int row) {
+      return std::format("X{} Y{} {}", length(at_column(column)), length(at_row(row)), unit);
+    };
     for (int row = 0; row < grid->rows; ++row)
       for (int column = 0; column < grid->columns; ++column) {
         const auto point = machine_of(at_column(column), at_row(row), request.clearance_mm);
         if (!in_travel(point) || !in_travel({point[0], point[1], point[2] - search}) ||
             !in_travel({point[0], point[1], lift}))
           return std::unexpected(std::format(
-              "Grid point X{:.3f} Y{:.3f} is outside the configured travel at the clearance or "
-              "the search depth.",
-              at_column(column), at_row(row)));
+              "Grid point {} is outside the configured travel at the clearance or the search depth.",
+              where(column, row)));
       }
+    const double worst = height_map_seconds(*limits, grid->columns * grid->rows,
+                                            request.start[2] - clearance_z);
+    if (!(worst <= max_height_map_seconds))
+      return std::unexpected(std::format(
+          "The height map could take up to {} min, more than the {} min limit. Use fewer points.",
+          std::isfinite(worst) ? std::ceil(worst / 60) : 0.0, max_height_map_seconds / 60));
     SetterState::HeightMap map{.wcs = frame.wcs, .columns = grid->columns, .rows = grid->rows,
-                               .points = {}};
+                               .rotation_deg = before.rotation_xy, .points = {}};
     map.points.resize(static_cast<std::size_t>(grid->columns) * static_cast<std::size_t>(grid->rows));
+    int measured = 0;
+    // A stop after the first point keeps the points measured so far, marked partial.
+    const auto stop = [&](std::string reason) -> std::expected<SetterState, std::string> {
+      if (measured == 0)
+        return std::unexpected(std::move(reason));
+      map.partial = std::move(reason);
+      SetterState state{calibration ? std::optional{calibration->plane} : std::nullopt,
+                        std::nullopt, std::move(current_marks)};
+      state.height_map = std::move(map);
+      return state;
+    };
+    // Where the last point left the probe: its search start at the clearance.
+    std::optional<std::array<double, 3>> left_at;
+    const double backlash = impl_->config.motion_tolerances.probe_backlash_mm;
     for (int row = 0; row < grid->rows; ++row) {
       for (int along = 0; along < grid->columns; ++along) {
         // Back and forth: every other row from its far end.
         const int column = row % 2 == 0 ? along : grid->columns - 1 - along;
+        if (wanted && !wanted())
+          return stop("The height map was stopped.");
         const auto* s = impl_->stat();
         if (s == nullptr || impl_->status.link() != Link::live)
-          return std::unexpected("Controller status was lost during the height map.");
+          return stop("Controller status was lost during the height map.");
         const auto reading = to_status(*s, impl_->config, impl_->hal, Link::live);
         if (frame_of(reading) != frame || reading.tool_offset != before.tool_offset)
-          return std::unexpected("The work frame or tool changed during the height map.");
+          return stop("The work frame or tool changed during the height map.");
         const std::array here{reading.controller.axes[0].machine, reading.controller.axes[1].machine,
                               reading.controller.axes[2].machine};
+        // Each later point starts where the last one ended: commanded there, and measured there
+        // but for the Z encoder's lag after the retract (0.125 mm on the G0759).
+        if (left_at) {
+          const auto& commanded = reading.commanded_position;
+          const bool held =
+              near(commanded[0], (*left_at)[0]) && near(commanded[1], (*left_at)[1]) &&
+              near(commanded[2], (*left_at)[2]) &&
+              std::hypot(here[0] - (*left_at)[0], here[1] - (*left_at)[1]) <= limits->xy_tolerance_mm &&
+              std::abs(here[2] - (*left_at)[2]) <= backlash;
+          if (!held)
+            return stop("The machine moved between the height map points.");
+        }
         const auto above = machine_of(at_column(column), at_row(row), request.clearance_mm);
-        const auto contact = probe_fixed_setter({.tool = tool,
-                                                 .start = here,
-                                                 .travel_mm = search,
-                                                 .feed_mm_min = limits->feed_mm_min,
-                                                 .approach = above,
-                                                 .clearance_z = std::max(here[2], above[2]),
-                                                 .material = ProbeDirection::z_top},
-                                                wanted);
+        const auto contact =
+            probe_fixed_setter({.tool = tool,
+                                .start = here,
+                                .travel_mm = search,
+                                .feed_mm_min = limits->feed_mm_min,
+                                .approach = above,
+                                .clearance_z = std::max(reading.commanded_position[2], above[2]),
+                                .material = ProbeDirection::z_top},
+                               wanted);
         if (!contact)
-          return std::unexpected(std::format("Point X{:.3f} Y{:.3f}: {}", at_column(column),
-                                             at_row(row), contact.error()));
+          return stop(std::format("Point {}: {}", where(column, row), contact.error()));
         auto& point = map.points.at((static_cast<std::size_t>(row) * static_cast<std::size_t>(grid->columns)) +
                                     static_cast<std::size_t>(column));
         point.machine = contact->machine;
         point.work = work_position(contact->machine, before.g5x, before.g92, before.tool_offset,
                                    before.rotation_xy);
+        point.measured = true;
+        ++measured;
+        left_at = above;
+        // The next traverse runs at the clearance: a top within the latch back-off of it is too
+        // close to rapid over.
+        const double gap = above[2] - contact->machine[2];
+        if (measured < grid->columns * grid->rows && gap < limits->latch_backoff_mm)
+          return stop(std::format("The top at {} is {} {} below the clearance Z, within the {} {} "
+                                  "latch back-off. Raise the clearance Z.",
+                                  where(column, row), length(gap), unit,
+                                  length(limits->latch_backoff_mm), unit));
       }
     }
     SetterState state{calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,

@@ -30,7 +30,7 @@ import {
 } from '../pathview'
 import { useDrawnPreview } from '../drawn-preview'
 import { drawPreviewGrid } from '../preview-grid'
-import type { HeightMap, Vec3 } from '../protocol'
+import type { HeightMapPoint, Vec3 } from '../protocol'
 import AppIcon from './AppIcon.vue'
 import { part, partBlock, showPart } from '../step'
 import { modelToMachine } from '../step-model'
@@ -39,7 +39,7 @@ import { loadedToolPreview, reportedToolTip, toolPreviewBounds } from '../tool-p
 import { toolModels } from '../tool-models'
 import { demoFixture, hasDemoProbeFixture, probeFixtureBounds } from '../sim/probe-fixture'
 import { translateMessage } from '../i18n/messages'
-import { heightMap, heightRange } from '../height-map'
+import { heightMap, heightRange, measuredPoints } from '../height-map'
 
 const { t } = useI18n()
 
@@ -215,7 +215,7 @@ function fitTo(what: 'path' | 'machine'): void {
       const { min, max } = probeFixtureBounds()
       points.push(...boxCorners(min, max))
     }
-    points.push(...(heightMap.value?.points.map((point) => point.machine) ?? []))
+    points.push(...(heightMap.value === null ? [] : measuredPoints(heightMap.value).map((point) => point.machine)))
     if (visibleTool.value !== null) {
       const bounds = toolPreviewBounds(visibleTool.value)
       points.push(...boxCorners(bounds.min, bounds.max))
@@ -400,8 +400,9 @@ function draw(): void {
       const share = high > low ? (z - low) / (high - low) : 0.5
       return `hsl(${String(Math.round(210 - share * 180))} 80% 55%)` // i18n-ignore
     }
-    const entry = (column: number, row: number): HeightMap['points'][number] | undefined =>
-      column < map.columns && row < map.rows ? map.points[row * map.columns + column] : undefined
+    // A partial map has no point where it stopped short: nothing is drawn there.
+    const entry = (column: number, row: number): HeightMapPoint | undefined =>
+      column < map.columns && row < map.rows ? map.points[row * map.columns + column] ?? undefined : undefined
     context.lineWidth = 1.5
     context.setLineDash([])
     for (let row = 0; row < map.rows; row++) {

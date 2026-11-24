@@ -4,7 +4,7 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { panel } from '../machine'
-import { heightGrid, maxHeightMapPoints, type HeightMapGrid } from '../height-map'
+import { heightGrid, heightMapSeconds, maxHeightMapPoints, maxHeightMapSeconds, type HeightMapGrid } from '../height-map'
 import { parseNumericExpression } from '../numeric-expression'
 import { vNumeric } from '../numeric-input'
 import { formatLength, fromDisplay, wcsName } from '../units'
@@ -31,7 +31,16 @@ const grid = computed(() => {
   const { x_min: x0, y_min: y0, x_max: x1, y_max: y1, step } = values.value
   return x0 === null || y0 === null || x1 === null || y1 === null || step === null ? null : heightGrid([x0, y0, x1, y1], step)
 })
-const valid = computed(() => grid.value !== null && values.value.clearance !== null)
+// The worst case the controller refuses above (fixed_setter.hpp height_map_seconds), with the
+// first feed down from the present Z to the clearance.
+const worst = computed(() => {
+  const clearance = values.value.clearance
+  if (grid.value === null || clearance === null) return 0
+  return heightMapSeconds(panel.hello?.fixed_setter, grid.value.columns * grid.value.rows, work('z') - clearance)
+})
+// Without the latch limits the controller decides.
+const tooLong = computed(() => grid.value !== null && Number.isFinite(worst.value) && worst.value > maxHeightMapSeconds)
+const valid = computed(() => grid.value !== null && values.value.clearance !== null && !tooLong.value)
 const labels: Record<Field, () => string> = {
   x_min: () => t('probe.heightMap.xFrom'), x_max: () => t('probe.heightMap.xTo'),
   y_min: () => t('probe.heightMap.yFrom'), y_max: () => t('probe.heightMap.yTo'),
@@ -59,7 +68,9 @@ function start(): void {
       </label>
     </div>
     <p class="summary" role="status">
-      {{ grid ? t('probe.heightMap.points', { columns: grid.columns, rows: grid.rows, minutes }) : t('probe.heightMap.invalid', { max: maxHeightMapPoints }) }}
+      {{ !grid ? t('probe.heightMap.invalid', { max: maxHeightMapPoints })
+        : tooLong ? t('probe.heightMap.tooLong', { minutes: Math.ceil(worst / 60), limit: maxHeightMapSeconds / 60 })
+          : t('probe.heightMap.points', { columns: grid.columns, rows: grid.rows, minutes }) }}
     </p>
     <template #footer>
       <button class="btn" type="button" @click="emit('close')">{{ t('common.cancel') }}</button>

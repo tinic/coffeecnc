@@ -15,7 +15,7 @@ import ModalDialog from './ModalDialog.vue'
 import { vTooltip } from '../tooltip'
 import HeightMapDialog from './HeightMapDialog.vue'
 import HeightMapResult from './HeightMapResult.vue'
-import { heightMap, heightRange, type HeightMapGrid } from '../height-map'
+import { heightGrid, heightMap, heightMapPointAt, heightRange, measuredPoints, type HeightMapGrid } from '../height-map'
 import type { HeightMap } from '../protocol'
 
 const props = defineProps<{ tool: number }>()
@@ -115,6 +115,26 @@ function startGuide(size: number, angle: AngleEdge): void {
 const choosingMap = shallowRef(false)
 const mapResult = shallowRef<HeightMap | null>(null)
 const showingMap = shallowRef(false)
+/** The running map's grid, and the last of its points (1-based, probing order) the probe was over. */
+const mapGrid = computed(() => pending.value?.action === 'height_map' ? pending.value : null)
+const mapTotal = computed(() => {
+  const grid = mapGrid.value
+  const size = grid === null ? null : heightGrid([grid.x_min, grid.y_min, grid.x_max, grid.y_max], grid.step)
+  return size === null ? 0 : size.columns * size.rows
+})
+const mapPoint = shallowRef(1)
+watch((): [number | undefined, number | undefined] => [
+  panel.status?.axes.find((entry) => entry.axis === 'x')?.work, panel.status?.axes.find((entry) => entry.axis === 'y')?.work,
+], ([x, y]) => {
+  const grid = mapGrid.value
+  if (grid === null || x === undefined || y === undefined) return
+  const point = heightMapPointAt(grid, x, y)
+  if (point !== null && point > mapPoint.value) mapPoint.value = point
+})
+/** Stops the running map: the same abort as the panel's other stops. Points measured so far stay. */
+function stopMap(): void {
+  if (pending.value?.action === 'height_map') send({ type: 'abort' })
+}
 function openMap(): void {
   if (pending.value !== null) return
   choosingFeature.value = false
@@ -139,7 +159,8 @@ function startMap(grid: HeightMapGrid): void {
   mapResult.value = null
   const request = { type: 'fixed_setter', action: 'height_map', tool: props.tool, x, y, z, ...grid } as const
   pending.value = request
-  line.value = { text: (): string => t('probe.heightMap.busy'), level: 'busy' }
+  mapPoint.value = 1
+  line.value = { text: (): string => t('probe.heightMap.progress', { point: mapPoint.value, total: mapTotal.value }), level: 'busy' }
   send(request)
 }
 const askingRotation = shallowRef(false)
@@ -262,13 +283,21 @@ const removeListener = onResult((command, result) => {
   })
   if (request.action === 'height_map') {
     const map = result.setter?.height_map
-    if (result.outcome !== 'accepted' || !map) {
+    // A map that stopped after some points keeps them, labelled partial, for the card and export.
+    const partial = map?.partial !== undefined && measuredPoints(map).length > 0
+    if (!map || (result.outcome !== 'accepted' && !partial)) {
       line.value = failure((): string => t('probe.heightMap.failed'))
       return
     }
     if (result.setter) setterState.value = result.setter
     mapResult.value = map
     heightMap.value = map
+    if (partial) {
+      const values = { count: String(measuredPoints(map).length), total: String(map.points.length) }
+      const reason = failure((): string => t('probe.heightMap.failed')).text
+      line.value = { text: (): string => t('probe.heightMap.partial', { ...values, reason: reason() }), level: 'blocked' }
+      return
+    }
     const { low, high } = heightRange(map)
     const values = { count: String(map.points.length), low: formatLength(low, panel.unit), high: formatLength(high, panel.unit),
       unit: panel.unit === 'inch' ? 'in' : 'mm' }
@@ -420,7 +449,8 @@ onBeforeUnmount(() => {
     </div>
     <SetterStatusBand class="probe-status" :line="displayLine">
       <template #actions>
-        <button v-if="mapResult" class="btn rotation-action" type="button" aria-haspopup="dialog" @click="showingMap = true">{{ t('probe.heightMap.result') }}</button>
+        <button v-if="mapGrid" class="btn rotation-action stop-map" type="button" @click="stopMap">{{ t('probe.heightMap.stop') }}</button>
+        <button v-else-if="mapResult" class="btn rotation-action" type="button" aria-haspopup="dialog" @click="showingMap = true">{{ t('probe.heightMap.result') }}</button>
         <button v-if="canApplyRotation" class="btn rotation-action" type="button" @click="askingRotation = true">{{ t('probe.materialProbe.applyRotationMenu') }}</button>
       </template>
     </SetterStatusBand>

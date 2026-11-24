@@ -638,12 +638,20 @@ export interface SetterState {
   height_map?: HeightMap
 }
 
-/** A Z height map (#247): `columns` × `rows` points, each in the work system and in machine XYZ, mm. */
+/** One measured top of a height map, in the work system and in machine XYZ, mm. */
+export interface HeightMapPoint { work: Vec3; machine: Vec3 }
+/**
+ * A Z height map (#247): `columns` × `rows` points. A map that stopped after some points is
+ * `partial` (the reason); the points it did not reach are null.
+ */
 export interface HeightMap {
   wcs: number
   columns: number
   rows: number
-  points: { work: Vec3; machine: Vec3 }[]
+  /** The work system's XY rotation, degrees. */
+  rotation?: number
+  points: (HeightMapPoint | null)[]
+  partial?: string
 }
 
 export interface DirectoryEntry {

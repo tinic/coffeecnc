@@ -30,6 +30,7 @@ import { defaultOperatorPreferences, decodeOperatorSettings, type OperatorPrefer
 import { decodeToolModels, validMachineId } from './tool-model-settings'
 import type { LinkFault } from './sim/machine'
 import { baseName, wcsName } from './units'
+import { heightMapAnswerMs, probeAnswerMs } from './height-map'
 
 export type Tab = 'manual' | 'program' | 'tools' | 'probe'
 export const tabs: readonly Tab[] = ['manual', 'program', 'tools', 'probe']
@@ -532,9 +533,13 @@ export function createPanel(options: PanelOptions): Panel {
         state.motionStopRequest += 1
       }
       const measureChange = command.type === 'tool_changed' && command.measure_request !== undefined
-      const timeout = measureChange || command.type === 'fixed_setter' && command.action !== 'status'
-        ? 1_600_000 : pausedZMove ? 160_000 : restartMove ? restartTimeoutMs
-          : command.type === 'manage_program_file' ? programFileTimeoutMs : answerTimeoutMs
+      // A height map can take far longer than one probe cycle: its worst case decides (#247).
+      const zAxis = state.status?.axes.find((axis) => axis.axis === 'z')
+      const timeout = command.type === 'fixed_setter' && command.action === 'height_map'
+        ? heightMapAnswerMs(state.hello?.fixed_setter, command, command.z, zAxis ? zAxis.machine - zAxis.work : 0)
+        : measureChange || command.type === 'fixed_setter' && command.action !== 'status'
+          ? probeAnswerMs : pausedZMove ? 160_000 : restartMove ? restartTimeoutMs
+            : command.type === 'manage_program_file' ? programFileTimeoutMs : answerTimeoutMs
       pending.set(id, { command, deadline: now() + timeout })
       if (command.type === 'mdi') {
         state.mdi.push({ id, text: command.text, outcome: 'pending', reason: '' })

@@ -139,6 +139,22 @@ void height_map_grid() {
   require(!height_grid({0, 0, 100, 100}, 5), "21 x 21 points is more than 150");
   require(!height_grid({0, 0, 20, 16}, 0.25), "a step below 0.5 mm is refused");
   require(!height_grid({0, 0, std::numeric_limits<double>::infinity(), 16}, 10), "corners are finite");
+  // The worst case of one point: 20 mm at 240 mm/min (5 s), three passes of 1 mm back at
+  // 480 mm/min, 2 s release and 2 mm at 60 mm/min (4.125 s each), the 20 mm retract at 480 mm/min
+  // and its 2 s release (4.5 s), and 10 s: 31.875 s.
+  const FixedSetterLimits limits{.travel_mm = 15, .feed_mm_min = 240, .latch_feed_mm_min = 60,
+                                 .latch_backoff_mm = 1, .material_travel_mm = 20};
+  require(std::abs(height_map_point_seconds(limits) - 31.875) < 1e-9, "one point takes at most 31.875 s");
+  require(std::abs(height_map_seconds(limits, 150, 5) - ((150 * 31.875) + 0.625)) < 1e-9,
+          "150 points and a 5 mm descent at 480 mm/min");
+  require(height_map_seconds(limits, 150, 0) <= max_height_map_seconds,
+          "150 points at these limits fit the 2 h limit");
+  auto slow = limits;
+  slow.latch_feed_mm_min = 5; // 24 s a latch pass
+  require(height_map_seconds(slow, 150, 0) > max_height_map_seconds,
+          "a slow latch makes 150 points exceed the 2 h limit");
+  slow.latch_feed_mm_min = 0;
+  require(!std::isfinite(height_map_point_seconds(slow)), "no latch feed: no bound");
 }
 
 void fixed_setter_homing() {

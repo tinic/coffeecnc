@@ -220,7 +220,86 @@ describe('height map', () => {
     const saved = vi.mocked(send).mock.lastCall?.[0]
     expect(saved).toMatchObject({ type: 'save_program' })
     expect(saved?.type === 'save_program' && saved.path).toMatch(/^heightmap-\d{8}-\d{6}\.csv$/)
-    expect(saved?.type === 'save_program' && saved.text.split('\n')[0]).toBe('work_x_in,work_y_in,work_z_in,machine_x_in,machine_y_in,machine_z_in')
+    const lines = saved?.type === 'save_program' ? saved.text.split('\n') : []
+    expect(lines[0]).toMatch(/^# CoffeeCNC height map system=G54 unit=in rotation_deg=0 date=\S+ points=2 grid_points=2$/)
+    expect(lines[1]).toBe('work_x_in,work_y_in,work_z_in,machine_x_in,machine_y_in,machine_z_in')
+    // The probe file stays LinuxCNC's own format; its frame goes beside it.
+    vi.mocked(send).mockClear()
+    await findButton(fixture, 'Save LinuxCNC probe file')?.trigger('click')
+    const paths = vi.mocked(send).mock.calls.map(([command]) => command.type === 'save_program' ? command.path : '')
+    expect(paths).toHaveLength(2)
+    expect(paths[0]).toMatch(/^heightmap-\d{8}-\d{6}\.txt\.json$/)
+    expect(paths[1]).toBe(paths[0]?.replace(/\.json$/, ''))
+  })
+
+  async function startMap(fixture: VueWrapper): Promise<void> {
+    await fixture.get('.probe-utilities button[aria-haspopup=dialog]').trigger('click')
+    await findButton(fixture, 'Height map…')?.trigger('click')
+    const fields = fixture.findAll('.grid-fields input')
+    // X 0 to 20, Y 0 to 10 at 10 mm: 3 × 2 points.
+    for (const [index, value] of ['0', '20', '0', '10', '10', '5'].entries()) await fields[index]?.setValue(value)
+    await fixture.get('.start-map').trigger('click')
+  }
+  const at = async (x: number, y: number): Promise<void> => {
+    for (const axis of panel.status?.axes ?? []) {
+      if (axis.axis === 'x') axis.work = x
+      if (axis.axis === 'y') axis.work = y
+    }
+    await nextTick()
+  }
+
+  it('shows the point it probes and stops on the band', async () => {
+    const fixture = wrapper = mount(MaterialProbeControls, { props: { tool: 99 }, global })
+    await startMap(fixture)
+    expect(fixture.get('.setter-band p').text()).toBe('Probing the height map: point 1 of 6…')
+    // Probing order: the first row out, the second back. Between points the count holds.
+    await at(10, 0)
+    expect(fixture.get('.setter-band p').text()).toBe('Probing the height map: point 2 of 6…')
+    await at(15, 5)
+    expect(fixture.get('.setter-band p').text()).toBe('Probing the height map: point 2 of 6…')
+    await at(20, 10)
+    expect(fixture.get('.setter-band p').text()).toBe('Probing the height map: point 4 of 6…')
+    expect(findButton(fixture, 'Map')).toBeUndefined()
+    vi.mocked(send).mockClear()
+    await findButton(fixture, 'Stop')?.trigger('click')
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'abort' })
+  })
+
+  it('keeps the points of a stopped map as a partial map, and saves them labelled partial', async () => {
+    const fixture = wrapper = mount(MaterialProbeControls, { props: { tool: 99 }, global })
+    await startMap(fixture)
+    const map = { wcs: 1, columns: 3, rows: 2, rotation: 0, partial: 'The height map was stopped.', points: [
+      { work: [0, 0, 0.1], machine: [0, 0, 1] }, { work: [10, 0, 0.2], machine: [10, 0, 1] }, null, null, null, null,
+    ] as ({ work: [number, number, number]; machine: [number, number, number] } | null)[] }
+    await answer({ outcome: 'failed', reason: 'The height map was stopped.', setter: { calibration: null, measurement: null, height_map: map } })
+    expect(fixture.get('.setter-band p').text()).toBe('The height map was stopped. Kept 2 of 6 points as a partial map.')
+    expect(heightMap.value).toEqual(map)
+    expect(findButton(fixture, 'Stop')).toBeUndefined()
+    await findButton(fixture, 'Map')?.trigger('click')
+    const card = fixture.get('[role="dialog"]').text()
+    expect(card).toContain('G54, 2 points: Z 0.100 to 0.200 mm')
+    expect(card).toContain('Partial map: 2 of 6 points. The height map was stopped.')
+    vi.mocked(send).mockClear()
+    await findButton(fixture, 'Save CSV')?.trigger('click')
+    const saved = vi.mocked(send).mock.lastCall?.[0]
+    expect(saved?.type === 'save_program' && saved.path).toMatch(/^heightmap-\d{8}-\d{6}-partial\.csv$/)
+    const lines = saved?.type === 'save_program' ? saved.text.split('\n') : []
+    expect(lines[0]).toContain(' points=2 grid_points=6 partial="The height map was stopped."')
+    expect(lines).toHaveLength(5)
+  })
+
+  it('refuses a grid whose worst case exceeds the 2 h limit', async () => {
+    // A 5 mm/min latch: about 98 s a point, so 150 points are over 4 h.
+    panel.hello = { ...hello, fixed_setter: { reference_tool: 98, travel_mm: 15, feed_mm_min: 240, xy_tolerance_mm: 0.5,
+      latch_feed_mm_min: 5, latch_backoff_mm: 1, material_travel_mm: 20 } }
+    const fixture = wrapper = mount(MaterialProbeControls, { props: { tool: 99 }, global })
+    await fixture.get('.probe-utilities button[aria-haspopup=dialog]').trigger('click')
+    await findButton(fixture, 'Height map…')?.trigger('click')
+    const fields = fixture.findAll('.grid-fields input')
+    // 15 × 10 points; the clearance stays at the present Z, so there is no descent.
+    for (const [index, value] of ['0', '140', '0', '90', '10'].entries()) await fields[index]?.setValue(value)
+    expect(fixture.get('.summary').text()).toBe('Up to 245 min, more than the 120 min limit. Use fewer points.')
+    expect(fixture.get('.start-map').attributes('disabled')).toBeDefined()
   })
 })
 

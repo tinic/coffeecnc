@@ -295,7 +295,7 @@ export class SimMachine {
     const first = this.modal.tools.find(tool => tool.number === 1)
     if (first) Object.assign(first, { diameter: 10, comment: 'Carbide end mill 10 mm' })
     this.modal.tools.push(...demoProbeTools.map(tool => ({ ...tool })))
-    this.probe = new SimProbe(this.modal.tools)
+    this.probe = new SimProbe(this.modal.tools, travel)
   }
 
   /**
@@ -972,9 +972,10 @@ export class SimMachine {
           this.velocity = 0
           this.syncModal()
           const failure = pending.plan.failure
+          // A stopped height map fails with the points it measured.
           const result = failure === undefined
             ? { outcome: 'accepted' as const, reason: '', setter: pending.plan.finish() }
-            : fail(failure)
+            : pending.plan.partial === true ? { ...fail(failure), setter: pending.plan.finish() } : fail(failure)
           this.historySource = { source: pending.source, restores: null }
           this.checkTools()
           this.checkOffsets()

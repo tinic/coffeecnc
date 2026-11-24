@@ -8,7 +8,10 @@ type Lateral = Exclude<ProbeDirection, 'z_top'>
 type Cycle = Exclude<FixedSetter, { action: 'status' }>
 type Axis = 'X' | 'Y' | 'Z' | 'XY'
 export interface ProbeMove { target: Vec3; feed?: number; contact?: boolean }
-export interface ProbePlan { moves: ProbeMove[]; finish: () => SetterState; failure?: string }
+/** `failure` fails the cycle after its moves; with `partial` the result keeps the setter state (a stopped height map). */
+export interface ProbePlan { moves: ProbeMove[]; finish: () => SetterState; failure?: string; partial?: boolean }
+/** Machine travel, mm. */
+export interface Travel { readonly min: Vec3; readonly max: Vec3 }
 
 const { stock, slanted, gauge, pocket, slot, ridge, bore, boss, setter, top,
   boreRadius, bossRadius, stockHeight, recessDepth } = demoFixture
@@ -164,7 +167,7 @@ export class SimProbe {
   private angle: { id: number; rotation: number; frame: string } | null = null
   private angleId = 0
 
-  constructor(tools: readonly Tool[]) {
+  constructor(tools: readonly Tool[], private readonly travel: Travel = { min: [-Infinity, -Infinity, -Infinity], max: [Infinity, Infinity, Infinity] }) {
     this.physicalLengths = new Map(tools.map(tool => [tool.number, tool.number === 1 ? 62.43 : tool.length]))
   }
 
@@ -271,7 +274,26 @@ export class SimProbe {
         return [mx + offset[0] + modal.toolOffset[0], my + offset[1] + modal.toolOffset[1], z + offset[2] + modal.g92[2] + modal.toolOffset[2]]
       }
       const at = (index: number, count: number, from: number, to: number): number => count === 1 ? from : from + (to - from) * index / (count - 1)
-      const points: NonNullable<SetterState['height_map']>['points'] = []
+      const where = (column: number, row: number): string =>
+        `X${at(column, grid.columns, command.x_min, command.x_max).toFixed(3)} Y${at(row, grid.rows, command.y_min, command.y_max).toFixed(3)} mm`
+      // As natively: every point's search start and end and the lift inside the travel, before any motion.
+      const inTravel = (point: Vec3): boolean => point.every((value, axis) =>
+        Number.isFinite(value) && value >= (this.travel.min[axis] ?? -Infinity) && value <= (this.travel.max[axis] ?? Infinity))
+      const lift = Math.max(start[2], toMachine(command.x_min, command.y_min, command.clearance)[2])
+      for (let row = 0; row < grid.rows; row++) {
+        for (let column = 0; column < grid.columns; column++) {
+          const [x, y, z] = toMachine(at(column, grid.columns, command.x_min, command.x_max), at(row, grid.rows, command.y_min, command.y_max), command.clearance)
+          if (!inTravel([x, y, z]) || !inTravel([x, y, z - searchTravel]) || !inTravel([x, y, lift]))
+            return `Grid point ${where(column, row)} is outside the configured travel at the clearance or the search depth.`
+        }
+      }
+      const points: NonNullable<SetterState['height_map']>['points'] = Array<null>(grid.columns * grid.rows).fill(null)
+      const map = (partial?: string): ProbePlan => result(() => ({
+        height_map: { wcs: modal.wcs, columns: grid.columns, rows: grid.rows, rotation, points, ...(partial === undefined ? {} : { partial }) },
+      }))
+      // A stop after the first point keeps the points measured so far, as natively.
+      const stop = (reason: string): ProbePlan | string =>
+        points.some((point) => point !== null) ? { ...map(reason), failure: reason, partial: true } : reason
       let from = start
       for (let row = 0; row < grid.rows; row++) {
         for (let step = 0; step < grid.columns; step++) {
@@ -284,15 +306,19 @@ export class SimProbe {
           const solid = (over(above, stock) && radiusFrom(above, bore) > boreRadius) ||
             over(above, gauge) || over(above, ridge) || over(above, slanted) || radiusFrom(above, boss) <= bossRadius
           const surfaceZ = gaugeZ - (over(above, pocket) || over(above, slot) ? recessDepth : 0)
-          if (!solid || above[2] <= surfaceZ || above[2] - surfaceZ > searchTravel)
-            return `Point X${at(column, grid.columns, command.x_min, command.x_max).toFixed(3)} Y${at(row, grid.rows, command.y_min, command.y_max).toFixed(3)}: ${noContact}`
+          if (!solid || above[2] <= surfaceZ || above[2] - surfaceZ > searchTravel) return stop(`Point ${where(column, row)}: ${noContact}`)
           const contact: Vec3 = [above[0], above[1], surfaceZ]
           path.touch(above, contact)
           points[row * grid.columns + column] = { work: toWork(modal, contact), machine: contact }
           from = above
+          const gap = above[2] - surfaceZ
+          if (gap < latchBackoff && points.some((point) => point === null)) {
+            return stop(`The top at ${where(column, row)} is ${gap.toFixed(3)} mm below the clearance Z, within the ` +
+              `${latchBackoff.toFixed(3)} mm latch back-off. Raise the clearance Z.`)
+          }
         }
       }
-      return result(() => ({ height_map: { wcs: modal.wcs, columns: grid.columns, rows: grid.rows, points } }))
+      return map()
     }
     if (command.action === 'material') {
       if (command.direction === 'z_top') {

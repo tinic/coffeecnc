@@ -5,7 +5,9 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace coffeecnc {
@@ -110,6 +112,30 @@ inline auto height_grid(const std::array<double, 4>& corners, double step)
   return grid;
 }
 
+// The longest a height map may take, in seconds, and the longest one of its points can take with
+// these limits. A point is a search over the whole material travel, three latch passes (back-off
+// at twice the search feed, up to 2 s for the release, then twice the back-off at the latch
+// feed), the retract over the travel at twice the search feed with its 2 s release, and 10 s for
+// the lift, the traverse at the clearance and the feed and interlock blocks. The panel computes
+// the same (ui/src/height-map.ts) for its answer deadline.
+constexpr double max_height_map_seconds = 7200;
+inline auto height_map_point_seconds(const FixedSetterLimits& limits) -> double {
+  if (!(limits.feed_mm_min > 0) || !(limits.latch_feed_mm_min > 0))
+    return std::numeric_limits<double>::infinity();
+  const double fast = 2 * limits.feed_mm_min;
+  const double search = limits.material_travel_mm / limits.feed_mm_min * 60;
+  const double pass = (limits.latch_backoff_mm / fast * 60) + 2 +
+                      (2 * limits.latch_backoff_mm / limits.latch_feed_mm_min * 60);
+  const double retract = (limits.material_travel_mm / fast * 60) + 2;
+  return search + (3 * pass) + retract + 10;
+}
+// Every point, and the first feed down from the start to the clearance (`descent_mm`).
+inline auto height_map_seconds(const FixedSetterLimits& limits, int points, double descent_mm)
+    -> double {
+  return (points * height_map_point_seconds(limits)) +
+         (std::max(0.0, descent_mm) / (2 * limits.feed_mm_min) * 60);
+}
+
 struct SetterEpoch {
   std::uint64_t page;
   std::uint64_t datum;
@@ -159,16 +185,20 @@ struct SetterState {
   // Physical widths from the probed faces, in mm. A slot or ridge has only one measured axis.
   std::array<std::optional<double>, 2> feature_size{};
   // After a height map: each point's top, in the work system and in machine coordinates, mm;
-  // row by row from the first corner.
+  // row by row from the first corner. A map that stopped after some points is partial: it keeps
+  // the points measured so far, and `partial` says why it stopped.
   struct HeightMap {
     int wcs{};
     int columns{};
     int rows{};
+    double rotation_deg{}; // the work system's XY rotation
     struct Point {
       std::array<double, 3> work;
       std::array<double, 3> machine;
+      bool measured{};
     };
     std::vector<Point> points;
+    std::optional<std::string> partial{};
   };
   std::optional<HeightMap> height_map{};
 };

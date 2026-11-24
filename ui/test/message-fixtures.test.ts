@@ -1126,6 +1126,16 @@ const examples = [
     }
   },
   {
+    "type": "result",
+    "id": 49,
+    "outcome": "rejected",
+    "reason": "Missing required field: path.",
+    "refusal": {
+      "key": "messages.request.missingField",
+      "params": { "field": "path" }
+    }
+  },
+  {
     "type": "directory",
     "path": "/home/cnc/nc_files",
     "parent": null,

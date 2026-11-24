@@ -334,6 +334,10 @@ auto encoded_messages() -> std::vector<Encoded> {
   messages.emplace_back(encode_result(45, CommandOutcome::accepted, "", {},
                                       RestartPlan{3, true, restart}));
 
+  messages.emplace_back(
+      encode_result(49, CommandOutcome::rejected, "Missing required field: path.", {}, {},
+                    RefusalMessage{"messages.request.missingField", {{"field", "path"}}}));
+
   Directory top;
   top.path = "/home/cnc/nc_files";
   top.entries = {{"fixtures", EntryKind::directory, 0, 1700000000000},

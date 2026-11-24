@@ -899,6 +899,12 @@ void decode_errors() {
   Rig rig;
   rig.expect(R"("type":"set_mode","mode":"auto")", "rejected", "Unknown protocol v1 command.");
   rig.expect(R"("type":"run","line":100)", "rejected", "Unexpected field in request.");
+  const auto missing = results(rig.send(R"("type":"open_program")"));
+  require(missing.size() == 1 && missing.front().at("outcome") == "rejected" &&
+              missing.front().at("reason") == "Missing required field: path." &&
+              missing.front().at("refusal") ==
+                  Json{{"key", "messages.request.missingField"}, {"params", {{"field", "path"}}}},
+          "An invalid command with an ID carries its field as a catalog parameter");
   require(rig.port.calls.empty() && rig.port.snapshots == 0,
           "Invalid requests reach no controller");
   const auto seen = rig.next_id - 1;

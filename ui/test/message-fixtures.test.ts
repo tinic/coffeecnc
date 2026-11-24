@@ -1128,6 +1128,16 @@ const examples = [
   },
   {
     "type": "result",
+    "id": 54,
+    "outcome": "failed",
+    "reason": "Home the machine before jogging Y: two motors drive it.",
+    "localization": {
+      "key": "backend.nmlPort.homeBeforeJogging",
+      "params": { "axis": "Y", "motors": "two" }
+    }
+  },
+  {
+    "type": "result",
     "id": 45,
     "outcome": "accepted",
     "reason": "",

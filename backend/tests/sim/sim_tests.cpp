@@ -5244,12 +5244,22 @@ void gantry(Rig& rig) {
             step.reason == y_refusal && joint_positions() == before,
         std::format("{} {} {}", held.text(), step.text(), joint_positions()));
   rig.direct([&]() -> void {
+    const MessageKey expected{"backend.nmlPort.homeBeforeJogging",
+                              {{"axis", "Y"}, {"motors", "two"}}};
     const auto forced = rig.port.start_jog(Axis::y, 1, 600, JogSpace::joint, always());
     rig.direct_pump(200ms);
-    check("gantry_port_refuses_y_joint_jog",
-          forced.status == ActionStatus::failed && forced.reason == y_refusal &&
-              joint_positions() == before,
-          std::format("{}:{} {}", static_cast<int>(forced.status), forced.reason,
+    check(
+        "gantry_port_refuses_y_joint_jog",
+        forced.status == ActionStatus::failed && forced.reason == y_refusal &&
+            forced.localization == expected && joint_positions() == before,
+        std::format("{}:{} {}", static_cast<int>(forced.status), forced.reason, joint_positions()));
+
+    const auto forced_step = rig.port.jog_increment(Axis::y, 1, 600, JogSpace::joint, always());
+    rig.direct_pump(200ms);
+    check("gantry_port_refuses_y_joint_step",
+          forced_step.status == ActionStatus::failed && forced_step.reason == y_refusal &&
+              forced_step.localization == expected && joint_positions() == before,
+          std::format("{}:{} {}", static_cast<int>(forced_step.status), forced_step.reason,
                       joint_positions()));
   });
 

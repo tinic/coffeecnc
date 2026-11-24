@@ -384,6 +384,15 @@ describe('translateMessage', () => {
       .toBe('Y をジョグする前に機械を原点復帰してください：この軸は2台のモーターで駆動されています。')
   })
 
+  it('translates the gantry adapter refusal with its axis and motor count', async () => {
+    await setLanguage('fr')
+    expect(translateResult({
+      type: 'result', id: 54, outcome: 'failed',
+      reason: 'Home the machine before jogging Y: two motors drive it.',
+      localization: { key: 'backend.nmlPort.homeBeforeJogging', params: { axis: 'Y', motors: 'two' } },
+    })).toBe('Référencez la machine avant de jogger Y : deux moteurs l’entraînent.')
+  })
+
   it('translates the known parts of a composed sentence', async () => {
     await setLanguage('de')
     expect(translateMessage('Panel request ignored: Missing required field: axis.'))

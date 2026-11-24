@@ -2082,7 +2082,7 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
       (!is_material_probe(request.action) || request.action == SetterAction::ball ||
        apply_angle || apply_measurement))
     return setter_failure("This probe action always writes its result.",
-                          MessageKey{"messages.request.probeAlwaysWrites"});
+                          MessageKey{"messages.policy.probeAlwaysWrites"});
   if (!apply_angle && request.action != SetterAction::status)
     impl_->edge_measurement.reset();
   if (!apply_measurement && request.action != SetterAction::status)

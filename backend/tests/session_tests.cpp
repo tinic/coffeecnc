@@ -1908,6 +1908,36 @@ void stale_requests_send_nothing() {
   }
 }
 
+void stop_distinguishes_queued_requests_after_mode_change() {
+  Rig rig;
+  rig.port.state.mode = TaskMode::mdi;
+  const auto clock = [] { return at(0ms); };
+  rig.port.during["set_task_mode"] = [&] {
+    static_cast<void>(rig.session.control(clock(), {true, true}));
+  };
+  const auto home = rig.session.submit(rig.page, R"({"id":2,"type":"home","axis":"x"})", clock());
+  require(results(home).empty(), "The home request is queued");
+  const auto blocked = rig.session.work(clock);
+  require(blocked.status == WorkStatus::blocked && results(blocked.outcome).empty(),
+          "The home request waits for the jog-stop level after changing to manual mode");
+  rig.acted({"set_task_mode manual"}, "The mode change was sent but homing was not");
+
+  const auto queued = rig.session.submit(rig.page, R"({"id":3,"type":"home","axis":"y"})", clock());
+  require(results(queued).empty(), "The second home request is also queued");
+  const auto stopped = results(rig.session.submit(rig.page, R"({"id":4,"type":"abort"})", clock()));
+  require(stopped.size() == 2 && stopped.at(0).at("id") == 2 && stopped.at(1).at("id") == 3,
+          "Stop immediately reports both cancelled requests");
+  require(stopped.at(0).at("outcome") == "failed" && !stopped.at(0).contains("refusal") &&
+              stopped.at(0).at("reason") == "The mode was changed, but a stop request cancelled "
+                                            "the command before it was sent." &&
+              stopped.at(0).at("localization").at("key") == "messages.session.modeChanged",
+          "The partially sent request is reported as having changed the mode");
+  require(stopped.at(1).at("outcome") == "rejected" && !stopped.at(1).contains("localization") &&
+              stopped.at(1).at("reason") == "Cancelled by a stop request before it was sent." &&
+              stopped.at(1).at("refusal").at("key") == "messages.session.cancelled",
+          "The unsent request keeps its cancellation refusal");
+}
+
 // The port is handed the question with every action, and the answer follows the request: a
 // real port asks it down to the moment it writes.
 void port_is_told_when_a_request_goes_stale() {
@@ -3067,6 +3097,7 @@ auto main(int argc, char** argv) -> int {
     outside_changes_stop_held_jogs();
     stopped_jogs_need_a_release();
     stale_requests_send_nothing();
+    stop_distinguishes_queued_requests_after_mode_change();
     port_is_told_when_a_request_goes_stale();
     increments_are_tracked();
     home_after_increment();

@@ -19,6 +19,7 @@ const native = import.meta.glob<string>([
 ], { query: '?raw', import: 'default', eager: true })
 const adapter = import.meta.glob<string>([
   '../../backend/src/core/include/coffeecnc/core/controller_port.hpp',
+  '../../backend/src/core/include/coffeecnc/core/jog_stop_report.hpp',
   '../../backend/src/linuxcnc/src/nml_port.cpp',
   '../../backend/src/linuxcnc/src/nml_panel_source.cpp',
 ], { query: '?raw', import: 'default', eager: true })
@@ -46,8 +47,6 @@ const composed: Record<string, string> = {
   // session.cpp: "The previous jog stop on " + letter + " is not confirmed: " + reason.
   'The previous jog stop on ': `The previous jog stop on X is not confirmed: ${detail}`,
   ' is not confirmed: ': `The previous jog stop on X is not confirmed: ${detail}`,
-  // session.cpp: "Jog stop failed on " + letter + ": " + reason.
-  'Jog stop failed on ': `Jog stop failed on X: ${detail}`,
   // session.cpp: a refusal of its own, without a final period.
   'A touch probe is loaded': 'A touch probe is loaded',
 }
@@ -224,19 +223,55 @@ describe('native and store sentences', () => {
     for (const text of english) expect(all).toContain(`"${text}"`)
   })
 
-  it('keeps the keys for native messages and failures in the English catalog', () => {
-    let literalCount = 0
-    for (const source of [...Object.values(native), ...Object.values(adapter)]) {
-      for (const [, key] of source.matchAll(/MessageKey\{\s*"([^"]+)"/g))
-        expect(i18n.global.te(key ?? '', 'en'), key).toBe(true)
-      for (const { text, after } of cppLiterals(source)) {
-        const key = /^(?:\s*,\s*\{\})*\s*,\s*MessageKey\{\s*"([^"]+)"\s*\}/.exec(after)?.[1]
-        if (key === undefined) continue
-        expect(i18n.global.t(key as never, {}, { locale: 'en' }), key).toBe(text)
-        literalCount += 1
-      }
+  it('keeps native message keys, fallback text and named arguments in sync', () => {
+    const sources = { ...native, ...adapter }
+    const literals = Object.values(sources).flatMap(cppLiterals)
+    const constants = new Map<string, string>()
+    for (const literal of literals) {
+      const name = /\bconstexpr (?:auto|std::string_view) (\w+)\s*=\s*$/.exec(literal.before)?.[1]
+      if (name !== undefined) constants.set(name, literal.text)
     }
-    expect(literalCount).toBeGreaterThan(60)
+
+    const value = /MessageKey\{\s*"([^"]+)"(?:,\s*\{([\s\S]*?)\}\s*\})?/g
+    const argument = /\{\s*"(\w+)"\s*,/g
+    const beforeKey = /^(?:\s*,\s*\{\})*\s*,\s*MessageKey\{/
+    const afterFormat = /^[^;"]*?\),[^;"]*?MessageKey\{/
+    const named = /\b(?:std::string\((\w+)\)|(\w+))(?:\s*,\s*\{\})*\s*,\s*(MessageKey\{)/g
+
+    function checkMatch(match: RegExpMatchArray, fallback: string): void {
+      const key = match[1] ?? ''
+      const names = [...(match[2] ?? '').matchAll(argument)].map((arg) => arg[1] ?? '')
+      const markers = names.map((name) => `{${name}}`)
+      const params = Object.fromEntries(names.map((name, index) => [name, markers[index]]))
+      expect(i18n.global.te(key, 'en'), key).toBe(true)
+      let index = 0
+      expect(i18n.global.t(key as never, params, { locale: 'en' }), key)
+        .toBe(fallback.replaceAll('{}', () => markers[index++] ?? '{}'))
+      expect(index, key).toBe(names.length)
+    }
+
+    for (const [path, source] of Object.entries(sources)) {
+      const expected = [...source.matchAll(value)].map((match) => match[1])
+      const checked: (string | undefined)[] = []
+      const check = (site: string, fallback: string): void => {
+        const match = [...site.matchAll(value)][0]
+        if (match === undefined) return
+        checkMatch(match, fallback)
+        checked.push(match[1])
+      }
+      for (const literal of cppLiterals(source)) {
+        if (beforeKey.test(literal.after) ||
+            (literal.before.trimEnd().endsWith('std::format(') && afterFormat.test(literal.after)))
+          check(literal.after, literal.text)
+      }
+      for (const match of source.matchAll(named)) {
+        const fallback = constants.get(match[1] ?? match[2] ?? '')
+        if (fallback === undefined) continue
+        const from = match.index + match[0].lastIndexOf(match[3] ?? '')
+        check(source.slice(from), fallback)
+      }
+      expect(checked.sort(), path).toEqual(expected.sort())
+    }
   })
 })
 

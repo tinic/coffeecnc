@@ -47,12 +47,15 @@ export class SimAlarmLog {
   /** A message the simulator sent: operator messages and refusals are recorded. */
   observe(message: FromMachine, now: number): void {
     if (message.type === 'message') {
-      this.add({ session: this.session, time: message.time, level: message.level, text: message.text, outcome: null, command: null })
+      this.add({ session: this.session, time: message.time, level: message.level, text: message.text,
+        outcome: null, command: null, ...(message.localization ? { localization: message.localization } : {}) })
     } else if (message.type === 'result') {
       const command = this.commands.get(message.id) ?? null
       this.commands.delete(message.id)
       if (message.outcome === 'accepted') return
-      this.add({ session: this.session, time: now, level: 'error', text: message.reason, outcome: message.outcome, command })
+      const localization = message.refusal ?? message.localization
+      this.add({ session: this.session, time: now, level: 'error', text: message.reason, outcome: message.outcome,
+        command, ...(localization ? { localization } : {}) })
     }
   }
 

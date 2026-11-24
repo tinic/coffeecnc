@@ -122,8 +122,9 @@ struct NmlPanelSource::Impl {
       withheld = std::move(rows);
       if (!std::exchange(comments_failed, true))
         messages.push_back({true,
-                            "The tool table file " + config.tool_table +
-                                " cannot be read: the tool table is not shown.",
+                            std::format("The tool table file {} cannot be read: the tool table "
+                                        "is not shown.",
+                                        config.tool_table),
                             MessageKey{"backend.nmlPanelSource.toolTableUnreadable",
                                        {{"file", config.tool_table}}}});
     }

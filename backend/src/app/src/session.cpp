@@ -473,7 +473,8 @@ auto Session::submit(PageToken page, std::string_view json, Instant now,
   if (const auto* error = std::get_if<DecodeError>(&decoded)) {
     if (!error->id)
       outcome.messages.push_back(encode_message(
-          MessageLevel::error, "Panel request ignored: " + error->reason, now.unix_time,
+          MessageLevel::error, std::format("Panel request ignored: {}", error->reason),
+          now.unix_time,
           MessageKey{"messages.session.requestIgnored", {{"detail", error->reason}}}));
     else if (in_order(*error->id))
       outcome.messages.push_back(
@@ -660,12 +661,18 @@ auto Session::submit(PageToken page, std::string_view json, Instant now,
   } else if (stop_request) {
     stop_jogs();
     ++cancels_;
-    for (const auto& waiting : requests_)
-      if (!waiting.stop)
-        outcome.messages.push_back(encode_result(
-            waiting.id, waiting.sent ? CommandOutcome::failed : CommandOutcome::rejected,
-            waiting.sent ? mode_changed_reason : cancelled_reason, {}, {},
-            RefusalMessage{"messages.session.cancelled"}));
+    for (const auto& waiting : requests_) {
+      if (waiting.stop)
+        continue;
+      if (waiting.sent)
+        outcome.messages.push_back(encode_result(waiting.id, CommandOutcome::failed,
+                                                 mode_changed_reason, {}, {}, {},
+                                                 MessageKey{"messages.session.modeChanged"}));
+      else
+        outcome.messages.push_back(encode_result(waiting.id, CommandOutcome::rejected,
+                                                 cancelled_reason, {}, {},
+                                                 RefusalMessage{"messages.session.cancelled"}));
+    }
     drop_requests();
   }
   auto& queue = stop_request ? stops_ : requests_;
@@ -977,10 +984,11 @@ auto Session::run(Queued request, const Clock& clock) -> Work {
     forget_press(request);
     // `rejected` only when nothing at all was sent for the request; otherwise `failed`, with
     // what was sent and what was not.
-    if (step.reply.reason.empty() && request.sent) {
-      step.reply.reason = mode_changed_reason;
-      step.reply.localization = MessageKey{"messages.session.modeChanged"};
-    }
+    if (step.reply.reason.empty() && request.sent)
+      step.reply = {CommandOutcome::failed,
+                    mode_changed_reason,
+                    {},
+                    MessageKey{"messages.session.modeChanged"}};
     if (step.reply.reason.empty())
       step.reply = {CommandOutcome::rejected, cancelled_reason,
                     RefusalMessage{"messages.session.cancelled"}};

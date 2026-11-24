@@ -1,7 +1,10 @@
 import type { FixedSetter, ProbeDirection, SetterState, Tool, Vec3 } from '../protocol'
 import { demoFixture, demoProbe, demoProbeTools, demoSetter, type ProbeBlock } from './probe-fixture'
 import { toWork, type Modal } from './gcode'
-import { arcAnglesValid, arcMinMeasuredSpan, circleThrough, measuredSpan } from '../arc'
+import {
+  arcAnglesValid, arcCentreUncertainty, arcMaxCentreUncertainty, arcMinMeasuredSpan, bossDiameterPlausible, circleThrough, contactSigma,
+  measuredSpan,
+} from '../arc'
 
 type XY = [number, number]
 type Lateral = Exclude<ProbeDirection, 'z_top'>
@@ -326,7 +329,7 @@ export class SimProbe {
     const corner = (x: number, y: number): Vec3 => fromFrame([x, y, start[2]])
     if (command.action === 'bore_arc' || command.action === 'boss_arc') {
       if (!arcAnglesValid(command.angles))
-        return 'Enter three probe angles at least 10° apart that cover at least 30° of the circle.'
+        return 'Enter three probe angles at least 10° apart that cover at least 90° of the circle.'
       const inside = command.action === 'bore_arc'
       if (inside && (radiusFrom(start, bore) >= boreRadius - rubyRadius ||
           start[2] + rubyRadius >= gaugeZ || start[2] < gaugeZ - stockHeight)) return 'Jog the ball into the simulated bore below its top.'
@@ -355,8 +358,15 @@ export class SimProbe {
       const surface = circle.radius + (inside ? tableRadius : -tableRadius)
       if (!(surface > 0) || Math.hypot(startFrame[0] - circle.centre[0], startFrame[1] - circle.centre[1]) >= surface)
         return 'The circle through the contacts does not enclose the confirmed starting point.'
+      if (!inside && !bossDiameterPlausible(2 * surface, command.diameter))
+        return `The contacts give a boss of Ø ${(2 * surface).toFixed(3)} mm, not about the entered Ø ${command.diameter.toFixed(3)} mm. Check that all three touched the boss, then probe again.`
+      // The simulated latch repeats exactly: each contact counts with the 1 µm floor.
+      const sigma = contactSigma(0)
+      const uncertainty = arcCentreUncertainty([a, b, c], circle.centre, [sigma, sigma, sigma])
+      if (uncertainty === null || uncertainty > arcMaxCentreUncertainty)
+        return `The centre is uncertain by ${(uncertainty ?? Infinity).toFixed(3)} mm, more than 0.02 mm: the contacts cover ${span.toFixed(1)}° with a latch spread up to 0.0000 mm. Spread the angles further and probe again.`
       const offset = origin(corner(circle.centre[0], circle.centre[1]), 'XY')
-      return { ...offset, finish: () => ({ ...offset.finish(), center_diameter: 2 * surface, arc_span: span }) }
+      return { ...offset, finish: () => ({ ...offset.finish(), center_diameter: 2 * surface, arc_span: span, center_uncertainty: uncertainty }) }
     }
     if (command.action === 'bore') {
       if (radiusFrom(start, bore) >= boreRadius - rubyRadius ||

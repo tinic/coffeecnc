@@ -635,6 +635,8 @@ export interface SetterState {
   center_diameter?: number
   /** After a 3-point bore or boss: the arc its contacts cover around the centre, degrees. */
   arc_span?: number
+  /** After a 3-point bore or boss: the estimated 95 % uncertainty of the centre, mm. */
+  center_uncertainty?: number
   /** Physical face-to-face widths in mm, one entry for each axis that was probed. */
   feature_size?: { x?: number; y?: number }
   /**
@@ -943,7 +945,7 @@ export type FixedSetter = CommandBase & { type: 'fixed_setter' } & (
   /**
    * X0 Y0 at the centre of the circle through three contacts (#247): a bore probed outward from the
    * start, a boss inward from beyond `diameter`, along `angles` (degrees from the work +X axis). The
-   * directions must be at least 10° apart and cover at least 30°.
+   * directions must be at least 10° apart and cover at least 90°.
    */
   | { action: 'bore_arc'; angles: [number, number, number]; tool: number; x: number; y: number; z: number }
   | { action: 'boss_arc'; angles: [number, number, number]; diameter: number; tool: number; x: number; y: number; z: number }

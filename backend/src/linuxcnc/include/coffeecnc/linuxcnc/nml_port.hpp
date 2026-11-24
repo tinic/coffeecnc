@@ -194,6 +194,7 @@ struct FixedSetterMove {
 struct FixedSetterContact {
   std::array<double, 3> machine; // latched machine XYZ, millimetres
   double stopping_distance;      // downward travel to settled machine Z before the retract, mm
+  double latch_spread_mm{};      // the range of the slow latch passes along the travel, mm
 };
 
 // LinuxCNC's task controller over its NML channels: the one writer of commands, the reader of

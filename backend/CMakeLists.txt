@@ -301,6 +301,12 @@ if(BUILD_TESTING)
             $<TARGET_FILE:coffeecnc_fixed_setter_tests> arc)
           set_tests_properties(linuxcnc_arc_probe_mm PROPERTIES LABELS linuxcnc
             RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 630)
+          # Misses, early trips, refused geometry and a stop mid-cycle, at +7.5°.
+          add_test(NAME linuxcnc_arc_probe_faults_mm COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+            -u mm -t 300 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_arc_probe_faults_mm
+            $<TARGET_FILE:coffeecnc_fixed_setter_tests> arc-faults)
+          set_tests_properties(linuxcnc_arc_probe_faults_mm PROPERTIES LABELS linuxcnc
+            RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 630)
         endif()
         add_test(NAME linuxcnc_arc_probe_rotated_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
           -u ${units} -t 300 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_arc_probe_rotated_${units}

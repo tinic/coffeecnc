@@ -107,7 +107,7 @@
       "arcBossLabel": "3-point boss",
       "arcBoreBusy": "Probing three bore walls…",
       "arcBossBusy": "Probing three boss faces…",
-      "arcDone": "{wcs} X0 Y0 set at the circle centre, Ø {diameter} mm, from contacts over {span}°."
+      "arcDone": "{wcs} X0 Y0 set at the circle centre, Ø {diameter} mm, from contacts over {span}°. Centre uncertainty ±{uncertainty} mm."
     },
     "guide": {
       "angleFront": "Front · Y−",

@@ -20,6 +20,7 @@
 #include <memory>
 #include <mutex>
 #include <numbers>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -932,7 +933,11 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
 // into the frame (u, v) of the work axes and computes r² = (u - 4)² + (v + 2)² there. With the
 // 2 mm ball, the ball centre touches at r = 7: a bore of Ø16 trips outside it, a boss of Ø12
 // inside it below Z 12. The expected origin is the frame point (4, -2).
-void arc_scenarios(NmlPort& port, double scale, double degrees, const auto& mdi) {
+// A box in the frame, (u - 4, v + 2) within set limits, changes the part: on a bore it is an
+// obstacle (an early trip) or a notch (no contact); on a boss a burr below its top. With
+// `faults` the scenario runs those cases and a stop mid-cycle instead of the measured cycles.
+void arc_scenarios(NmlPort& port, double scale, double degrees, const auto& mdi, bool faults,
+                   HalShared& shared) {
   checked(port.set_tool({98, 98, 50, 0, "Setter reference"}, {}));
   checked(port.set_tool({99, 99, 45, 2, "Ruby probe"}, {}));
   constexpr double none = std::numeric_limits<double>::quiet_NaN();
@@ -975,10 +980,15 @@ void arc_scenarios(NmlPort& port, double scale, double degrees, const auto& mdi)
   // comp, wcomp and and2 belong to the machine's HAL: windows with near, gates with logic.
   halcmd("loadrt sum2 names=sim-arc-du,sim-arc-dv,sim-arc-r2");
   halcmd("loadrt mult2 names=sim-arc-du2,sim-arc-dv2");
-  halcmd("loadrt near names=sim-arc-in,sim-arc-z");
-  halcmd("loadrt logic names=sim-arc-hollow,sim-arc-solid personality=0x801,0x102");
+  halcmd("loadrt near names=sim-arc-in,sim-arc-z,sim-arc-bu,sim-arc-bv");
+  // Personalities: 0x1nn AND, 0x2nn OR, 0x8nn NAND of nn inputs (0x801 is NOT).
+  halcmd("loadrt logic names=sim-arc-hollow,sim-arc-solid,sim-arc-box,sim-arc-notbox,"
+         "sim-arc-hollowburr,sim-arc-hollownotch,sim-arc-burrlow,sim-arc-solidburr "
+         "personality=0x801,0x102,0x102,0x801,0x202,0x102,0x102,0x202");
   for (const auto* part : {"sim-arc-du", "sim-arc-dv", "sim-arc-du2", "sim-arc-dv2", "sim-arc-r2",
-                           "sim-arc-in", "sim-arc-z", "sim-arc-hollow", "sim-arc-solid"})
+                           "sim-arc-in", "sim-arc-z", "sim-arc-bu", "sim-arc-bv", "sim-arc-hollow",
+                           "sim-arc-solid", "sim-arc-box", "sim-arc-notbox", "sim-arc-hollowburr",
+                           "sim-arc-hollownotch", "sim-arc-burrlow", "sim-arc-solidburr"})
     halcmd(std::format("addf {} servo-thread", part));
   halcmd("net sim-arc-mx axis.x.pos-cmd sim-arc-du.in0 sim-arc-dv.in0");
   halcmd("net sim-arc-my axis.y.pos-cmd sim-arc-du.in1 sim-arc-dv.in1");
@@ -988,8 +998,8 @@ void arc_scenarios(NmlPort& port, double scale, double degrees, const auto& mdi)
   halcmd(std::format("setp sim-arc-dv.gain0 {:.12f}", -s));
   halcmd(std::format("setp sim-arc-dv.gain1 {:.12f}", c));
   halcmd(std::format("setp sim-arc-dv.offset {:.12f}", 2 / scale));
-  halcmd("net sim-arc-u sim-arc-du.out sim-arc-du2.in0 sim-arc-du2.in1");
-  halcmd("net sim-arc-v sim-arc-dv.out sim-arc-dv2.in0 sim-arc-dv2.in1");
+  halcmd("net sim-arc-u sim-arc-du.out sim-arc-du2.in0 sim-arc-du2.in1 sim-arc-bu.in1");
+  halcmd("net sim-arc-v sim-arc-dv.out sim-arc-dv2.in0 sim-arc-dv2.in1 sim-arc-bv.in1");
   halcmd("net sim-arc-u2 sim-arc-du2.out sim-arc-r2.in0");
   halcmd("net sim-arc-v2 sim-arc-dv2.out sim-arc-r2.in1");
   // Inside the contact circle: r² within [0, 7²].
@@ -1004,65 +1014,182 @@ void arc_scenarios(NmlPort& port, double scale, double degrees, const auto& mdi)
   halcmd(std::format("setp sim-arc-z.difference {:.12f}", 56 / scale));
   halcmd("setp sim-arc-z.scale 1");
   halcmd("net sim-arc-inside sim-arc-in.out sim-arc-hollow.in-00 sim-arc-solid.in-00");
-  halcmd("net sim-arc-low sim-arc-z.out sim-arc-solid.in-01");
-  const auto probe_input = [&](std::string_view net, std::string_view pin) {
+  halcmd("net sim-arc-low sim-arc-z.out sim-arc-solid.in-01 sim-arc-burrlow.in-01");
+  // The box: both frame coordinates within their window.
+  halcmd("net sim-arc-box-u sim-arc-bu.out sim-arc-box.in-00");
+  halcmd("net sim-arc-box-v sim-arc-bv.out sim-arc-box.in-01");
+  halcmd("net sim-arc-in-box sim-arc-box.and sim-arc-notbox.in-00 sim-arc-hollowburr.in-01 "
+         "sim-arc-burrlow.in-00");
+  halcmd("net sim-arc-out-box sim-arc-notbox.nand sim-arc-hollownotch.in-01");
+  // The probe inputs: the plain bore wall and boss, the bore with an obstacle or a notch, the
+  // boss with a burr below its top.
+  halcmd("net sim-arc-wall sim-arc-hollow.nand sim-arc-hollowburr.in-00 sim-arc-hollownotch.in-00");
+  halcmd("net sim-arc-boss sim-arc-solid.and sim-arc-solidburr.in-00");
+  halcmd("net sim-arc-burr-low sim-arc-burrlow.and sim-arc-solidburr.in-01");
+  halcmd("net sim-arc-wall-obstacle sim-arc-hollowburr.or");
+  halcmd("net sim-arc-wall-notch sim-arc-hollownotch.and");
+  halcmd("net sim-arc-boss-burr sim-arc-solidburr.or");
+  const auto probe_input = [&](std::string_view net) {
     halcmd("unlinkp motion.probe-input");
     halcmd("unlinkp coffeecnc.probe-input");
-    halcmd(std::format("net {} {} motion.probe-input coffeecnc.probe-input", net, pin));
+    halcmd(std::format("net {} motion.probe-input coffeecnc.probe-input", net));
   };
+  // The box in millimetres of the frame relative to the circle centre: u - 4 and v + 2.
+  const auto box = [&](double u_low, double u_high, double v_low, double v_high) {
+    halcmd(std::format("setp sim-arc-bu.in2 {:.12f}", (u_low + u_high) / 2 / scale));
+    halcmd(std::format("setp sim-arc-bu.difference {:.12f}", (u_high - u_low) / 2 / scale));
+    halcmd("setp sim-arc-bu.scale 1");
+    halcmd(std::format("setp sim-arc-bv.in2 {:.12f}", (v_low + v_high) / 2 / scale));
+    halcmd(std::format("setp sim-arc-bv.difference {:.12f}", (v_high - v_low) / 2 / scale));
+    halcmd("setp sim-arc-bv.scale 1");
+  };
+  box(1000, 1001, 1000, 1001); // out of the way
 
-  const auto run = [&](std::string_view name, SetterAction action, std::array<double, 3> angles,
-                       double expected_diameter) {
+  // A cycle that the controller refuses after moving: nothing set, the probe back at its start.
+  const auto refused_run = [&](std::string_view name, SetterAction action,
+                               std::array<double, 3> angles, std::string_view reason,
+                               const Wanted& wanted = {}) {
     const auto before = port.status();
     FixedSetterRequest request{.action = action, .tool = 99, .start = machine()};
     request.angles_deg = angles;
     if (action == SetterAction::boss_arc)
-      request.gauge_width_mm = 16;
+      request.gauge_width_mm = 12;
+    const auto writes = port.writes().size();
+    const auto result = port.fixed_setter(request, epoch, wanted);
+    const auto after = port.status();
+    const bool unchanged = after.g5x == before.g5x && after.g92 == before.g92 &&
+                           after.rotation_xy == before.rotation_xy &&
+                           after.tool_offset == before.tool_offset && after.wcs == before.wcs;
+    std::cout << std::format("fact=arc_fault action={} rotation={} angles={:.0f},{:.0f},{:.0f} "
+                             "refused={} moved={} offsets_unchanged={} reason=\"{}\"",
+                             name, degrees, angles[0], angles[1], angles[2], !result,
+                             port.writes().size() > writes, unchanged,
+                             result ? std::string{} : result.error())
+              << std::endl;
+    require(!result && result.error().contains(reason) && unchanged,
+            result ? std::format("{}: expected a refusal", name) : result.error());
+    return after;
+  };
+  const auto run = [&](std::string_view name, SetterAction action, std::array<double, 3> angles,
+                       double expected_diameter) {
+    const auto before = port.status();
+    require(std::ranges::contains(before.active_codes, "G91"), "the rig sets G91 before each run");
+    FixedSetterRequest request{.action = action, .tool = 99, .start = machine()};
+    request.angles_deg = angles;
+    if (action == SetterAction::boss_arc)
+      request.gauge_width_mm = 12;
     const auto result = port.fixed_setter(request, epoch, {});
     if (!result)
       throw std::runtime_error(std::format("{} at {}°: {}", name, degrees, result.error()));
     const auto after = port.status();
     const auto origin = origin_of(after);
     const double span = arc_spread(angles).span_deg;
+    const bool incremental = std::ranges::contains(after.active_codes, "G91");
     std::cout << std::format("fact=arc_probe action={} rotation={} angles={:.0f},{:.0f},{:.0f} "
                              "requested_span={:.0f} origin_u_expected=4.0000 origin_u_measured={:.4f} "
                              "origin_v_expected=-2.0000 origin_v_measured={:.4f} diameter_expected={:.4f} "
-                             "diameter_measured={:.4f} arc_span_measured={:.1f}",
+                             "diameter_measured={:.4f} arc_span_measured={:.1f} "
+                             "centre_uncertainty_mm={:.4f} g91_after={}",
                              name, degrees, angles[0], angles[1], angles[2], span, origin[0],
                              origin[1], expected_diameter, result->center_diameter.value_or(none),
-                             result->arc_span_deg.value_or(none))
+                             result->arc_span_deg.value_or(none),
+                             result->center_uncertainty_mm.value_or(none), incremental)
               << std::endl;
     require(result->material && result->material->corner && result->center_diameter &&
                 std::abs(*result->center_diameter - expected_diameter) < 0.03 &&
                 std::abs(origin[0] - 4) < 0.03 && std::abs(origin[1] + 2) < 0.03 &&
-                result->arc_span_deg && *result->arc_span_deg > 20 && after.wcs == 2 &&
+                result->arc_span_deg && *result->arc_span_deg >= arc_min_measured_span_deg &&
+                result->center_uncertainty_mm && *result->center_uncertainty_mm > 0 &&
+                *result->center_uncertainty_mm <= arc_max_centre_uncertainty_mm && after.wcs == 2 &&
                 std::abs(after.rotation_xy - degrees) < 1e-9 && after.g92 == initial.g92 &&
                 after.tool_offset == initial.tool_offset &&
                 std::abs(after.g5x[2] - before.g5x[2]) < 1e-6 &&
                 std::abs(machine()[2] - before.controller.axes[2].machine) < 0.03,
             std::format("{} finds the centre and diameter through three contacts at {}°", name,
                         degrees));
+    require(incremental, std::format("{} restores G91 after the cycle", name));
   };
-  // A bore: from inside, three walls; one set around the circle, one partial arc on one side.
-  probe_input("sim-arc-wall", "sim-arc-hollow.nand");
+
+  if (faults) {
+    // Bore: no wall within the travel at point 2, then at point 3 (a notch in the wall).
+    probe_input("sim-arc-wall-notch");
+    box(-14, -1, 4, 22);
+    at(2, 1);
+    refused_run("bore_missed_point_2", SetterAction::bore_arc, {0, 120, 240}, "Contact 2 at 120.0°");
+    box(-14, -3, -16, -2);
+    at(2, 1);
+    refused_run("bore_missed_point_3", SetterAction::bore_arc, {0, 120, 240}, "Contact 3 at 240.0°");
+    // A flat wall across all three directions: the contacts lie on a line.
+    probe_input("sim-arc-wall-obstacle");
+    box(1, 50, -50, 50);
+    at(2, 1);
+    refused_run("bore_collinear", SetterAction::bore_arc, {-45, 0, 45}, "lie almost on a line");
+    // An obstacle 2 mm ahead of the start at 0°: the circle bulges away from the start.
+    box(0, 0.5, 2.5, 3.5);
+    at(2, 1);
+    refused_run("bore_start_outside", SetterAction::bore_arc, {-45, 0, 45},
+                "does not enclose the confirmed starting point");
+    // Boss: a burr on the face at 180° (point 2), then at 270° (point 3): an early trip.
+    probe_input("sim-arc-boss-burr");
+    box(-13, -12, 0, 2);
+    at(3, -1);
+    refused_run("boss_early_point_2", SetterAction::boss_arc, {90, 180, 270}, "not about the entered");
+    box(-2, 0, -13, -12);
+    at(3, -1);
+    refused_run("boss_early_point_3", SetterAction::boss_arc, {90, 180, 270}, "not about the entered");
+    // A stop while the second contact searches, 0.7 s after its probe cycle began: the cycle
+    // ends without a write.
+    box(1000, 1001, 1000, 1001);
+    probe_input("sim-arc-wall");
+    at(2, 1);
+    int cycles = 0;
+    bool active = false;
+    bool stopped = false;
+    std::optional<HalShared::Clock::time_point> second;
+    const auto stopped_run = refused_run(
+        "bore_stopped_contact_2", SetterAction::bore_arc, {0, 120, 240}, "Contact 2", [&] {
+          const auto now = HalShared::Clock::now();
+          const auto pins = shared.view(now);
+          const bool running = pins && pins->probe_cycle_active;
+          if (active && !running)
+            ++cycles;
+          active = running;
+          if (cycles >= 1 && running && !second)
+            second = now;
+          stopped = stopped || (second && now - *second >= 700ms);
+          return !stopped;
+        });
+    std::cout << std::format("fact=arc_fault action=stop rotation={} stopped_during_contact=2 "
+                             "machine_on={}",
+                             degrees, stopped_run.controller.machine == MachineState::on)
+              << std::endl;
+    require(stopped, "the stop came while the second contact ran");
+    return;
+  }
+
+  // A bore: from inside, three walls; one set around the circle, one partial arc on one side
+  // that covers the 90° minimum.
+  probe_input("sim-arc-wall");
   at(2, 1);
   run("bore_arc", SetterAction::bore_arc, {0, 120, 240}, 16);
   at(2, 1);
-  run("bore_arc_partial", SetterAction::bore_arc, {-80, -40, 0}, 16);
-  // A boss: from outside beyond Ø16, three faces; again a partial arc.
-  probe_input("sim-arc-boss", "sim-arc-solid.and");
+  run("bore_arc_partial", SetterAction::bore_arc, {-45, 0, 45}, 16);
+  // A boss of Ø12 entered as Ø12: from outside, three faces; again a partial arc.
+  probe_input("sim-arc-boss");
   at(3, -1);
   run("boss_arc", SetterAction::boss_arc, {90, 180, 270}, 12);
   at(3, -1);
-  run("boss_arc_partial", SetterAction::boss_arc, {200, 240, 280}, 12);
+  run("boss_arc_partial", SetterAction::boss_arc, {195, 240, 285}, 12);
 
-  // Directions too close together, or covering too short an arc, are refused before moving.
-  probe_input("sim-arc-wall", "sim-arc-hollow.nand");
+  // Directions too close together, or covering less than 90°, are refused before moving.
+  probe_input("sim-arc-wall");
   at(2, 1);
   for (const auto& [angles, reason] :
        {std::pair{std::array{0.0, 5.0, 90.0}, "at least 10° apart"},
         std::pair{std::array{0.0, 12.0, 24.0}, "at least 10° apart"},
-        std::pair{std::array{350.0, 365.0, 10.0}, "at least 10° apart"}}) {
+        std::pair{std::array{350.0, 365.0, 10.0}, "at least 10° apart"},
+        std::pair{std::array{-44.0, 0.0, 44.0}, "cover at least 90°"},
+        std::pair{std::array{-80.0, -40.0, 0.0}, "cover at least 90°"}}) {
     const auto writes = port.writes().size();
     FixedSetterRequest request{.action = SetterAction::bore_arc, .tool = 99, .start = machine()};
     request.angles_deg = angles;
@@ -1077,26 +1204,34 @@ void arc_scenarios(NmlPort& port, double scale, double degrees, const auto& mdi)
             refused ? "expected a refused angle set" : refused.error());
   }
 
-  // The travel check is on the machine endpoint of each direction: 1 mm inside the Y limit.
-  // Outside the bore its wall input would trip during the moves there: the boss input is clear
-  // above Z 12.
-  probe_input("sim-arc-boss", "sim-arc-solid.and");
+  // The travel check covers every direction before the first move: 1 mm inside the Y limit,
+  // only the third direction aims at the limit in machine space. Nothing moves and nothing is
+  // written. Outside the bore its wall input would trip during the moves there: the boss input
+  // is clear above Z 12.
+  probe_input("sim-arc-boss");
   const double edge_y = s >= 0 ? 249 : -249;
   mdi(std::format("G21 G90 G53 G0 X0 Y{} Z20", edge_y / 2));
   mdi(std::format("G21 G90 G53 G0 X0 Y{} Z20", edge_y));
   const auto writes = port.writes().size();
   const auto origin = port.status().g5x;
-  FixedSetterRequest outward{.action = SetterAction::bore_arc, .tool = 99, .start = machine()};
+  const auto start = machine();
+  FixedSetterRequest outward{.action = SetterAction::bore_arc, .tool = 99, .start = start};
+  // Machine directions: the first two away from the limit, the third towards it.
   const double up = s >= 0 ? 90 : -90;
-  outward.angles_deg = {up - degrees, up - degrees + 120, up - degrees + 240};
+  outward.angles_deg = {up + 120 - degrees, up + 240 - degrees, up - degrees};
   const auto outside = port.fixed_setter(outward, epoch, {});
-  std::cout << std::format("fact=arc_probe action=travel rotation={} start_y={} endpoint_y={:.4f} "
-                           "limit_y={} writes={}",
+  const auto end = machine();
+  const bool still = std::abs(end[0] - start[0]) < 1e-6 && std::abs(end[1] - start[1]) < 1e-6 &&
+                     std::abs(end[2] - start[2]) < 1e-6;
+  std::cout << std::format("fact=arc_probe action=travel_point_3 rotation={} start_y={} "
+                           "endpoint_3_y={:.4f} limit_y={} writes={} moved={} reason=\"{}\"",
                            degrees, edge_y, edge_y + (s >= 0 ? 20 : -20), s >= 0 ? 250 : -250,
-                           port.writes().size() - writes)
+                           port.writes().size() - writes, !still,
+                           outside ? std::string{} : outside.error())
             << std::endl;
-  require(!outside && outside.error().contains("outside the configured travel") &&
-              port.writes().size() == writes && port.status().g5x == origin,
+  require(!outside && outside.error().contains("Contact 3") &&
+              outside.error().contains("outside the configured travel") &&
+              port.writes().size() == writes && still && port.status().g5x == origin,
           outside ? "expected a travel refusal" : outside.error());
   mdi(std::format("G21 G90 G53 G0 X0 Y{} Z20", edge_y / 2));
   mdi("G21 G90 G53 G0 X0 Y0 Z20");
@@ -1430,7 +1565,7 @@ void run(const std::string& ini, std::string_view scenario) {
   const bool edge = scenario == "edge-rotation";
   const bool features = scenario == "features";
   const bool rotated = scenario == "rotated";
-  const bool arc = scenario == "arc" || scenario == "arc-rotated";
+  const bool arc = scenario == "arc" || scenario == "arc-rotated" || scenario == "arc-faults";
   const bool g0759 = std::filesystem::path(ini).filename() == "coffeecnc_g0759.ini";
   auto config = load_machine_config(ini);
   if (!config)
@@ -1495,8 +1630,9 @@ void run(const std::string& ini, std::string_view scenario) {
     return;
   }
   if (arc) {
-    // Millimetres unrotated and at +7.5°, inches at -30°.
-    arc_scenarios(*port, scale, scenario == "arc" ? 0 : scale == 1 ? 7.5 : -30, mdi);
+    // Millimetres unrotated and at +7.5°, inches at -30°; the faults at +7.5° in millimetres.
+    arc_scenarios(*port, scale, scenario == "arc" ? 0 : scale == 1 ? 7.5 : -30, mdi,
+                  scenario == "arc-faults", shared);
     return;
   }
   if (scenario == "measure-m6") {
@@ -1781,7 +1917,7 @@ auto main(int argc, char** argv) -> int {
   const std::filesystem::path ini = argv[2];
   if ((scenario != "" && scenario != "material" && scenario != "edge-rotation" &&
        scenario != "features" && scenario != "rotated" && scenario != "arc" &&
-       scenario != "arc-rotated" && scenario != "measure-m6") ||
+       scenario != "arc-rotated" && scenario != "arc-faults" && scenario != "measure-m6") ||
       ini.parent_path() != run_dir ||
       (ini.filename() != "coffeecnc_sim.ini" &&
        !(scenario == "edge-rotation" && ini.filename() == "coffeecnc_g0759.ini")))

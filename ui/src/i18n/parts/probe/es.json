@@ -107,7 +107,7 @@
       "arcBossLabel": "Saliente por 3 puntos",
       "arcBoreBusy": "Palpando tres paredes del agujero…",
       "arcBossBusy": "Palpando tres caras del saliente…",
-      "arcDone": "{wcs} X0 Y0 fijado en el centro del círculo, Ø {diameter} mm, con contactos en {span}°."
+      "arcDone": "{wcs} X0 Y0 fijado en el centro del círculo, Ø {diameter} mm, con contactos en {span}°. Incertidumbre del centro ±{uncertainty} mm."
     },
     "guide": {
       "angleFront": "Delantera · Y−",

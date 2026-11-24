@@ -274,7 +274,8 @@ const removeListener = onResult((command, result) => {
       return
     }
     setterState.value = result.setter
-    const values = { wcs: wcsName(result.setter.material.wcs), diameter: measured.toFixed(3), span: (result.setter.arc_span ?? 0).toFixed(0) }
+    const values = { wcs: wcsName(result.setter.material.wcs), diameter: measured.toFixed(3), span: (result.setter.arc_span ?? 0).toFixed(0),
+      uncertainty: (result.setter.center_uncertainty ?? 0).toFixed(3) }
     line.value = { text: (): string => t('probe.materialProbe.arcDone', values), level: 'done' }
     return
   }

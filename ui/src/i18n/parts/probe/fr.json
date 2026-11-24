@@ -107,7 +107,7 @@
       "arcBossLabel": "Bossage par 3 points",
       "arcBoreBusy": "Palpage de trois parois de l’alésage…",
       "arcBossBusy": "Palpage de trois faces du bossage…",
-      "arcDone": "{wcs} X0 Y0 défini au centre du cercle, Ø {diameter} mm, avec des contacts sur {span}°."
+      "arcDone": "{wcs} X0 Y0 défini au centre du cercle, Ø {diameter} mm, avec des contacts sur {span}°. Incertitude du centre ±{uncertainty} mm."
     },
     "guide": {
       "angleFront": "Avant · Y−",

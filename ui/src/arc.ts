@@ -6,9 +6,41 @@ type Point = readonly [number, number]
 
 /** Fewer degrees than these between two directions, or a smaller arc, give a poor centre. */
 export const arcMinSeparation = 10
-export const arcMinSpan = 30
+export const arcMinSpan = 90
 /** Contacts that cover less of the circle found from them lie almost on a line. */
-export const arcMinMeasuredSpan = 20
+export const arcMinMeasuredSpan = 90
+/** The largest estimated centre uncertainty (95 %) a three-point cycle writes, mm. */
+export const arcMaxCentreUncertainty = 0.02
+/** One contact's radial standard deviation from the range of its three latch passes; never under 1 µm. */
+export function contactSigma(latchSpread: number): number {
+  return Math.max(latchSpread / 1.693, 0.001)
+}
+
+/**
+ * The 95 % uncertainty of the centre of the circle through `points`, mm, for independent radial
+ * errors of standard deviation `sigma` at each point; null when it has no estimate.
+ */
+export function arcCentreUncertainty(points: readonly [Point, Point, Point], centre: Point,
+  sigma: readonly [number, number, number]): number | null {
+  const n = points.map(([x, y]) => {
+    const length = Math.hypot(x - centre[0], y - centre[1])
+    return length > 0 ? [(x - centre[0]) / length, (y - centre[1]) / length] as const : null
+  })
+  const [a, b, c] = n
+  if (!a || !b || !c) return null
+  const det = a[0] * (b[1] - c[1]) - a[1] * (b[0] - c[0]) + (b[0] * c[1] - c[0] * b[1])
+  if (!Number.isFinite(det) || Math.abs(det) < 1e-12) return null
+  const gx = [(b[1] - c[1]) / det, (c[1] - a[1]) / det, (a[1] - b[1]) / det]
+  const gy = [(c[0] - b[0]) / det, (a[0] - c[0]) / det, (b[0] - a[0]) / det]
+  const variance = sigma.reduce((sum, s, i) => sum + ((gx[i] ?? 0) ** 2 + (gy[i] ?? 0) ** 2) * s * s, 0)
+  const uncertainty = 1.96 * Math.sqrt(variance)
+  return Number.isFinite(uncertainty) ? uncertainty : null
+}
+
+/** A three-point boss within the larger of 0.5 mm and 10 % of the entered diameter. */
+export function bossDiameterPlausible(measured: number, entered: number): boolean {
+  return Math.abs(measured - entered) <= Math.max(0.5, 0.1 * entered)
+}
 
 /** The smallest angle between two of the directions and the arc they cover (360° less the largest gap). */
 export function arcSpread(degrees: Angles): { closest: number; span: number } {

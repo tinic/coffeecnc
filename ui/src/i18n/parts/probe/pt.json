@@ -107,7 +107,7 @@
       "arcBossLabel": "Ressalto por 3 pontos",
       "arcBoreBusy": "A apalpar três paredes do furo…",
       "arcBossBusy": "A apalpar três faces do ressalto…",
-      "arcDone": "{wcs} X0 Y0 definido no centro do círculo, Ø {diameter} mm, com contactos em {span}°."
+      "arcDone": "{wcs} X0 Y0 definido no centro do círculo, Ø {diameter} mm, com contactos em {span}°. Incerteza do centro ±{uncertainty} mm."
     },
     "guide": {
       "angleFront": "Frontal · Y−",

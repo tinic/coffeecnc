@@ -107,7 +107,7 @@
       "arcBossLabel": "3 点测凸台",
       "arcBoreBusy": "正在探测孔的三处壁面…",
       "arcBossBusy": "正在探测凸台的三处面…",
-      "arcDone": "已根据跨 {span}° 的接触点在圆心设置 {wcs} X0 Y0，Ø {diameter} mm。"
+      "arcDone": "已根据跨 {span}° 的接触点在圆心设置 {wcs} X0 Y0，Ø {diameter} mm。圆心不确定度 ±{uncertainty} mm。"
     },
     "guide": {
       "angleFront": "前 · Y−",

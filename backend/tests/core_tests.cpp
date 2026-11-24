@@ -16,6 +16,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <utility>
 
 using namespace coffeecnc;
@@ -157,6 +158,57 @@ void arc_geometry() {
   const auto partial = arc_spread({-80, -40, 0});
   require(std::abs(partial.closest_deg - 40) < 1e-9 && std::abs(partial.span_deg - 80) < 1e-9,
           "a partial arc covers the angle between its outer directions");
+  require(arc_spread({-45, 0, 45}).span_deg >= arc_min_span_deg &&
+              !(arc_spread({-44, 0, 44}).span_deg >= arc_min_span_deg) &&
+              !(arc_spread({-80, -40, 0}).span_deg >= arc_min_span_deg),
+          "three directions must cover at least 90°");
+
+  // The centre uncertainty against an independent Monte Carlo with 2.5 µm radial noise on r = 8
+  // (95th percentile: 0.40 mm at 20°, 0.18 mm at 30°, 0.10 mm at 40°, 0.026 mm at 80°, 0.005 mm
+  // at 240°).
+  const auto on_8 = [](double degrees) {
+    const double a = degrees * std::numbers::pi / 180;
+    return std::array{8 * std::cos(a), 8 * std::sin(a)};
+  };
+  const auto uncertainty = [&](double span, double sigma) {
+    const std::array points{on_8(-span / 2), on_8(0), on_8(span / 2)};
+    return arc_centre_uncertainty(points, {0, 0}, {sigma, sigma, sigma}).value_or(-1);
+  };
+  for (const auto& [span, expected] : {std::pair{20.0, 0.40}, std::pair{30.0, 0.18},
+                                       std::pair{40.0, 0.10}, std::pair{80.0, 0.026},
+                                       std::pair{240.0, 0.0057}}) {
+    const double found = uncertainty(span, 0.0025);
+    std::cout << std::format("fact=arc_uncertainty span={:.0f} sigma_mm=0.0025 expected_mm={:.4f} "
+                             "computed_mm={:.4f}",
+                             span, expected, found)
+              << '\n';
+    require(std::abs(found - expected) <= 0.12 * expected,
+            std::format("the centre uncertainty over {}° is about {} mm", span, expected));
+  }
+  // The refusal: a 90° arc writes with a clean latch, not with a latch spread of 6 µm; a wide
+  // arc writes with that spread.
+  const auto refused = [&](double span, double latch_spread) {
+    return !(uncertainty(span, contact_sigma(latch_spread)) <= arc_max_centre_uncertainty_mm);
+  };
+  for (const auto& [span, latch, refuse] :
+       {std::tuple{90.0, 0.0, false}, std::tuple{90.0, 0.006, true}, std::tuple{240.0, 0.006, false},
+        std::tuple{120.0, 0.01, true}}) {
+    std::cout << std::format("fact=arc_uncertainty_refusal span={:.0f} latch_spread_mm={:.4f} "
+                             "uncertainty_mm={:.4f} limit_mm=0.02 refused={}",
+                             span, latch, uncertainty(span, contact_sigma(latch)), refused(span, latch))
+              << '\n';
+    require(refused(span, latch) == refuse,
+            std::format("an arc of {}° with a latch spread of {} mm is {}", span, latch,
+                        refuse ? "refused" : "written"));
+  }
+  require(!arc_centre_uncertainty({std::array{1.0, 0.0}, std::array{0.0, 0.0}, std::array{0.0, 1.0}},
+                                  {0, 0}, {0.001, 0.001, 0.001}),
+          "a contact at the centre has no uncertainty estimate");
+  // A three-point boss within 0.5 mm or 10 % of the entered diameter.
+  require(boss_diameter_plausible(12.4, 12) && !boss_diameter_plausible(13.3, 12) &&
+              boss_diameter_plausible(10.9, 12) && boss_diameter_plausible(3.4, 3) &&
+              !boss_diameter_plausible(3.6, 3),
+          "a boss diameter is plausible within the larger of 0.5 mm and 10 %");
 }
 
 void fixed_setter_homing() {

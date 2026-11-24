@@ -186,16 +186,33 @@ describe('recess and ridge setup', () => {
     expect(fields.map(field => (field.element as HTMLInputElement).value)).toEqual(['0', '120', '240'])
     await fields[1]?.setValue('5')
     expect(fixture.get('.start-probe').attributes('disabled')).toBeDefined()
+    // An 80° arc is below the 90° minimum; 90° is enough.
     await fields[0]?.setValue('-80')
     await fields[1]?.setValue('-40')
     await fields[2]?.setValue('0')
+    expect(fixture.get('.start-probe').attributes('disabled')).toBeDefined()
+    expect(fixture.get('.arc-angles small').text()).toContain('covering at least 90°')
+    await fields[0]?.setValue('-90')
+    await fields[1]?.setValue('-45')
     await fixture.get('.start-probe').trigger('click')
-    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'fixed_setter', action: 'bore_arc', angles: [-80, -40, 0],
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'fixed_setter', action: 'bore_arc', angles: [-90, -45, 0],
       tool: 99, x: 0, y: 0, z: 0 })
     expect(fixture.get('.setter-band.busy p').text()).toBe('Probing three bore walls…')
     await answer({ outcome: 'accepted', reason: '', setter: { calibration: null, measurement: null,
-      material: { wcs: 2, axis: 'XY' }, center_diameter: 16, arc_span: 80 } })
-    expect(fixture.get('.setter-band.done p').text()).toBe('G55 X0 Y0 set at the circle centre, Ø 16.000 mm, from contacts over 80°.')
+      material: { wcs: 2, axis: 'XY' }, center_diameter: 16, arc_span: 117.3, center_uncertainty: 0.0053 } })
+    expect(fixture.get('.setter-band.done p').text())
+      .toBe('G55 X0 Y0 set at the circle centre, Ø 16.000 mm, from contacts over 117°. Centre uncertainty ±0.005 mm.')
+  })
+
+  it('shows the clearance and depth rows for a 3-point boss, probed from beside it, not for a bore', async () => {
+    for (const [label, beside] of [['3-point boss', true], ['3-point bore', false]] as const) {
+      const fixture = await choose(label)
+      const limits = fixture.get('.limits').text()
+      expect(limits.includes('Traverse clearance'), label).toBe(beside)
+      expect(limits.includes('Ball centre at contact'), label).toBe(beside)
+      fixture.unmount()
+      wrapper = undefined
+    }
   })
 
   it('asks a 3-point boss for its approximate diameter as well', async () => {

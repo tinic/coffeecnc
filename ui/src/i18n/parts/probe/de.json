@@ -107,7 +107,7 @@
       "arcBossLabel": "Zapfen aus 3 Punkten",
       "arcBoreBusy": "Drei Bohrungswände werden angetastet…",
       "arcBossBusy": "Drei Zapfenflächen werden angetastet…",
-      "arcDone": "{wcs} X0 Y0 im Kreismittelpunkt gesetzt, Ø {diameter} mm, aus Kontakten über {span}°."
+      "arcDone": "{wcs} X0 Y0 im Kreismittelpunkt gesetzt, Ø {diameter} mm, aus Kontakten über {span}°. Unsicherheit der Mitte ±{uncertainty} mm."
     },
     "guide": {
       "angleFront": "Vorne · Y−",

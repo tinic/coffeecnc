@@ -295,10 +295,30 @@ void rigid_tapping_reversal_bounds() {
                 outcome.check && !outcome.check->errors.empty(),
             std::format("Program Check must reject {}: {}", reason, text_of(outcome)));
   };
-  reject(metric, "not configured");
+  const std::string unavailable = "G33.1 rigid tapping is not configured on this machine.";
+  const auto detail =
+      parameter_localization("detail", MessageKey{"backend.previewEngine.rigidTapUnavailable"});
+  const auto require_unconfigured_tapping = [&](const std::string& program, int line,
+                                                const std::string& prefix, const MessageKey& key) {
+    const auto outcome = rig.preview(program);
+    require(outcome.state == PreviewState::failed && outcome.error && outcome.error->line == line &&
+                outcome.error->text == prefix + unavailable && outcome.error->localization == key &&
+                outcome.check && outcome.check->errors.size() == 1 &&
+                outcome.check->errors.front().text == outcome.error->text &&
+                outcome.check->errors.front().localization == key,
+            "The preview warning and Program Check keep the tapping reason and its location: " +
+                text_of(outcome));
+  };
+  require_unconfigured_tapping(metric, 5, "Line 5: ",
+                               MessageKey{"backend.previewEngine.lineError",
+                                          {{"line", "5"}, {"detail", unavailable}},
+                                          detail});
   reject("G92.3\nS300 M3\nM51 P0\n/ N100 g + 033 . 10 Z-4 K1\nM2\n", "Line 4:");
   write(rig.root / "subs" / "tap.ngc", "o<tap> sub\nG33.1 Z-4 K1\no<tap> endsub\n");
-  reject("G92.3\no<tap> call\nM2\n", "tap.ngc line 2:");
+  require_unconfigured_tapping("G92.3\no<tap> call\nM2\n", 0, "tap.ngc line 2: ",
+                               MessageKey{"backend.previewEngine.subroutineError",
+                                          {{"name", "tap"}, {"line", "2"}, {"detail", unavailable}},
+                                          detail});
   const auto ordinary = rig.preview("(G33.1 is not used here)\nG0 Z3 ; G33.1 Z-4\nM2\n");
   require(ordinary.state == PreviewState::ready && ordinary.check && ordinary.check->errors.empty(),
           "Tapping mentioned in a comment has no effect on an unqualified machine.");

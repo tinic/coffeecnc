@@ -210,6 +210,33 @@ describe('browser probe scene', () => {
     }
   })
 
+  it.each([0, 7.5])('maps the stock top and the pocket floor, rotated %s°, without writing', (degrees) => {
+    const { sim, cycle } = scene('pocket')
+    sim.modal.rotations[0] = degrees
+    const before = structuredClone(sim.status().offsets)
+    // Over the stock, the pocket floor and the stock again: 154, 170 and 186 machine X, 16 mm apart.
+    const work = toWork(sim.modal, [154, 83, 0])
+    const map = cycle({ action: 'height_map', x_min: work[0], y_min: work[1], x_max: work[0] + 32, y_max: work[1] + 4,
+      step: 16, clearance: 5 }).setter?.height_map
+    expect(sim.status().offsets).toEqual(before)
+    expect(map).toMatchObject({ wcs: 1, columns: 3, rows: 2 })
+    expect(map?.points).toHaveLength(6)
+    for (const [index, point] of (map?.points ?? []).entries()) {
+      expect(point.work[0]).toBeCloseTo(work[0] + 16 * (index % 3))
+      expect(point.work[1]).toBeCloseTo(work[1] + 4 * Math.floor(index / 3))
+    }
+    // The middle column is over the pocket floor, the outer ones over the stock top.
+    const heights = map?.points.map(point => Math.round(point.work[2] * 1000) / 1000) ?? []
+    expect(heights[1]).toBeLessThan(heights[0] ?? 0)
+    expect(heights[0]).toBeCloseTo(heights[2] ?? NaN)
+  })
+
+  it('refuses a height map with too many points before moving', () => {
+    const { submit, result } = scene('top')
+    const id = submit({ action: 'height_map', x_min: 0, y_min: 0, x_max: 100, y_max: 100, step: 5, clearance: 5 })
+    expect(result(id)?.reason).toBe('Choose a rectangle and a step of 0.5 mm or more for 2 to 150 points.')
+  })
+
   it('keeps an applied rotation inside -180..180° like the controller', () => {
     expect([363, -363, -180, 180, 540, 10.5].map(wrapped)).toEqual([3, -3, 180, 180, 180, 10.5])
     expect(wrapped(179 + 2.8624)).toBeCloseTo(-178.1376)

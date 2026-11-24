@@ -634,6 +634,16 @@ export interface SetterState {
   edge_angle?: number
   /** `rotation`: the G5x rotation applying writes, the present rotation plus `edge_angle`. */
   edge_rotation?: { measurement_id: number; wcs: number; rotation?: number }
+  /** After a height map: every point's top, row by row from the first corner. */
+  height_map?: HeightMap
+}
+
+/** A Z height map (#247): `columns` × `rows` points, each in the work system and in machine XYZ, mm. */
+export interface HeightMap {
+  wcs: number
+  columns: number
+  rows: number
+  points: { work: Vec3; machine: Vec3 }[]
 }
 
 export interface DirectoryEntry {
@@ -931,6 +941,11 @@ export type FixedSetter = CommandBase & { type: 'fixed_setter' } & (
   /** Measures an edge's angle: the face of `direction` at the start and `spacing` mm along it. */
   | { action: 'angle'; direction: 'x_minus' | 'x_plus' | 'y_minus' | 'y_plus'; spacing: number; tool: number; x: number; y: number; z: number }
   | { action: 'apply_angle'; measurement_id: number; tool: number }
+  /**
+   * Z top at every point of a grid over the work rectangle `x_min`..`x_max`, `y_min`..`y_max`,
+   * at most `step` apart (2 to 150 points), traversing at work Z `clearance`. Writes nothing.
+   */
+  | { action: 'height_map'; x_min: number; y_min: number; x_max: number; y_max: number; step: number; clearance: number; tool: number; x: number; y: number; z: number }
 )
 /** Replaces one tool table row, or adds it. */
 export interface SetTool extends CommandBase {

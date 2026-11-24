@@ -2100,6 +2100,95 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
   const auto encloses_start = [&](std::size_t axis, double low, double high) {
     return low < start_frame[axis] && start_frame[axis] < high;
   };
+  if (request.action == SetterAction::height_map) {
+    // A Z height map (#247): Z top at each point of the grid, row by row and back again, with a
+    // traverse at the clearance between them. Every point's search start and end, and the lift,
+    // is checked against the travel before anything moves. Nothing is written.
+    if (frame.wcs < 1 || frame.wcs > 9)
+      return std::unexpected("The active work coordinate system is unavailable.");
+    if (!std::ranges::contains(current_marks, tool))
+      return std::unexpected(std::format("Touch off T{} at the tool setter before probing Z.", tool));
+    if (std::abs(before.tool_offset[2] - previous_length) > 0.001 ||
+        !std::ranges::contains(before.active_codes, "G43"))
+      return std::unexpected(std::format("Apply the measured T{} length before probing Z.", tool));
+    const auto grid = height_grid(request.grid_mm, request.step_mm);
+    if (!grid)
+      return std::unexpected(std::format(
+          "Choose a rectangle and a step of 0.5 mm or more for 2 to {} points.", max_height_map_points));
+    // Work XYZ to machine XYZ: the inverse of the work position.
+    const auto machine_of = [&](double x, double y, double z) -> std::array<double, 3> {
+      const double gx = x + before.g92[0];
+      const double gy = y + before.g92[1];
+      return {gx * cos_turn - gy * sin_turn + before.g5x[0] + before.tool_offset[0],
+              gx * sin_turn + gy * cos_turn + before.g5x[1] + before.tool_offset[1],
+              z + before.g5x[2] + before.g92[2] + before.tool_offset[2]};
+    };
+    const auto& [x0, y0, x1, y1] = request.grid_mm;
+    const auto at_column = [&](int column) {
+      return grid->columns == 1 ? x0 : x0 + (x1 - x0) * column / (grid->columns - 1);
+    };
+    const auto at_row = [&](int row) {
+      return grid->rows == 1 ? y0 : y0 + (y1 - y0) * row / (grid->rows - 1);
+    };
+    const auto in_travel = [&](const std::array<double, 3>& point) {
+      for (std::size_t i = 0; i < point.size(); ++i) {
+        const auto& travel = impl_->config.travel.at(i);
+        if (!std::isfinite(point.at(i)) || point.at(i) < travel.min || point.at(i) > travel.max)
+          return false;
+      }
+      return true;
+    };
+    const double search = limits->material_travel_mm;
+    const double lift = std::max(request.start[2], machine_of(x0, y0, request.clearance_mm)[2]);
+    for (int row = 0; row < grid->rows; ++row)
+      for (int column = 0; column < grid->columns; ++column) {
+        const auto point = machine_of(at_column(column), at_row(row), request.clearance_mm);
+        if (!in_travel(point) || !in_travel({point[0], point[1], point[2] - search}) ||
+            !in_travel({point[0], point[1], lift}))
+          return std::unexpected(std::format(
+              "Grid point X{:.3f} Y{:.3f} is outside the configured travel at the clearance or "
+              "the search depth.",
+              at_column(column), at_row(row)));
+      }
+    SetterState::HeightMap map{.wcs = frame.wcs, .columns = grid->columns, .rows = grid->rows,
+                               .points = {}};
+    map.points.resize(static_cast<std::size_t>(grid->columns) * static_cast<std::size_t>(grid->rows));
+    for (int row = 0; row < grid->rows; ++row) {
+      for (int along = 0; along < grid->columns; ++along) {
+        // Back and forth: every other row from its far end.
+        const int column = row % 2 == 0 ? along : grid->columns - 1 - along;
+        const auto* s = impl_->stat();
+        if (s == nullptr || impl_->status.link() != Link::live)
+          return std::unexpected("Controller status was lost during the height map.");
+        const auto reading = to_status(*s, impl_->config, impl_->hal, Link::live);
+        if (frame_of(reading) != frame || reading.tool_offset != before.tool_offset)
+          return std::unexpected("The work frame or tool changed during the height map.");
+        const std::array here{reading.controller.axes[0].machine, reading.controller.axes[1].machine,
+                              reading.controller.axes[2].machine};
+        const auto above = machine_of(at_column(column), at_row(row), request.clearance_mm);
+        const auto contact = probe_fixed_setter({.tool = tool,
+                                                 .start = here,
+                                                 .travel_mm = search,
+                                                 .feed_mm_min = limits->feed_mm_min,
+                                                 .approach = above,
+                                                 .clearance_z = std::max(here[2], above[2]),
+                                                 .material = ProbeDirection::z_top},
+                                                wanted);
+        if (!contact)
+          return std::unexpected(std::format("Point X{:.3f} Y{:.3f}: {}", at_column(column),
+                                             at_row(row), contact.error()));
+        auto& point = map.points.at((static_cast<std::size_t>(row) * static_cast<std::size_t>(grid->columns)) +
+                                    static_cast<std::size_t>(column));
+        point.machine = contact->machine;
+        point.work = work_position(contact->machine, before.g5x, before.g92, before.tool_offset,
+                                   before.rotation_xy);
+      }
+    }
+    SetterState state{calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,
+                      std::move(current_marks)};
+    state.height_map = std::move(map);
+    return state;
+  }
   if (inside_corner || pocket || slot || ridge) {
     if (frame.wcs < 1 || frame.wcs > 9)
       return std::unexpected("The active work coordinate system is unavailable.");

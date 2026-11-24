@@ -304,6 +304,33 @@
       "diameter": "Diámetro",
       "toolRemoved": "La herramienta se eliminó",
       "noEarlier": "No se conoce ningún valor anterior"
+    },
+    "heightMap": {
+      "button": "Mapa de alturas…",
+      "title": "Mapa de alturas Z",
+      "setup": "Palpa Z superior en cada punto de una cuadrícula en coordenadas de pieza {wcs}. Primero mida el palpador y aplique su longitud. Entre los puntos se mueve a la Z de seguridad: manténgala por encima de la pieza.",
+      "xFrom": "X desde",
+      "xTo": "X hasta",
+      "yFrom": "Y desde",
+      "yTo": "Y hasta",
+      "step": "Paso",
+      "clearance": "Z de seguridad",
+      "points": "{columns} × {rows} puntos, unos {minutes} min.",
+      "invalid": "Elija un rectángulo y un paso para 2 a {max} puntos.",
+      "busy": "Palpando el mapa de alturas…",
+      "done": "Mapa de alturas: {count} puntos, Z de {low} a {high} {unit}. No se fijó nada.",
+      "failed": "El mapa de alturas no se completó.",
+      "result": "Mapa",
+      "resultTitle": "Mapa de alturas",
+      "summary": "{wcs}, {count} puntos: Z de {low} a {high} {unit}, una diferencia de {spread} {unit}. La cuadrícula se ve desde arriba.",
+      "heights": "Alturas",
+      "show": "Mostrar en 3D",
+      "hide": "Ocultar en 3D",
+      "saveCsv": "Guardar CSV",
+      "saveProbe": "Guardar archivo de palpado LinuxCNC",
+      "saving": "Guardando {name}…",
+      "saved": "{name} guardado en la carpeta de programas.",
+      "notSaved": "El archivo no se guardó."
     }
   }
 }

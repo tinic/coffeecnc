@@ -126,6 +126,21 @@ void edge_rotation_wraps() {
             std::format("rotation {} wraps to {}, not {}", sum, wrapped, wrapped_rotation(sum)));
 }
 
+// The height-map grid (#247): both corners included, at most one step apart, 2 to 150 points.
+void height_map_grid() {
+  const auto grid = height_grid({0, 0, 20, 16}, 10);
+  require(grid && grid->columns == 3 && grid->rows == 3, "20 x 16 at 10 mm: 3 x 3 points");
+  const auto uneven = height_grid({-5, 2, 12, 2}, 4);
+  require(uneven && uneven->columns == 6 && uneven->rows == 1,
+          "17 mm at 4 mm: 6 columns, a single row when Y is the same");
+  const auto reversed = height_grid({20, 16, 0, 0}, 10);
+  require(reversed && reversed->columns == 3 && reversed->rows == 3, "the corners may come in any order");
+  require(!height_grid({0, 0, 0, 0}, 10), "one point is not a map");
+  require(!height_grid({0, 0, 100, 100}, 5), "21 x 21 points is more than 150");
+  require(!height_grid({0, 0, 20, 16}, 0.25), "a step below 0.5 mm is refused");
+  require(!height_grid({0, 0, std::numeric_limits<double>::infinity(), 16}, 10), "corners are finite");
+}
+
 void fixed_setter_homing() {
   CommandPolicy homing{simulator_limits()};
   CommandPolicy no_homing{Limits{3000, {3000, 3000, 3000}, 1.2, 0.5, 1.2, 24000, false}};
@@ -663,6 +678,7 @@ auto main() -> int {
     execution_gates();
     pending_manual_tool_change();
     reference_mark_homing();
+    height_map_grid();
     fixed_setter_homing();
     edge_rotation_wraps();
     work_origin_gates();

@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 
 namespace coffeecnc {
 namespace {
@@ -76,6 +77,16 @@ auto encode_result(RequestId id, CommandOutcome outcome, std::string_view reason
       message["setter"]["feature_size"]["x"] = *width;
     if (const auto width = setter->feature_size[1])
       message["setter"]["feature_size"]["y"] = *width;
+    if (const auto& map = setter->height_map) {
+      auto points = Json::array();
+      std::ranges::transform(map->points, std::back_inserter(points), [](const auto& point) {
+        return Json{{"work", point.work}, {"machine", point.machine}};
+      });
+      message["setter"]["height_map"] = {{"wcs", map->wcs},
+                                         {"columns", map->columns},
+                                         {"rows", map->rows},
+                                         {"points", std::move(points)}};
+    }
     if (const auto& material = setter->material)
       message["setter"]["material"] = {{"wcs", material->wcs},
                                        {"axis", material->corner ? std::string{"XY"}

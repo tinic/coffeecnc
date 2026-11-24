@@ -23,6 +23,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -928,6 +929,125 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
           "rotated probing changes only the active work coordinate system");
 }
 
+// Z height map (#247). The simulated top is the plane Z = 12 + 0.01 u - 0.02 v (machine Z, mm),
+// with (u, v) the commanded machine XY turned into the G55 axes: HAL trips where the commanded Z
+// is below it. Z0 of G55 is at machine Z 12, so each point's work Z must read 0.01 u - 0.02 v.
+// The grid is work X -5..15, Y -4..12 at 10 mm: 3 x 3 points, first in G55 unrotated, then in
+// G55 rotated `degrees`.
+void height_map_scenarios(NmlPort& port, double scale, double degrees, const auto& mdi) {
+  checked(port.set_tool({98, 98, 50, 0, "Setter reference"}, {}));
+  checked(port.set_tool({99, 99, 45, 2, "Ruby probe"}, {}));
+  constexpr double slope_u = 0.01;
+  constexpr double slope_v = -0.02;
+  const auto machine = [&] {
+    const auto axes = port.status().controller.axes;
+    return std::array{axes[0].machine, axes[1].machine, axes[2].machine};
+  };
+  SetterEpoch epoch{1, 1, 1, 0};
+  for (const int tool : {98, 99}) {
+    mdi(std::format("M61 Q{}", tool));
+    mdi(std::format("G43 H{}", tool));
+    mdi("G21 G90 G53 G0 X0 Y0 Z20");
+    ++epoch.tool;
+    halcmd(std::format("setp sim-tool-setter.max {}", (tool == 98 ? 10 : 12) / scale));
+    const auto touched = port.fixed_setter({SetterAction::touch_off, tool, machine()}, epoch, {});
+    require(touched.has_value(), touched ? "the reference and probe have known lengths" : touched.error());
+  }
+  mdi("G21 G90 G54");
+  const auto g54 = port.status().g5x;
+  halcmd("loadrt sum2 names=sim-map-plane,sim-map-height");
+  halcmd("loadrt near names=sim-map-below");
+  for (const auto* part : {"sim-map-plane", "sim-map-height", "sim-map-below"})
+    halcmd(std::format("addf {} servo-thread", part));
+  halcmd("net sim-map-mx axis.x.pos-cmd sim-map-plane.in0");
+  halcmd("net sim-map-my axis.y.pos-cmd sim-map-plane.in1");
+  halcmd("net sim-setter-z sim-map-height.in0");
+  halcmd("net sim-map-w sim-map-plane.out sim-map-height.in1");
+  halcmd("setp sim-map-height.gain1 -1");
+  halcmd("net sim-map-d sim-map-height.out sim-map-below.in1");
+  // Z less the plane's rise within [-100, 12].
+  halcmd(std::format("setp sim-map-below.in2 {:.12f}", -44 / scale));
+  halcmd(std::format("setp sim-map-below.difference {:.12f}", 56 / scale));
+  halcmd("setp sim-map-below.scale 1");
+  halcmd("unlinkp motion.probe-input");
+  halcmd("unlinkp coffeecnc.probe-input");
+  halcmd("net sim-map-top sim-map-below.out motion.probe-input coffeecnc.probe-input");
+
+  const auto map = [&](double turn) {
+    const double c = std::cos(turn * std::numbers::pi / 180);
+    const double s = std::sin(turn * std::numbers::pi / 180);
+    // The plane follows the work axes: its rise is slope_u u + slope_v v.
+    halcmd(std::format("setp sim-map-plane.gain0 {:.12f}", slope_u * c - slope_v * s));
+    halcmd(std::format("setp sim-map-plane.gain1 {:.12f}", slope_u * s + slope_v * c));
+    mdi(std::format("G21 G10 L2 P2 X5 Y-7 Z2 R{}", turn));
+    mdi("G55");
+    mdi("G92 X2 Y3 Z4");
+    mdi("G21 G90 G53 G0 X0 Y0 Z20");
+    mdi("G21 G10 L20 P0 Z8"); // Z0 at machine Z 12.
+    mdi(scale == 1 ? "G21 G91" : "G20 G91");
+    const auto before = port.status();
+    FixedSetterRequest request{.action = SetterAction::height_map, .tool = 99, .start = machine()};
+    request.grid_mm = {-5, -4, 15, 12};
+    request.step_mm = 10;
+    request.clearance_mm = 3;
+    const auto writes = port.writes().size();
+    const auto result = port.fixed_setter(request, epoch, {});
+    if (!result || !result->height_map)
+      throw std::runtime_error(std::format("height map at {}°: {}", turn, result ? "no map" : result.error()));
+    const auto& points = result->height_map->points;
+    bool ok = result->height_map->columns == 3 && result->height_map->rows == 3 && points.size() == 9 &&
+              result->height_map->wcs == 2 && port.status().g5x == before.g5x &&
+              port.status().g92 == before.g92 && port.writes().size() > writes;
+    double worst = 0;
+    for (std::size_t i = 0; i < points.size(); ++i) {
+      const auto& point = points.at(i);
+      const double x = -5 + 10.0 * static_cast<double>(i % 3);
+      const double y = -4 + 8.0 * static_cast<double>(i / 3);
+      const double u = c * point.machine[0] + s * point.machine[1];
+      const double v = -s * point.machine[0] + c * point.machine[1];
+      const double expected = slope_u * u + slope_v * v;
+      worst = std::max(worst, std::abs(point.work[2] - expected));
+      ok = ok && std::abs(point.work[0] - x) < 0.01 && std::abs(point.work[1] - y) < 0.01 &&
+           std::abs(point.work[2] - expected) < 0.01 &&
+           std::abs(point.machine[2] - (12 + expected)) < 0.01;
+      std::cout << std::format("fact=height_map rotation={} point={} work_x={:.4f} work_y={:.4f} "
+                               "work_z_expected={:.4f} work_z_measured={:.4f} machine_z_measured={:.4f}",
+                               turn, i, point.work[0], point.work[1], expected, point.work[2],
+                               point.machine[2])
+                << std::endl;
+    }
+    // The probe ends at the clearance: work Z 3.
+    const double end_z = port.status().work[2];
+    std::cout << std::format("fact=height_map rotation={} points={} worst_z_error={:.4f} end_work_z={:.4f} "
+                             "g5x_unchanged={}",
+                             turn, points.size(), worst, end_z, port.status().g5x == before.g5x)
+              << std::endl;
+    require(ok && std::abs(end_z - 3) < 0.03,
+            std::format("the height map at {}° probes every point of the grid and writes nothing", turn));
+  };
+  map(0);
+  map(degrees);
+
+  // Refused before any motion: a grid point beyond the travel, and too many points.
+  for (const auto& [grid, step, reason] :
+       {std::tuple{std::array{-5.0, -4.0, 300.0, 12.0}, 10.0, "outside the configured travel"},
+        std::tuple{std::array{-5.0, -4.0, 15.0, 12.0}, 1.0, "2 to 150 points"}}) {
+    FixedSetterRequest request{.action = SetterAction::height_map, .tool = 99, .start = machine()};
+    request.grid_mm = grid;
+    request.step_mm = step;
+    request.clearance_mm = 3;
+    const auto writes = port.writes().size();
+    const auto refused = port.fixed_setter(request, epoch, {});
+    std::cout << std::format("fact=height_map action=refused x_max={} step={} refused={} writes={}", grid[2], step,
+                             !refused, port.writes().size() - writes)
+              << std::endl;
+    require(!refused && refused.error().contains(reason) && port.writes().size() == writes,
+            refused ? "expected a refused height map" : refused.error());
+  }
+  mdi("G54");
+  require(port.status().g5x == g54, "the height map changes no work system");
+}
+
 void edge_rotations(NmlPort& port, double scale, const auto& mdi) {
   checked(port.set_tool({99, 99, 45, 2, "Ruby probe"}, {}));
   mdi("M61 Q99");
@@ -1254,6 +1374,7 @@ void run(const std::string& ini, std::string_view scenario) {
   const bool edge = scenario == "edge-rotation";
   const bool features = scenario == "features";
   const bool rotated = scenario == "rotated";
+  const bool height_map = scenario == "height-map";
   const bool g0759 = std::filesystem::path(ini).filename() == "coffeecnc_g0759.ini";
   auto config = load_machine_config(ini);
   if (!config)
@@ -1266,7 +1387,7 @@ void run(const std::string& ini, std::string_view scenario) {
   config->fixed_setter = FixedSetterLimits{15, 240, reference_tool, 0.5, 12, 60, 1};
   if (scenario == "measure-m6")
     config->fixed_setter->travel_mm = 30;
-  if (material || edge || features || rotated)
+  if (material || edge || features || rotated || height_map)
     config->touch_probe_tool = 99;
   // The runner recreates the table, but retains files beside it between runs.
   std::filesystem::remove(std::filesystem::path(config->tool_table).parent_path() /
@@ -1315,6 +1436,11 @@ void run(const std::string& ini, std::string_view scenario) {
   if (rotated) {
     // Millimetres at +7.5°, inches at -30°: each rotated cycle in both units and turns.
     rotated_scenarios(*port, scale, scale == 1 ? 7.5 : -30, mdi);
+    return;
+  }
+  if (height_map) {
+    // Unrotated, then +7.5° in mm and -30° in inch.
+    height_map_scenarios(*port, scale, scale == 1 ? 7.5 : -30, mdi);
     return;
   }
   if (scenario == "measure-m6") {
@@ -1598,7 +1724,8 @@ auto main(int argc, char** argv) -> int {
   const std::string_view scenario = argc == 4 ? argv[3] : "";
   const std::filesystem::path ini = argv[2];
   if ((scenario != "" && scenario != "material" && scenario != "edge-rotation" &&
-       scenario != "features" && scenario != "rotated" && scenario != "measure-m6") ||
+       scenario != "features" && scenario != "rotated" && scenario != "height-map" &&
+       scenario != "measure-m6") ||
       ini.parent_path() != run_dir ||
       (ini.filename() != "coffeecnc_sim.ini" &&
        !(scenario == "edge-rotation" && ini.filename() == "coffeecnc_g0759.ini")))

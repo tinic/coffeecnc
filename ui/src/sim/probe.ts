@@ -1,6 +1,7 @@
 import type { FixedSetter, ProbeDirection, SetterState, Tool, Vec3 } from '../protocol'
 import { demoFixture, demoProbe, demoProbeTools, demoSetter, type ProbeBlock } from './probe-fixture'
 import { toWork, type Modal } from './gcode'
+import { heightGrid } from '../height-map'
 
 type XY = [number, number]
 type Lateral = Exclude<ProbeDirection, 'z_top'>
@@ -259,6 +260,40 @@ export class SimProbe {
       })
     }
     if (tool.number !== demoProbe) return 'Load T99 to probe material.'
+    if (command.action === 'height_map') {
+      if (!applied) return 'Apply the measured T99 length before probing Z.'
+      const grid = heightGrid([command.x_min, command.y_min, command.x_max, command.y_max], command.step)
+      if (!grid) return 'Choose a rectangle and a step of 0.5 mm or more for 2 to 150 points.'
+      // Work XYZ to machine XYZ, as toWork's inverse.
+      const offset = modal.offsets[modal.wcs - 1] ?? [0, 0, 0]
+      const toMachine = (x: number, y: number, z: number): Vec3 => {
+        const [mx, my] = turn([x + modal.g92[0], y + modal.g92[1]], rotation)
+        return [mx + offset[0] + modal.toolOffset[0], my + offset[1] + modal.toolOffset[1], z + offset[2] + modal.g92[2] + modal.toolOffset[2]]
+      }
+      const at = (index: number, count: number, from: number, to: number): number => count === 1 ? from : from + (to - from) * index / (count - 1)
+      const points: NonNullable<SetterState['height_map']>['points'] = []
+      let from = start
+      for (let row = 0; row < grid.rows; row++) {
+        for (let step = 0; step < grid.columns; step++) {
+          const column = row % 2 === 0 ? step : grid.columns - 1 - step
+          const above = toMachine(at(column, grid.columns, command.x_min, command.x_max), at(row, grid.rows, command.y_min, command.y_max), command.clearance)
+          const high = Math.max(from[2], above[2])
+          path.move([from[0], from[1], high])
+          path.move([above[0], above[1], high])
+          path.move(above)
+          const solid = (over(above, stock) && radiusFrom(above, bore) > boreRadius) ||
+            over(above, gauge) || over(above, ridge) || over(above, slanted) || radiusFrom(above, boss) <= bossRadius
+          const surfaceZ = gaugeZ - (over(above, pocket) || over(above, slot) ? recessDepth : 0)
+          if (!solid || above[2] <= surfaceZ || above[2] - surfaceZ > searchTravel)
+            return `Point X${at(column, grid.columns, command.x_min, command.x_max).toFixed(3)} Y${at(row, grid.rows, command.y_min, command.y_max).toFixed(3)}: ${noContact}`
+          const contact: Vec3 = [above[0], above[1], surfaceZ]
+          path.touch(above, contact)
+          points[row * grid.columns + column] = { work: toWork(modal, contact), machine: contact }
+          from = above
+        }
+      }
+      return result(() => ({ height_map: { wcs: modal.wcs, columns: grid.columns, rows: grid.rows, points } }))
+    }
     if (command.action === 'material') {
       if (command.direction === 'z_top') {
         if (!applied) return 'Touch off T99 and apply its length first.'

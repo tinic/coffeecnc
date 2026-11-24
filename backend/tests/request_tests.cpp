@@ -129,6 +129,12 @@ void protocol_forms() {
   require(ridge.action == SetterAction::ridge && ridge.direction == ProbeDirection::y_plus &&
               ridge.gauge_width_mm == 25.4,
           "Ridge requests carry the axis and approximate width in millimetres");
+  const auto map = body<FixedSetterRequest>(
+      R"({"id":42,"type":"fixed_setter","action":"height_map","tool":99,"x":1,"y":2,"z":3,"x_min":-5,"y_min":-4,"x_max":15,"y_max":12,"step":10,"clearance":3})");
+  require(map.action == SetterAction::height_map && map.grid_mm == std::array{-5.0, -4.0, 15.0, 12.0} &&
+              map.step_mm == 10 && map.clearance_mm == 3,
+          "A height map names its rectangle, step and clearance in work millimetres");
+  rejected(R"({"id":42,"type":"fixed_setter","action":"height_map","tool":99,"x":1,"y":2,"z":3,"x_min":-5,"y_min":-4,"x_max":15,"y_max":12,"step":10})", 42);
   rejected(R"({"id":42,"type":"fixed_setter","action":"slot","tool":99,"x":1,"y":2,"z":3,"axis":"z"})", 42);
   rejected(R"({"id":42,"type":"fixed_setter","action":"ridge","tool":99,"x":1,"y":2,"z":3,"axis":"x"})", 42);
   const auto tool =

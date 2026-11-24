@@ -1,6 +1,7 @@
 #ifndef COFFEECNC_CORE_FIXED_SETTER_HPP
 #define COFFEECNC_CORE_FIXED_SETTER_HPP
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -45,7 +46,9 @@ enum class SetterAction : std::uint8_t {
   bore,
   boss,
   angle,
-  apply_angle
+  apply_angle,
+  // A Z height map (#247): Z top at every point of a grid over an XY rectangle. Writes nothing.
+  height_map
 };
 enum class ProbeDirection : std::uint8_t { z_top, x_minus, x_plus, y_minus, y_plus };
 
@@ -74,7 +77,38 @@ struct FixedSetterRequest {
   // along the edge it probes. Millimetres.
   double gauge_width_mm{};
   std::uint64_t edge_measurement{}; // controller-issued ID for apply_angle
+  // For a height map: the rectangle's corners X, Y and X, Y in the active work system, the
+  // grid step and the work Z to traverse at between the points. Millimetres.
+  std::array<double, 4> grid_mm{};
+  double step_mm{};
+  double clearance_mm{};
 };
+
+// The grid a height map probes: columns and rows of points from the first corner to the second,
+// both included, at most `step` apart. Nothing when the rectangle, step or count is unusable.
+struct HeightGrid {
+  int columns;
+  int rows;
+};
+constexpr int max_height_map_points = 150;
+inline auto height_grid(const std::array<double, 4>& corners, double step)
+    -> std::optional<HeightGrid> {
+  if (!std::ranges::all_of(corners, [](double value) { return std::isfinite(value); }) ||
+      !std::isfinite(step) || step < 0.5 || step > 500)
+    return std::nullopt;
+  const auto count = [&](double from, double to) {
+    return static_cast<int>(std::ceil(std::abs(to - from) / step - 1e-9)) + 1;
+  };
+  const double width = std::abs(corners[2] - corners[0]);
+  const double depth = std::abs(corners[3] - corners[1]);
+  if (width > 2000 || depth > 2000)
+    return std::nullopt;
+  const HeightGrid grid{count(corners[0], corners[2]), count(corners[1], corners[3])};
+  const int points = grid.columns * grid.rows;
+  if (points < 2 || points > max_height_map_points)
+    return std::nullopt;
+  return grid;
+}
 
 struct SetterEpoch {
   std::uint64_t page;
@@ -124,6 +158,19 @@ struct SetterState {
   std::optional<EdgeRotation> edge_rotation{};
   // Physical widths from the probed faces, in mm. A slot or ridge has only one measured axis.
   std::array<std::optional<double>, 2> feature_size{};
+  // After a height map: each point's top, in the work system and in machine coordinates, mm;
+  // row by row from the first corner.
+  struct HeightMap {
+    int wcs{};
+    int columns{};
+    int rows{};
+    struct Point {
+      std::array<double, 3> work;
+      std::array<double, 3> machine;
+    };
+    std::vector<Point> points;
+  };
+  std::optional<HeightMap> height_map{};
 };
 
 } // namespace coffeecnc

@@ -30,7 +30,7 @@ import {
 } from '../pathview'
 import { useDrawnPreview } from '../drawn-preview'
 import { drawPreviewGrid } from '../preview-grid'
-import type { Vec3 } from '../protocol'
+import type { HeightMap, Vec3 } from '../protocol'
 import AppIcon from './AppIcon.vue'
 import { part, partBlock, showPart } from '../step'
 import { modelToMachine } from '../step-model'
@@ -39,6 +39,7 @@ import { loadedToolPreview, reportedToolTip, toolPreviewBounds } from '../tool-p
 import { toolModels } from '../tool-models'
 import { demoFixture, hasDemoProbeFixture, probeFixtureBounds } from '../sim/probe-fixture'
 import { translateMessage } from '../i18n/messages'
+import { heightMap, heightRange } from '../height-map'
 
 const { t } = useI18n()
 
@@ -214,6 +215,7 @@ function fitTo(what: 'path' | 'machine'): void {
       const { min, max } = probeFixtureBounds()
       points.push(...boxCorners(min, max))
     }
+    points.push(...(heightMap.value?.points.map((point) => point.machine) ?? []))
     if (visibleTool.value !== null) {
       const bounds = toolPreviewBounds(visibleTool.value)
       points.push(...boxCorners(bounds.min, bounds.max))
@@ -239,7 +241,7 @@ function setView(name: ViewName): void {
 
 watch(() => part.attachment?.geometry, () => { autoFit.value = true; modelError.value = '' })
 // Live position is not a fit dependency: motion must not make the camera follow the tool.
-watch([drawn, size, modelPoints, probeFixture], () => {
+watch([drawn, size, modelPoints, probeFixture, heightMap], () => {
   if (autoFit.value) {
     fitTo('path')
   }
@@ -388,6 +390,40 @@ function draw(): void {
     context.textAlign = 'center'
     context.textBaseline = 'middle'
     context.fillText(t('program.pathView.toolSetter'), x, y + 30)
+  }
+
+  const map = heightMap.value
+  if (map !== null) {
+    // The height map (#247): each point joined to its neighbours, low blue to high orange.
+    const { low, high } = heightRange(map)
+    const tone = (z: number): string => {
+      const share = high > low ? (z - low) / (high - low) : 0.5
+      return `hsl(${String(Math.round(210 - share * 180))} 80% 55%)` // i18n-ignore
+    }
+    const entry = (column: number, row: number): HeightMap['points'][number] | undefined =>
+      column < map.columns && row < map.rows ? map.points[row * map.columns + column] : undefined
+    context.lineWidth = 1.5
+    context.setLineDash([])
+    for (let row = 0; row < map.rows; row++) {
+      for (let column = 0; column < map.columns; column++) {
+        const here = entry(column, row)
+        if (here === undefined) continue
+        for (const next of [entry(column + 1, row), entry(column, row + 1)]) {
+          if (next === undefined) continue
+          const [a, b] = [at(here.machine), at(next.machine)]
+          context.strokeStyle = tone((here.work[2] + next.work[2]) / 2)
+          context.beginPath()
+          context.moveTo(a[0], a[1])
+          context.lineTo(b[0], b[1])
+          context.stroke()
+        }
+        const [x, y] = at(here.machine)
+        context.fillStyle = tone(here.work[2])
+        context.beginPath()
+        context.arc(x, y, 2.5, 0, 2 * Math.PI)
+        context.fill()
+      }
+    }
   }
 
   const box = travelBox.value
@@ -561,7 +597,7 @@ function schedule(): void {
 }
 
 watch([camera, size, drawn, current, executed, travelBox, workFrame, toolTip, live,
-  tools, theme, showMachine, probeFixture, visibleTool, modelError,
+  tools, theme, showMachine, probeFixture, visibleTool, modelError, heightMap,
   (): number => props.highlight?.first ?? 0, (): number => props.highlight?.last ?? 0], schedule)
 
 let observer: ResizeObserver | null = null

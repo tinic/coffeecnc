@@ -21,6 +21,9 @@ The optional `hello.fixed_setter` advertises `reference_tool`, `travel_mm`, `fee
 | `ball` | `tool`, machine start `x`, `y`, `z`, and `gauge_width` |
 | `angle` | `tool`, machine start `x`, `y`, `z`, `direction`, and `spacing` |
 | `apply_angle` | `tool` and the `measurement_id` of an `angle` result |
+| `height_map` | `tool`, machine start `x`, `y`, `z`, work `x_min`, `y_min`, `x_max`, `y_max`, `step` and `clearance` |
+
+`height_map` probes Z top at each point of the grid from (`x_min`, `y_min`) to (`x_max`, `y_max`) in the active work system. Both corners are included and the points are at most `step` apart. There must be 2 to 150 points, and `step` must be at least 0.5 mm. Between the points the probe moves at work Z `clearance`. The controller checks every point's search start and end, and the lift, against the travel before anything moves. The result's `setter.height_map` has `wcs`, `columns`, `rows` and `points`: row by row from the first corner, each with `work` and `machine` XYZ in mm. Nothing is written.
 | `ball` | `tool`, machine start `x`, `y`, `z`, and `gauge_width` |
 | `angle` | `tool`, machine start `x`, `y`, `z`, `direction`, and `spacing` |
 | `apply_angle` | `tool` and `measurement_id` |

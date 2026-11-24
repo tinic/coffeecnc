@@ -75,6 +75,15 @@ void command_results() {
   const auto feature = Json::parse(encode_result(42, CommandOutcome::accepted, "", slot)).at("setter");
   require(feature.at("feature_size") == Json{{"y", 12.5}} && feature.at("material").at("axis") == "Y",
           "Slot response reports the physical width in millimetres for the measured axis only");
+  SetterState mapped{};
+  mapped.height_map = SetterState::HeightMap{
+      .wcs = 2, .columns = 2, .rows = 1,
+      .points = {{{0.0, 0.0, 0.01}, {5.0, -7.0, 12.01}}, {{10.0, 0.0, -0.02}, {15.0, -7.0, 11.98}}}};
+  const auto map = Json::parse(encode_result(42, CommandOutcome::accepted, "", mapped)).at("setter").at("height_map");
+  require(map.at("wcs") == 2 && map.at("columns") == 2 && map.at("rows") == 1 &&
+              map.at("points").size() == 2 && map.at("points").at(1).at("work").at(2) == -0.02 &&
+              map.at("points").at(1).at("machine").at(0) == 15.0,
+          "A height map reports every point in work and machine millimetres, row by row");
   slot.feature_size[1] = std::numeric_limits<double>::quiet_NaN();
   const auto invalid = Json::parse(encode_result(42, CommandOutcome::accepted, "", slot));
   require(invalid.at("outcome") == "failed" && !invalid.contains("setter"),

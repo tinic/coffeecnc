@@ -6,6 +6,7 @@ import ProbeGuideDialog from '../src/components/ProbeGuideDialog.vue'
 import { panel, send } from '../src/machine'
 import type { CommandResult, ProbeDirection } from '../src/protocol'
 import { setterState } from '../src/setter-state'
+import { heightMap } from '../src/height-map'
 import { hello, SimMachine } from '../src/sim/machine'
 import type { ResultListener } from '../src/store'
 
@@ -191,6 +192,35 @@ describe('recess and ridge setup', () => {
     await answer({ outcome: 'accepted', reason: '', setter: { calibration: null, measurement: null,
       material: { wcs: 2, axis: 'Y' }, feature_size: { y: 12.7 } } })
     expect(fixture.get('.setter-band.done p').text()).toBe('G55 Y0 set at the ridge centre · 0.5000 in')
+  })
+})
+
+describe('height map', () => {
+  it('sends the grid in work millimetres and shows the map', async () => {
+    panel.unit = 'inch'
+    const fixture = wrapper = mount(MaterialProbeControls, { props: { tool: 99 }, global })
+    await fixture.get('.probe-utilities button[aria-haspopup=dialog]').trigger('click')
+    await findButton(fixture, 'Height map…')?.trigger('click')
+    const fields = fixture.findAll('.grid-fields input')
+    for (const [index, value] of ['0', '1', '0', '0.5', '0.5', '0.5'].entries()) await fields[index]?.setValue(value)
+    expect(fixture.get('.summary').text()).toBe('3 × 2 points, about 1 min.')
+    await fixture.get('.start-map').trigger('click')
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'fixed_setter', action: 'height_map', tool: 99, x: 0, y: 0, z: 0,
+      x_min: 0, x_max: 25.4, y_min: 0, y_max: 12.7, step: 12.7, clearance: 12.7 })
+    const map = { wcs: 1, columns: 2, rows: 1, points: [
+      { work: [0, 0, 0.0254], machine: [0, 0, 1] }, { work: [25.4, 0, -0.0254], machine: [25.4, 0, 1] },
+    ] as { work: [number, number, number]; machine: [number, number, number] }[] }
+    await answer({ outcome: 'accepted', reason: '', setter: { calibration: null, measurement: null, height_map: map } })
+    expect(fixture.get('.setter-band.done p').text()).toBe('Height map: 2 points, Z -0.0010 to 0.0010 in. Nothing was set.')
+    expect(heightMap.value).toEqual(map)
+    await findButton(fixture, 'Map')?.trigger('click')
+    expect(fixture.get('[role="dialog"]').text()).toContain('G54, 2 points: Z -0.0010 to 0.0010 in, a spread of 0.0020 in.')
+    vi.mocked(send).mockClear()
+    await findButton(fixture, 'Save CSV')?.trigger('click')
+    const saved = vi.mocked(send).mock.lastCall?.[0]
+    expect(saved).toMatchObject({ type: 'save_program' })
+    expect(saved?.type === 'save_program' && saved.path).toMatch(/^heightmap-\d{8}-\d{6}\.csv$/)
+    expect(saved?.type === 'save_program' && saved.text.split('\n')[0]).toBe('work_x_in,work_y_in,work_z_in,machine_x_in,machine_y_in,machine_z_in')
   })
 })
 

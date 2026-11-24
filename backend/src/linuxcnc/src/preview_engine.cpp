@@ -883,13 +883,17 @@ auto outcome_of(const PreviewSettings& settings, const PreviewInputs& inputs, He
     outcome.error = std::move(output.problem);
   else if ((output.end == HelperEnd::stop || output.end == HelperEnd::cut) && output.problem) {
     const auto& problem = *output.problem;
-    const bool cut = output.end == HelperEnd::cut;
-    outcome.error = PreviewError{
-        problem.line,
-        cut ? std::format("Line {}: {}.", problem.line, problem.text)
-            : std::format("The preview ends at line {}: {}.", problem.line, problem.text),
-        MessageKey{cut ? "backend.previewEngine.lineErrorStop" : "backend.previewEngine.endsAtLine",
-                   {{"line", std::to_string(problem.line)}, {"detail", problem.text}}}};
+    if (output.end == HelperEnd::cut) {
+      outcome.error = PreviewError{
+          problem.line, std::format("Line {}: {}.", problem.line, problem.text),
+          MessageKey{"backend.previewEngine.lineErrorStop",
+                     {{"line", std::to_string(problem.line)}, {"detail", problem.text}}}};
+    } else {
+      outcome.error = PreviewError{
+          problem.line, std::format("The preview ends at line {}: {}.", problem.line, problem.text),
+          MessageKey{"backend.previewEngine.endsAtLine",
+                     {{"line", std::to_string(problem.line)}, {"detail", problem.text}}}};
+    }
   } else {
     outcome.error = ending();
   }

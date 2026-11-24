@@ -3157,9 +3157,11 @@ void uploads_do_not_replace_the_running_program() {
   Session session{port, limits, programs};
   const auto clock = [] { return at(0ms); };
   int published = 0;
-  const auto publish = [&](std::string path) {
+  const auto publish = [&](std::string path, bool starts_running = false) {
     auto queued = session.publish_program(std::move(path), [&]() -> std::expected<void, std::string> {
       ++published;
+      if (starts_running)
+        port.state.interp = InterpState::reading;
       return {};
     });
     require(session.work(clock).status == WorkStatus::done, "The worker takes up publication");
@@ -3190,6 +3192,27 @@ void uploads_do_not_replace_the_running_program() {
               failed.error().localization == MessageKey{"messages.session.savedNotReopened",
                                                         {{"detail", "LinuxCNC refused the open."}}},
           "A failed reopen reports the successful disk publication");
+  const MessageKey cannot_read{"backend.programStore.cannotRead",
+                               {{"detail", "Input/output error"}}};
+  port.script["open_program"].push_back(
+      {ActionStatus::failed, "Program cannot be read: Input/output error", cannot_read});
+  const auto keyed = publish(part);
+  require(!keyed && published == 4 &&
+              keyed.error().localization ==
+                  MessageKey{"messages.session.savedNotReopened",
+                             {{"detail", "Program cannot be read: Input/output error"}},
+                             parameter_localization("detail", cannot_read)},
+          "A successful publication retains the keyed reason that reopening failed");
+  const auto port_calls = port.calls;
+  const auto started = publish(part, true);
+  require(!started && published == 5 && port.calls == port_calls &&
+              started.error().text == "Saved on disk, but not reopened. The program is running." &&
+              started.error().localization ==
+                  MessageKey{
+                      "messages.session.savedNotReopened",
+                      {{"detail", "The program is running."}},
+                      parameter_localization("detail", MessageKey{"backend.programFiles.running"})},
+          "Execution beginning during publication prevents the reopen and reports both facts");
 }
 
 void usb_copy_does_not_hold_the_command_worker() {

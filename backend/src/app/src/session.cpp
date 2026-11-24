@@ -940,12 +940,16 @@ void Session::publish_program(ProgramPublication& request, const Clock& clock) {
         const std::scoped_lock lock{mutex_};
         return !closing_ && epoch == epoch_;
       };
-      const auto reopened = active(now) ? ActionResult{ActionStatus::failed, "The program is running."}
-                                        : port_.open_program(request.path, reopen_current);
+      const auto reopened = active(now)
+                                ? ActionResult{ActionStatus::failed, "The program is running.",
+                                               MessageKey{"backend.programFiles.running"}}
+                                : port_.open_program(request.path, reopen_current);
       if (reopened.status != ActionStatus::accepted)
-        published = std::unexpected(LocalizedReason{
-            std::format("Saved on disk, but not reopened. {}", reopened.reason),
-            MessageKey{"messages.session.savedNotReopened", {{"detail", reopened.reason}}}});
+        published = std::unexpected(
+            LocalizedReason{std::format("Saved on disk, but not reopened. {}", reopened.reason),
+                            MessageKey{"messages.session.savedNotReopened",
+                                       {{"detail", reopened.reason}},
+                                       parameter_localization("detail", reopened.localization)}});
     }
   }
   request.result.set_value(std::move(published));

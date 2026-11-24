@@ -648,17 +648,14 @@ export interface SetterState {
 }
 
 /**
- * Stylus runout: for a search along each direction, how far the probed surface lies beyond the
- * table's ball radius, mm. `eccentricity` (the ball centre's offset from the spindle axis) and
- * `radius_left` follow from opposite directions; without a known centre the eccentricity is 0.
+ * The touch probe's trigger radius correction per machine axis: how far the probed surface lies
+ * beyond the table's ball radius along the travel, mm. Only the radius is kept: without spindle
+ * orientation the ball's eccentricity points another way after every spindle run or tool change.
  */
 export interface ProbeRunout {
   tool: number
   table_diameter: number
-  along: { x_plus: number; x_minus: number; y_plus: number; y_minus: number }
-  eccentricity: [number, number]
-  radius_left: [number, number]
-  centred: boolean
+  radius: { x: number; y: number }
 }
 
 export interface DirectoryEntry {
@@ -958,10 +955,10 @@ export type FixedSetter = CommandBase & { type: 'fixed_setter' } & (
   | { action: 'angle'; direction: 'x_minus' | 'x_plus' | 'y_minus' | 'y_plus'; spacing: number; tool: number; x: number; y: number; z: number }
   | { action: 'apply_angle'; measurement_id: number; tool: number }
   /**
-   * Calibrates the stylus runout on a ring (from inside) or pin (`outside`, below Z0) of the known
-   * `diameter`: +X, −X, +Y and −Y through its centre, which is the active X0 Y0 when `centred`.
+   * Calibrates the trigger radius on a ring (from inside) or pin (`outside`, below Z0) of the known
+   * `diameter`: it finds the centre, then probes +X, −X, +Y and −Y through it.
    */
-  | { action: 'runout'; diameter: number; outside: boolean; centred: boolean; tool: number; x: number; y: number; z: number }
+  | { action: 'runout'; diameter: number; outside: boolean; tool: number; x: number; y: number; z: number }
   | { action: 'clear_runout'; tool: number }
 )
 /** Replaces one tool table row, or adds it. */

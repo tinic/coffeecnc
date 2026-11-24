@@ -392,8 +392,7 @@
       "browserSimulator": "Browser-Simulator",
       "simRestored": "Simulierte Wiederherstellung: Werkzeugtabelle und Nullpunktverschiebungen stammen aus der Sicherung. Dieser Browser bleibt geöffnet.",
       "simNoFile": "{path} existiert nicht.",
-      "noHalTools": "Der Browser-Simulator hat keine HAL-Werkzeuge: Er läuft ohne LinuxCNC.",
-      "runoutTooLargeSim": "Der Rundlauf ist in einer Richtung größer als 0,5 mm. Prüfen Sie Durchmesser, Mitte und Kugelkalibrierung."
+      "noHalTools": "Der Browser-Simulator hat keine HAL-Werkzeuge: Er läuft ohne LinuxCNC."
     },
     "bridge": {
       "noController": "CoffeeCNC kann keine Verbindung zu seiner nativen Steuerung herstellen. Starten Sie die Anwendung neu.",

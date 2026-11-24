@@ -392,8 +392,7 @@
       "browserSimulator": "ブラウザーシミュレーター",
       "simRestored": "シミュレーションの復元：工具テーブルとワーク座標オフセットはバックアップの内容です。このブラウザーは開いたままです。",
       "simNoFile": "{path} は存在しません。",
-      "noHalTools": "ブラウザーシミュレーターには HAL ツールがありません。LinuxCNC なしで動作します。",
-      "runoutTooLargeSim": "ある方向の振れが 0.5 mm を超えています。直径、中心、ボールの校正を確認してください。"
+      "noHalTools": "ブラウザーシミュレーターには HAL ツールがありません。LinuxCNC なしで動作します。"
     },
     "bridge": {
       "noController": "CoffeeCNC がネイティブコントローラーに接続できません。アプリケーションを再起動してください。",

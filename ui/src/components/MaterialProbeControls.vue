@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { translateMessage, translateResult } from '../i18n/messages'
 import { allHomed, homingActive, manualBlock, onResult, panel, send } from '../machine'
 import { homingMessage } from '../machine-block'
-import type { CommandBody, ProbeDirection } from '../protocol'
+import type { CommandBody, ProbeDirection, ProbeRunout } from '../protocol'
 import { setterState, touchedOff, type SetterStatusLine } from '../setter-state'
 import { formatLength, wcsName } from '../units'
 import SetterStatusBand from './SetterStatusBand.vue'
@@ -102,18 +102,16 @@ function openGuide(target: MaterialGuideTarget): void {
     guide.value = target
   }
 }
-function startGuide(size: number, angle: AngleEdge, centred: boolean): void {
+function startGuide(size: number, angle: AngleEdge): void {
   const target = guide.value
   guide.value = null
-  if (target !== null) probe(target, size, angle, centred)
+  if (target !== null) probe(target, size, angle)
 }
-/** The runout compensation the controller applies to this probe's XY results. */
+/** The trigger radius correction the controller applies to this probe's XY results. */
 const runout = computed(() => setterState.value?.runout?.tool === props.tool ? setterState.value.runout : null)
 const signed = (mm: number): string => `${mm >= 0 ? '+' : '−'}${Math.abs(mm).toFixed(3)}`
-const runoutValues = computed(() => {
-  const value = runout.value
-  return value ? { ex: signed(value.eccentricity[0]), ey: signed(value.eccentricity[1]), rx: signed(value.radius_left[0]), ry: signed(value.radius_left[1]) } : null
-})
+const radiusValues = (value: ProbeRunout): { rx: string; ry: string } => ({ rx: signed(value.radius.x), ry: signed(value.radius.y) })
+const runoutValues = computed(() => runout.value ? radiusValues(runout.value) : null)
 function clearRunout(): void {
   if (pending.value || !runout.value) return
   choosingFeature.value = false
@@ -144,7 +142,7 @@ function applyRotation(): void {
   send(request)
 }
 
-function probe(target: MaterialGuideTarget, size: number, angle: AngleEdge, centred = true): void {
+function probe(target: MaterialGuideTarget, size: number, angle: AngleEdge): void {
   if (pending.value) return
   cycleFailed.value = false
   edgeRotation.value = null
@@ -205,7 +203,7 @@ function probe(target: MaterialGuideTarget, size: number, angle: AngleEdge, cent
       break
     case 'runout_ring':
     case 'runout_pin':
-      request = { ...position, action: 'runout', diameter: size, outside: target.kind === 'runout_pin', centred }
+      request = { ...position, action: 'runout', diameter: size, outside: target.kind === 'runout_pin' }
       busy = (): string => t('probe.materialProbe.runoutBusy')
       break
     case 'bore':
@@ -257,11 +255,8 @@ const removeListener = onResult((command, result) => {
       line.value = { text: (): string => t('probe.materialProbe.runoutCleared'), level: 'done' }
       return
     }
-    const values = { tool: String(props.tool), ex: signed(saved.eccentricity[0]), ey: signed(saved.eccentricity[1]),
-      rx: signed(saved.radius_left[0]), ry: signed(saved.radius_left[1]) }
-    line.value = saved.centred
-      ? { text: (): string => t('probe.materialProbe.runoutDone', values), level: 'done' }
-      : { text: (): string => t('probe.materialProbe.runoutRadiusDone', values), level: 'done' }
+    const values = { tool: String(props.tool), ...radiusValues(saved) }
+    line.value = { text: (): string => t('probe.materialProbe.runoutDone', values), level: 'done' }
     return
   }
   if (request.action === 'apply_angle') {
@@ -372,6 +367,13 @@ watch([
   statusRequest = { type: 'fixed_setter', action: 'status' }
   send(statusRequest)
 }, { immediate: true })
+// A tool table change (a ball calibration, an edited diameter or tool number) can void the runout
+// correction: ask again, so "In use" and Clear follow the controller.
+watch((): number | undefined => panel.toolTable?.revision, () => {
+  if (!panel.hello?.fixed_setter || panel.link !== 'live') return
+  statusRequest = { type: 'fixed_setter', action: 'status' }
+  send(statusRequest)
+})
 onBeforeUnmount(() => {
   if (pending.value) send({ type: 'abort' })
   removeListener()

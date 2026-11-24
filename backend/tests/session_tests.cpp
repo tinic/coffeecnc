@@ -182,6 +182,19 @@ public:
   auto tool_length_in_effect() -> std::expected<ToolLengthInEffect, std::string> override {
     return length_in_effect;
   }
+  // A fixed setter when set: each cycle is recorded by its action and answers as scripted.
+  bool setter{};
+  auto fixed_setter_available() const -> bool override { return setter; }
+  auto fixed_setter(const FixedSetterRequest& request, SetterEpoch, const Wanted&)
+      -> std::expected<SetterState, std::string> override {
+    const auto done = record("fixed_setter", request.action == SetterAction::runout ? "runout"
+                                             : request.action == SetterAction::clear_runout
+                                                 ? "clear_runout"
+                                                 : "other");
+    if (done.status != ActionStatus::accepted)
+      return std::unexpected(done.reason);
+    return SetterState{};
+  }
 
 private:
   auto asked(const std::string& action, const ActionResult& result, const Wanted& wanted)
@@ -406,6 +419,38 @@ void stale_pages_are_dropped() {
   const auto outcome = driver.handle(second, ready, at(0ms));
   require(results(outcome).size() == 1 && outcome.send_snapshots,
           "The current page is unaffected by the stale page's IDs");
+}
+
+// Clearing the probe runout (#247) only removes a file: it needs neither the probe in the
+// spindle nor a machine at rest. A probe cycle in progress still refuses it.
+void runout_clear_gates() {
+  Rig rig;
+  rig.port.setter = true;
+  rig.port.state.spindle_active = true;
+  rig.port.state.interp = InterpState::reading;
+  rig.accepted(R"("type":"fixed_setter","action":"clear_runout","tool":99)");
+  rig.acted({"fixed_setter clear_runout"}, "T3 loaded, the spindle on and a program reading: cleared");
+
+  rig.port.state = homed_machine();
+  rig.port.state.tool_in_spindle = 99;
+  rig.port.state.in_position = true;
+  std::optional<Json> refused;
+  rig.port.during["fixed_setter"] = [&rig, &refused]() -> void {
+    const auto outcome = rig.session.submit(
+        rig.page,
+        std::format(R"({{"id":{},"type":"fixed_setter","action":"clear_runout","tool":99}})",
+                    rig.next_id++),
+        at(rig.clock));
+    for (const auto& message : results(outcome))
+      refused = message;
+  };
+  rig.accepted(R"("type":"fixed_setter","action":"runout","tool":99,"x":0,"y":0,"z":0,"diameter":20,"outside":false)");
+  require(refused && refused->at("outcome") == "rejected" &&
+              refused->at("reason") == "A fixed setter operation is in progress.",
+          "a runout cycle in progress refuses Clear");
+  const auto calls = std::exchange(rig.port.calls, {});
+  require(std::ranges::count(calls, std::string{"fixed_setter clear_runout"}) == 0,
+          "the refused Clear reaches no controller");
 }
 
 void controller_messages_wait_for_ready() {
@@ -3060,6 +3105,7 @@ auto main(int argc, char** argv) -> int {
     uploads_do_not_replace_the_running_program();
     usb_copy_does_not_hold_the_command_worker();
     controller_messages_wait_for_ready();
+    runout_clear_gates();
     panel_watchdog_uses_a_monotonic_page_clock();
     panel_watchdog_cancels_waiting_work();
     ready_gate();

@@ -130,11 +130,12 @@ void protocol_forms() {
               ridge.gauge_width_mm == 25.4,
           "Ridge requests carry the axis and approximate width in millimetres");
   const auto runout = body<FixedSetterRequest>(
-      R"({"id":42,"type":"fixed_setter","action":"runout","tool":99,"x":1,"y":2,"z":3,"diameter":20,"outside":false,"centred":true})");
-  require(runout.action == SetterAction::runout && runout.gauge_width_mm == 20 && !runout.outside &&
-              runout.centred,
-          "A runout calibration names the ring diameter, its side and whether X0 Y0 is its centre");
+      R"({"id":42,"type":"fixed_setter","action":"runout","tool":99,"x":1,"y":2,"z":3,"diameter":20,"outside":false})");
+  require(runout.action == SetterAction::runout && runout.gauge_width_mm == 20 && !runout.outside,
+          "A runout calibration names the ring diameter and its side");
   rejected(R"({"id":42,"type":"fixed_setter","action":"runout","tool":99,"x":1,"y":2,"z":3,"diameter":20})", 42);
+  // The centre is always found: no eccentricity is kept, so there is no centred mode (#247).
+  rejected(R"({"id":42,"type":"fixed_setter","action":"runout","tool":99,"x":1,"y":2,"z":3,"diameter":20,"outside":false,"centred":true})", 42);
   require(body<FixedSetterRequest>(R"({"id":42,"type":"fixed_setter","action":"clear_runout","tool":99})").action ==
               SetterAction::clear_runout,
           "Clearing the runout names only the probe");

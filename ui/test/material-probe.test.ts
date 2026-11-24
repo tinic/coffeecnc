@@ -180,36 +180,63 @@ describe('recess and ridge setup', () => {
     expect(fixture.get('.setter-band.blocked p').text()).toContain('+Y face')
   })
 
-  it('calibrates the runout on a ring, then clears it', async () => {
+  it('calibrates the runout on a ring, shows the radius correction, then clears it', async () => {
     const fixture = await choose('Stylus runout on a ring gauge')
+    expect(fixture.find('.edge-choice').exists()).toBe(false)
     await fixture.get('.dimension input').setValue('20')
     await fixture.get('.start-probe').trigger('click')
     expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'fixed_setter', action: 'runout', diameter: 20, outside: false,
-      centred: true, tool: 99, x: 0, y: 0, z: 0 })
+      tool: 99, x: 0, y: 0, z: 0 })
     expect(fixture.get('.setter-band.busy p').text()).toBe('Measuring the stylus runout…')
-    const runout = { tool: 99, table_diameter: 2, along: { x_plus: 0.04, x_minus: -0.06, y_plus: -0.04, y_minus: 0.02 },
-      eccentricity: [0.05, -0.03] as [number, number], radius_left: [-0.01, -0.01] as [number, number], centred: true }
+    const runout = { tool: 99, table_diameter: 2, radius: { x: -0.008, y: -0.009 } }
     await answer({ outcome: 'accepted', reason: '', setter: { calibration: null, measurement: null, runout } })
-    expect(fixture.get('.setter-band.done p').text()).toBe(
-      'Runout saved for T99: eccentricity X +0.050 Y −0.030 mm, radius left X −0.010 Y −0.010 mm. Every XY probe result now uses it.')
+    expect(fixture.get('.setter-band.done p').text()).toBe('Runout saved for T99: trigger radius correction X −0.008 Y −0.009 mm. ' +
+      'Check these values: a wrong gauge diameter shows here as half its error. Every XY probe result now uses them.')
     await fixture.get('.probe-utilities button[aria-haspopup=dialog]').trigger('click')
-    expect(fixture.get('.runout-in-use').text()).toBe('In use: eccentricity X +0.050 Y −0.030 mm, radius left X −0.010 Y −0.010 mm.')
+    expect(fixture.get('.runout-in-use').text()).toBe(
+      'In use: trigger radius correction X −0.008 Y −0.009 mm. The eccentricity is not corrected: the spindle cannot orient.')
     vi.mocked(send).mockClear()
+    // Clear only removes the file: also with another tool loaded and a program running.
+    const status = panel.status
+    if (!status) throw new Error('Missing status')
+    status.tool.in_spindle = 3
+    status.interp = 'reading'
+    await nextTick()
     const clear = fixture.findAll('.feature-options button').find(entry => entry.attributes('aria-label') === 'Clear the runout compensation')
+    expect(clear?.attributes('disabled')).toBeUndefined()
     await clear?.trigger('click')
     expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'fixed_setter', action: 'clear_runout', tool: 99 })
     await answer({ outcome: 'accepted', reason: '', setter: { calibration: null, measurement: null } })
     expect(fixture.get('.setter-band.done p').text()).toBe('Runout compensation cleared.')
   })
 
-  it('calibrates the runout on a pin with the centre found by probing', async () => {
+  it('asks the controller again when the tool table changes, so "In use" follows it', async () => {
+    panel.hello = { ...hello, fixed_setter: {
+      reference_tool: 98, travel_mm: 15, feed_mm_min: 240, xy_tolerance_mm: 0.5, material_features: true,
+    } }
+    const fixture = wrapper = mount(MaterialProbeControls, { props: { tool: 99 }, global })
+    const runout = { tool: 99, table_diameter: 2, radius: { x: -0.008, y: -0.009 } }
+    await answer({ outcome: 'accepted', reason: '', setter: { calibration: null, measurement: null, measured_tools: [98, 99], runout } })
+    await fixture.get('.probe-utilities button[aria-haspopup=dialog]').trigger('click')
+    expect(fixture.find('.runout-in-use').exists()).toBe(true)
+    vi.mocked(send).mockClear()
+    // A ball calibration or an edited diameter: the controller no longer applies the correction.
+    panel.toolTable = { type: 'tool_table', revision: 2, tools: [] }
+    await nextTick()
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'fixed_setter', action: 'status' })
+    await answer({ outcome: 'accepted', reason: '', setter: { calibration: null, measurement: null, measured_tools: [98, 99] } })
+    expect(fixture.find('.runout-in-use').exists()).toBe(false)
+    const clear = fixture.findAll('.feature-options button').find(entry => entry.attributes('aria-label') === 'Clear the runout compensation')
+    expect(clear?.attributes('disabled')).toBeDefined()
+    panel.toolTable = null
+  })
+
+  it('calibrates the runout on a pin', async () => {
     const fixture = await choose('Stylus runout on a pin gauge')
-    const find = fixture.findAll('.edge-choice button').find(entry => entry.text() === 'Find the centre')
-    await find?.trigger('click')
     await fixture.get('.dimension input').setValue('12')
     await fixture.get('.start-probe').trigger('click')
     expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'fixed_setter', action: 'runout', diameter: 12, outside: true,
-      centred: false, tool: 99, x: 0, y: 0, z: 0 })
+      tool: 99, x: 0, y: 0, z: 0 })
   })
 
   it('reports a one-axis ridge width in the display units', async () => {

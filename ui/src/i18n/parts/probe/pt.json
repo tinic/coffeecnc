@@ -109,11 +109,10 @@
       "runoutClearLabel": "Limpar a compensação de excentricidade",
       "runoutBusy": "A medir a excentricidade da ponta…",
       "runoutClearing": "A limpar a compensação de excentricidade…",
-      "runoutDone": "Excentricidade guardada para T{tool}: excentricidade X {ex} Y {ey} mm, raio restante X {rx} Y {ry} mm. Todos os resultados XY de apalpação passam a usá-la.",
-      "runoutRadiusDone": "Excentricidade guardada para T{tool}: raio restante X {rx} Y {ry} mm. O centro não era conhecido, por isso a excentricidade não foi medida.",
+      "runoutDone": "Excentricidade guardada para T{tool}: correção do raio de disparo X {rx} Y {ry} mm. Verifique estes valores: um diâmetro de padrão errado aparece aqui com metade do seu erro. Todos os resultados XY de apalpação passam a usá-los.",
       "runoutCleared": "Compensação de excentricidade limpa.",
       "noRunout": "A excentricidade não foi guardada.",
-      "runoutInUse": "Em uso: excentricidade X {ex} Y {ey} mm, raio restante X {rx} Y {ry} mm.",
+      "runoutInUse": "Em uso: correção do raio de disparo X {rx} Y {ry} mm. A excentricidade não é corrigida: a árvore não se pode orientar.",
       "touchOffPin": "Meça primeiro {tool} e apalpe o topo Z do pino."
     },
     "guide": {
@@ -198,9 +197,9 @@
       "stepClearance": "Recuar até à distância de segurança",
       "titleRunoutRing": "Calibrar a excentricidade num anel",
       "titleRunoutPin": "Calibrar a excentricidade num pino",
-      "setupRunoutRing": "Calibre primeiro a esfera. Leve a esfera para dentro do anel padrão, abaixo do topo, e introduza o diâmetro exato. Para medir a excentricidade, defina antes X0 Y0 no centro do anel com um comparador.",
-      "setupRunoutPin": "Calibre primeiro a esfera e defina Z0 no topo do pino. Posicione-se por cima e introduza o diâmetro exato. Para medir a excentricidade, defina antes X0 Y0 no centro do pino com um comparador.",
-      "resultRunout": "Guardar a correção de cada direção. Todos os resultados XY de apalpação seguintes a usam",
+      "setupRunoutRing": "Calibre primeiro a esfera. Leve a esfera para dentro do anel padrão, abaixo do topo e perto do centro, e introduza o diâmetro exato. O apalpador encontra o centro. Só o raio de disparo é corrigido: sem orientação da árvore, a excentricidade da esfera muda com o ângulo da árvore e não pode ser compensada.",
+      "setupRunoutPin": "Calibre primeiro a esfera e defina Z0 no topo do pino. Posicione-se por cima e introduza o diâmetro exato. O apalpador encontra o centro. Só o raio de disparo é corrigido: sem orientação da árvore, a excentricidade da esfera muda com o ângulo da árvore e não pode ser compensada.",
+      "resultRunout": "Guardar a correção do raio de disparo em X e Y. Todos os resultados XY de apalpação seguintes a usam",
       "inputRing": "Diâmetro do anel",
       "inputPin": "Diâmetro do pino"
     },
@@ -231,10 +230,7 @@
       "result": "Resultado",
       "lengthTolerance": "Tolerância de comprimento",
       "startCheck": "Iniciar verificação",
-      "startProbe": "Iniciar apalpação",
-      "centreChoice": "Centro do padrão",
-      "centreAtOrigin": "Centro em X0 Y0",
-      "centreFound": "Encontrar o centro"
+      "startProbe": "Iniciar apalpação"
     },
     "guideCanvas": {
       "label": "Movimento do apalpador em 3D: arraste para rodar",

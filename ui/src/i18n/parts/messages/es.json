@@ -392,8 +392,7 @@
       "browserSimulator": "simulador en el navegador",
       "simRestored": "Restauración simulada: la tabla de herramientas y los decalajes de origen de pieza son los de la copia. Este navegador sigue abierto.",
       "simNoFile": "{path} no existe.",
-      "noHalTools": "El simulador del navegador no tiene herramientas HAL: funciona sin LinuxCNC.",
-      "runoutTooLargeSim": "La excentricidad supera 0,5 mm en una dirección. Compruebe el diámetro, el centro y la calibración de la bola."
+      "noHalTools": "El simulador del navegador no tiene herramientas HAL: funciona sin LinuxCNC."
     },
     "bridge": {
       "noController": "CoffeeCNC no puede conectarse a su controlador nativo. Reinicie la aplicación.",

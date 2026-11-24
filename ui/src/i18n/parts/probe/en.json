@@ -109,11 +109,10 @@
       "runoutClearLabel": "Clear the runout compensation",
       "runoutBusy": "Measuring the stylus runout…",
       "runoutClearing": "Clearing the runout compensation…",
-      "runoutDone": "Runout saved for T{tool}: eccentricity X {ex} Y {ey} mm, radius left X {rx} Y {ry} mm. Every XY probe result now uses it.",
-      "runoutRadiusDone": "Runout saved for T{tool}: radius left X {rx} Y {ry} mm. The centre was not known, so the eccentricity is not measured.",
+      "runoutDone": "Runout saved for T{tool}: trigger radius correction X {rx} Y {ry} mm. Check these values: a wrong gauge diameter shows here as half its error. Every XY probe result now uses them.",
       "runoutCleared": "Runout compensation cleared.",
       "noRunout": "The runout was not saved.",
-      "runoutInUse": "In use: eccentricity X {ex} Y {ey} mm, radius left X {rx} Y {ry} mm.",
+      "runoutInUse": "In use: trigger radius correction X {rx} Y {ry} mm. The eccentricity is not corrected: the spindle cannot orient.",
       "touchOffPin": "Touch off {tool} and probe Z top on the pin first."
     },
     "guide": {
@@ -198,9 +197,9 @@
       "stepClearance": "Retract to clearance",
       "titleRunoutRing": "Calibrate stylus runout on a ring",
       "titleRunoutPin": "Calibrate stylus runout on a pin",
-      "setupRunoutRing": "Calibrate the ball first. Jog the ball into the ring gauge below its top and enter its exact diameter. To measure the eccentricity, first set X0 Y0 at the ring centre with a test indicator.",
-      "setupRunoutPin": "Calibrate the ball and set Z0 on the pin top first. Jog above the pin and enter its exact diameter. To measure the eccentricity, first set X0 Y0 at the pin centre with a test indicator.",
-      "resultRunout": "Save the correction for each direction. Every later XY probe result uses it",
+      "setupRunoutRing": "Calibrate the ball first. Jog the ball into the ring gauge below its top, near its centre, and enter its exact diameter. The probe finds the centre. Only the trigger radius is corrected: without spindle orientation the ball’s eccentricity changes with the spindle angle, so it cannot be compensated.",
+      "setupRunoutPin": "Calibrate the ball and set Z0 on the pin top first. Jog above the pin and enter its exact diameter. The probe finds the centre. Only the trigger radius is corrected: without spindle orientation the ball’s eccentricity changes with the spindle angle, so it cannot be compensated.",
+      "resultRunout": "Save the trigger radius correction of X and Y. Every later XY probe result uses it",
       "inputRing": "Ring diameter",
       "inputPin": "Pin diameter"
     },
@@ -231,10 +230,7 @@
       "result": "Result",
       "lengthTolerance": "Length tolerance",
       "startCheck": "Start check",
-      "startProbe": "Start probe",
-      "centreChoice": "Gauge centre",
-      "centreAtOrigin": "Centre at X0 Y0",
-      "centreFound": "Find the centre"
+      "startProbe": "Start probe"
     },
     "guideCanvas": {
       "label": "3D probe motion: drag to rotate",

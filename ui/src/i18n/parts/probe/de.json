@@ -109,11 +109,10 @@
       "runoutClearLabel": "Rundlaufkorrektur löschen",
       "runoutBusy": "Taststift-Rundlauf wird gemessen…",
       "runoutClearing": "Rundlaufkorrektur wird gelöscht…",
-      "runoutDone": "Rundlauf für T{tool} gespeichert: Exzentrizität X {ex} Y {ey} mm, Restradius X {rx} Y {ry} mm. Jedes XY-Antastergebnis verwendet ihn jetzt.",
-      "runoutRadiusDone": "Rundlauf für T{tool} gespeichert: Restradius X {rx} Y {ry} mm. Die Mitte war nicht bekannt, daher ist die Exzentrizität nicht gemessen.",
+      "runoutDone": "Rundlauf für T{tool} gespeichert: Korrektur des Schaltradius X {rx} Y {ry} mm. Prüfen Sie die Werte: Ein falscher Lehrendurchmesser zeigt sich hier mit seinem halben Fehler. Jedes XY-Antastergebnis verwendet sie jetzt.",
       "runoutCleared": "Rundlaufkorrektur gelöscht.",
       "noRunout": "Der Rundlauf wurde nicht gespeichert.",
-      "runoutInUse": "In Verwendung: Exzentrizität X {ex} Y {ey} mm, Restradius X {rx} Y {ry} mm.",
+      "runoutInUse": "In Verwendung: Korrektur des Schaltradius X {rx} Y {ry} mm. Die Exzentrizität wird nicht korrigiert: Die Spindel kann nicht orientieren.",
       "touchOffPin": "Zuerst {tool} einmessen und Z oben am Dorn antasten."
     },
     "guide": {
@@ -198,9 +197,9 @@
       "stepClearance": "Auf Sicherheitsabstand zurückziehen",
       "titleRunoutRing": "Taststift-Rundlauf am Ring kalibrieren",
       "titleRunoutPin": "Taststift-Rundlauf am Dorn kalibrieren",
-      "setupRunoutRing": "Zuerst die Kugel kalibrieren. Die Kugel in den Einstellring unter seine Oberkante fahren und den genauen Durchmesser eingeben. Für die Exzentrizität vorher X0 Y0 mit einer Messuhr in die Ringmitte setzen.",
-      "setupRunoutPin": "Zuerst die Kugel kalibrieren und Z0 auf die Dornoberseite setzen. Über den Dorn fahren und den genauen Durchmesser eingeben. Für die Exzentrizität vorher X0 Y0 mit einer Messuhr in die Dornmitte setzen.",
-      "resultRunout": "Die Korrektur je Richtung speichern. Jedes spätere XY-Antastergebnis verwendet sie",
+      "setupRunoutRing": "Zuerst die Kugel kalibrieren. Die Kugel nahe der Mitte in den Einstellring unter seine Oberkante fahren und den genauen Durchmesser eingeben. Der Taster findet die Mitte. Nur der Schaltradius wird korrigiert: Ohne Spindelorientierung ändert sich die Exzentrizität der Kugel mit dem Spindelwinkel und lässt sich nicht ausgleichen.",
+      "setupRunoutPin": "Zuerst die Kugel kalibrieren und Z0 auf die Dornoberseite setzen. Über den Dorn fahren und den genauen Durchmesser eingeben. Der Taster findet die Mitte. Nur der Schaltradius wird korrigiert: Ohne Spindelorientierung ändert sich die Exzentrizität der Kugel mit dem Spindelwinkel und lässt sich nicht ausgleichen.",
+      "resultRunout": "Die Korrektur des Schaltradius in X und Y speichern. Jedes spätere XY-Antastergebnis verwendet sie",
       "inputRing": "Ringdurchmesser",
       "inputPin": "Dorndurchmesser"
     },
@@ -231,10 +230,7 @@
       "result": "Ergebnis",
       "lengthTolerance": "Längentoleranz",
       "startCheck": "Prüfung starten",
-      "startProbe": "Antasten starten",
-      "centreChoice": "Lehrenmitte",
-      "centreAtOrigin": "Mitte bei X0 Y0",
-      "centreFound": "Mitte suchen"
+      "startProbe": "Antasten starten"
     },
     "guideCanvas": {
       "label": "Bewegung des Messtasters in 3D: zum Drehen ziehen",

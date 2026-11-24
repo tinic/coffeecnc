@@ -109,11 +109,10 @@
       "runoutClearLabel": "清除跳动补偿",
       "runoutBusy": "正在测量测针跳动…",
       "runoutClearing": "正在清除跳动补偿…",
-      "runoutDone": "已保存 T{tool} 的跳动：偏心 X {ex} Y {ey} mm，剩余半径 X {rx} Y {ry} mm。此后所有 XY 探测结果都会使用它。",
-      "runoutRadiusDone": "已保存 T{tool} 的跳动：剩余半径 X {rx} Y {ry} mm。中心未知，因此未测量偏心。",
+      "runoutDone": "已保存 T{tool} 的跳动：触发半径补正 X {rx} Y {ry} mm。请检查这些值：量规直径输错时，这里会显示其误差的一半。此后所有 XY 探测结果都会使用它们。",
       "runoutCleared": "已清除跳动补偿。",
       "noRunout": "跳动未保存。",
-      "runoutInUse": "使用中：偏心 X {ex} Y {ey} mm，剩余半径 X {rx} Y {ry} mm。",
+      "runoutInUse": "使用中：触发半径补正 X {rx} Y {ry} mm。主轴无法定向，因此不补正偏心。",
       "touchOffPin": "请先对 {tool} 对刀，并探测塞规顶面 Z。"
     },
     "guide": {
@@ -198,9 +197,9 @@
       "stepClearance": "退回到安全距离",
       "titleRunoutRing": "用环规校准测针跳动",
       "titleRunoutPin": "用塞规校准测针跳动",
-      "setupRunoutRing": "请先校准测球。将测球移入环规并低于其顶面，输入其精确直径。要测量偏心，请先用杠杆表把 X0 Y0 设在环规中心。",
-      "setupRunoutPin": "请先校准测球，并在塞规顶面设置 Z0。移动到塞规上方，输入其精确直径。要测量偏心，请先用杠杆表把 X0 Y0 设在塞规中心。",
-      "resultRunout": "保存每个方向的修正。此后所有 XY 探测结果都会使用它",
+      "setupRunoutRing": "请先校准测球。将测球移入环规中心附近并低于其顶面，输入其精确直径。测头会找到中心。只补正触发半径：没有主轴定向时，测球的偏心随主轴角度变化，无法补偿。",
+      "setupRunoutPin": "请先校准测球，并在塞规顶面设置 Z0。移动到塞规上方，输入其精确直径。测头会找到中心。只补正触发半径：没有主轴定向时，测球的偏心随主轴角度变化，无法补偿。",
+      "resultRunout": "保存 X 和 Y 的触发半径补正。此后所有 XY 探测结果都会使用它",
       "inputRing": "环规直径",
       "inputPin": "塞规直径"
     },
@@ -231,10 +230,7 @@
       "result": "结果",
       "lengthTolerance": "长度公差",
       "startCheck": "开始检查",
-      "startProbe": "开始探测",
-      "centreChoice": "量规中心",
-      "centreAtOrigin": "中心在 X0 Y0",
-      "centreFound": "查找中心"
+      "startProbe": "开始探测"
     },
     "guideCanvas": {
       "label": "3D 探测动作：拖动以旋转",

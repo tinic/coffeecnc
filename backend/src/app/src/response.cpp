@@ -77,14 +77,10 @@ auto encode_result(RequestId id, CommandOutcome outcome, std::string_view reason
     if (const auto width = setter->feature_size[1])
       message["setter"]["feature_size"]["y"] = *width;
     if (const auto& runout = setter->runout) {
-      const auto& a = runout->along_mm;
       message["setter"]["runout"] = {
           {"tool", runout->tool},
           {"table_diameter", runout->table_diameter_mm},
-          {"along", {{"x_plus", a[0]}, {"x_minus", a[1]}, {"y_plus", a[2]}, {"y_minus", a[3]}}},
-          {"eccentricity", runout->eccentricity()},
-          {"radius_left", runout->radius_left()},
-          {"centred", runout->centred}};
+          {"radius", {{"x", runout->radius_mm[0]}, {"y", runout->radius_mm[1]}}}};
     }
     if (const auto& material = setter->material)
       message["setter"]["material"] = {{"wcs", material->wcs},

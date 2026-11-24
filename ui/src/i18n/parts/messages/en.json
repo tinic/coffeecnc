@@ -392,8 +392,7 @@
       "browserSimulator": "browser simulator",
       "simRestored": "Simulated restore: the tool table and work offsets are the backup's. This browser stays open.",
       "simNoFile": "{path} does not exist.",
-      "noHalTools": "The browser simulator has no HAL tools: it runs without LinuxCNC.",
-      "runoutTooLargeSim": "The runout is more than 0.5 mm in a direction. Check the diameter, the centre and the ball calibration."
+      "noHalTools": "The browser simulator has no HAL tools: it runs without LinuxCNC."
     },
     "bridge": {
       "noController": "CoffeeCNC cannot connect to its native controller. Restart the application.",

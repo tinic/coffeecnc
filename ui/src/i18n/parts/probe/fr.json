@@ -109,11 +109,10 @@
       "runoutClearLabel": "Effacer la compensation de faux-rond",
       "runoutBusy": "Mesure du faux-rond du stylet…",
       "runoutClearing": "Effacement de la compensation de faux-rond…",
-      "runoutDone": "Faux-rond enregistré pour T{tool} : excentricité X {ex} Y {ey} mm, rayon restant X {rx} Y {ry} mm. Chaque résultat de palpage XY l’utilise désormais.",
-      "runoutRadiusDone": "Faux-rond enregistré pour T{tool} : rayon restant X {rx} Y {ry} mm. Le centre n’était pas connu, l’excentricité n’est donc pas mesurée.",
+      "runoutDone": "Faux-rond enregistré pour T{tool} : correction du rayon de déclenchement X {rx} Y {ry} mm. Vérifiez ces valeurs : un diamètre d’étalon erroné y apparaît avec la moitié de son erreur. Chaque résultat de palpage XY les utilise désormais.",
       "runoutCleared": "Compensation de faux-rond effacée.",
       "noRunout": "Le faux-rond n’a pas été enregistré.",
-      "runoutInUse": "En service : excentricité X {ex} Y {ey} mm, rayon restant X {rx} Y {ry} mm.",
+      "runoutInUse": "En service : correction du rayon de déclenchement X {rx} Y {ry} mm. L’excentricité n’est pas corrigée : la broche ne peut pas s’orienter.",
       "touchOffPin": "Mesurez d’abord {tool} et palpez le dessus Z du tampon."
     },
     "guide": {
@@ -198,9 +197,9 @@
       "stepClearance": "Dégager à la hauteur de dégagement",
       "titleRunoutRing": "Étalonner le faux-rond sur une bague",
       "titleRunoutPin": "Étalonner le faux-rond sur un tampon",
-      "setupRunoutRing": "Étalonnez d’abord la bille. Amenez la bille dans la bague étalon, sous son bord, et saisissez son diamètre exact. Pour mesurer l’excentricité, définissez d’abord X0 Y0 au centre de la bague avec un comparateur.",
-      "setupRunoutPin": "Étalonnez d’abord la bille et définissez Z0 sur le dessus du tampon. Placez-vous au-dessus et saisissez son diamètre exact. Pour mesurer l’excentricité, définissez d’abord X0 Y0 au centre du tampon avec un comparateur.",
-      "resultRunout": "Enregistrer la correction de chaque direction. Chaque résultat de palpage XY ultérieur l’utilise",
+      "setupRunoutRing": "Étalonnez d’abord la bille. Amenez la bille dans la bague étalon, sous son bord et près du centre, et saisissez son diamètre exact. Le palpeur trouve le centre. Seul le rayon de déclenchement est corrigé : sans orientation de broche, l’excentricité de la bille change avec l’angle de la broche et ne peut pas être compensée.",
+      "setupRunoutPin": "Étalonnez d’abord la bille et définissez Z0 sur le dessus du tampon. Placez-vous au-dessus et saisissez son diamètre exact. Le palpeur trouve le centre. Seul le rayon de déclenchement est corrigé : sans orientation de broche, l’excentricité de la bille change avec l’angle de la broche et ne peut pas être compensée.",
+      "resultRunout": "Enregistrer la correction du rayon de déclenchement en X et Y. Chaque résultat de palpage XY ultérieur l’utilise",
       "inputRing": "Diamètre de la bague",
       "inputPin": "Diamètre du tampon"
     },
@@ -231,10 +230,7 @@
       "result": "Résultat",
       "lengthTolerance": "Tolérance de longueur",
       "startCheck": "Lancer le contrôle",
-      "startProbe": "Lancer le palpage",
-      "centreChoice": "Centre de l’étalon",
-      "centreAtOrigin": "Centre en X0 Y0",
-      "centreFound": "Trouver le centre"
+      "startProbe": "Lancer le palpage"
     },
     "guideCanvas": {
       "label": "Mouvement du palpeur en 3D : faites glisser pour tourner",

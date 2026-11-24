@@ -421,10 +421,9 @@ auto command(const Json& object) -> Command {
         fields(object, {"id", "type", "action", "tool", "x", "y", "z", "diameter"});
         request.gauge_width_mm = number(object, "diameter");
       } else if (action == SetterAction::runout) {
-        fields(object, {"id", "type", "action", "tool", "x", "y", "z", "diameter", "outside", "centred"});
+        fields(object, {"id", "type", "action", "tool", "x", "y", "z", "diameter", "outside"});
         request.gauge_width_mm = number(object, "diameter");
         request.outside = boolean(object, "outside");
-        request.centred = boolean(object, "centred");
       } else if (action == SetterAction::slot || action == SetterAction::ridge) {
         if (action == SetterAction::ridge) {
           fields(object, {"id", "type", "action", "tool", "x", "y", "z", "axis", "width"});

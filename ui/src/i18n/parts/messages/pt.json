@@ -392,8 +392,7 @@
       "browserSimulator": "simulador no navegador",
       "simRestored": "Restauro simulado: a tabela de ferramentas e os deslocamentos da origem da peça são os da cópia. Este navegador continua aberto.",
       "simNoFile": "{path} não existe.",
-      "noHalTools": "O simulador do navegador não tem ferramentas HAL: funciona sem o LinuxCNC.",
-      "runoutTooLargeSim": "A excentricidade é superior a 0,5 mm numa direção. Verifique o diâmetro, o centro e a calibração da esfera."
+      "noHalTools": "O simulador do navegador não tem ferramentas HAL: funciona sem o LinuxCNC."
     },
     "bridge": {
       "noController": "O CoffeeCNC não consegue ligar-se ao seu controlador nativo. Reinicie a aplicação.",

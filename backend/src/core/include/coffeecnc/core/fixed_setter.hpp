@@ -46,8 +46,9 @@ enum class SetterAction : std::uint8_t {
   boss,
   angle,
   apply_angle,
-  // Stylus runout (#247): measures a ring or pin of known diameter in +X, -X, +Y and -Y and
-  // keeps the per-direction compensation for the touch probe; clear_runout forgets it.
+  // Stylus runout (#247): finds the centre of a ring or pin of known diameter, then measures it
+  // in +X, -X, +Y and -Y and keeps the trigger radius correction per axis for the touch probe;
+  // clear_runout forgets it.
   runout,
   clear_runout
 };
@@ -60,35 +61,35 @@ inline auto wrapped_rotation(double degrees) -> double {
   return turn == -180.0 ? 180.0 : turn;
 }
 
-// The stylus runout of the touch probe (#247): for a search along +X, -X, +Y and -Y, how far
-// the probed surface lies beyond where the ball radius of the tool table puts it, mm. Measured
-// on a ring or pin of known diameter after the ball calibration, against that table diameter.
-// It holds the eccentricity of the ball centre from the spindle axis (the half difference of
-// opposite directions) and the trigger radius left over per axis (their mean).
+// The trigger radius correction of the touch probe (#247): per machine axis, how far the probed
+// surface lies beyond where the ball radius of the tool table puts it, mm. Measured on a ring or
+// pin of known diameter after the ball calibration, against that table diameter.
+// Only the radius is kept. The ball's eccentricity from the spindle axis turns with the spindle,
+// and no configured machine can orient the spindle (no M19): after a spindle run, a tool change
+// or a turn by hand, a stored eccentricity points the wrong way and doubles the error.
 struct ProbeRunout {
   int tool{};
   double table_diameter_mm{}; // the ball diameter the compensation is relative to
-  std::array<double, 4> along_mm{}; // +X, -X, +Y, -Y
-  bool centred{}; // the ring's centre was known (X0 Y0): eccentricity measured, not assumed 0
+  std::array<double, 2> radius_mm{}; // X, Y
   friend auto operator==(const ProbeRunout&, const ProbeRunout&) -> bool = default;
-  [[nodiscard]] auto eccentricity() const -> std::array<double, 2> {
-    return {(along_mm[0] - along_mm[1]) / 2, (along_mm[2] - along_mm[3]) / 2};
-  }
-  [[nodiscard]] auto radius_left() const -> std::array<double, 2> {
-    return {(along_mm[0] + along_mm[1]) / 2, (along_mm[2] + along_mm[3]) / 2};
-  }
   // What a ball-centre contact of a search along the machine XY unit direction (ux, uy) moves
-  // by: the eccentricity, and the radius left over along the travel (between the axes by the
-  // squared direction cosines). A contact moved so gives the surface with the table radius.
+  // by: the radius correction along the travel, between the axes by the squared direction
+  // cosines. A contact moved so gives the surface with the table radius.
   [[nodiscard]] auto correction(double ux, double uy) const -> std::array<double, 2> {
-    const auto e = eccentricity();
-    const auto r = radius_left();
-    const double along = r[0] * ux * ux + r[1] * uy * uy;
-    return {e[0] + along * ux, e[1] + along * uy};
+    const double along = radius_mm[0] * ux * ux + radius_mm[1] * uy * uy;
+    return {along * ux, along * uy};
   }
 };
-// More than this per direction is not runout: a wrong diameter, centre or ball.
-constexpr double max_runout_mm = 0.5;
+// More than this per axis is not the trigger radius left after a ball calibration: a wrong
+// gauge diameter (19.00 entered for 19.05 is 0.025 mm) or no ball calibration.
+constexpr double max_runout_mm = 0.05;
+// Before any motion: whether the material search travel reaches the gauge. In a ring the ball
+// searches from near its centre to the wall; beside a pin it starts `outside` beyond the
+// surface, as for a boss (reach, margin and the ball radius).
+constexpr auto runout_travel_reaches(bool pin, double diameter_mm, double outside_mm,
+                                     double ball_radius_mm, double travel_mm) -> bool {
+  return pin ? travel_mm >= outside_mm + ball_radius_mm : travel_mm >= diameter_mm / 2;
+}
 
 constexpr auto is_material_probe(SetterAction action) -> bool {
   return action != SetterAction::status && action != SetterAction::touch_off &&
@@ -108,10 +109,8 @@ struct FixedSetterRequest {
   // along the edge it probes; for a runout, the ring's or pin's known diameter. Millimetres.
   double gauge_width_mm{};
   std::uint64_t edge_measurement{}; // controller-issued ID for apply_angle
-  // For a runout: a pin probed from outside rather than a ring from inside, and whether its
-  // centre is the active work system's X0 Y0 (set with a test indicator).
+  // For a runout: a pin probed from outside rather than a ring from inside.
   bool outside{};
-  bool centred{};
 };
 
 struct SetterEpoch {

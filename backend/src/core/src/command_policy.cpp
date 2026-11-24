@@ -532,7 +532,9 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s,
                           RefusalMessage{"messages.policy.toolTouchOffInvalid"});
           return idle(s, TaskMode::mdi, limits_.homing_required);
         } else if constexpr (std::is_same_v<T, FixedSetterRequest>) {
-          if (c.action == SetterAction::status)
+          // Clearing the runout only removes a file: any tool, moving or not. The session
+          // refuses it while a probe cycle runs, as every other request.
+          if (c.action == SetterAction::status || c.action == SetterAction::clear_runout)
             return allow();
           if (s.spindle_active || s.requested_tool || s.tool_in_spindle <= 0 ||
               c.tool != s.tool_in_spindle)

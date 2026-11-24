@@ -312,8 +312,10 @@ auto encoded_messages() -> std::vector<Encoded> {
                                        1700000001100ms,
                                        MessageKey{"backend.jogStop.probeContact"}));
   messages.emplace_back(encode_result(41, CommandOutcome::accepted, ""));
+  messages.emplace_back(
+      encode_result(42, CommandOutcome::rejected, "Home all configured axes first."));
   messages.emplace_back(encode_result(
-      42, CommandOutcome::rejected, "The interpreter modes changed. Review a fresh program check.",
+      51, CommandOutcome::rejected, "The interpreter modes changed. Review a fresh program check.",
       {}, {}, RefusalMessage{"backend.nmlPort.modesChanged"}));
   messages.emplace_back(encode_result(
       46, CommandOutcome::rejected, "Jog velocity is above the Z axis limit of 750 mm/min.", {}, {},

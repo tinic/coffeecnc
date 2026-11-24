@@ -1052,6 +1052,12 @@ const examples = [
     "type": "result",
     "id": 42,
     "outcome": "rejected",
+    "reason": "Home all configured axes first."
+  },
+  {
+    "type": "result",
+    "id": 51,
+    "outcome": "rejected",
     "reason": "The interpreter modes changed. Review a fresh program check.",
     "refusal": {
       "key": "backend.nmlPort.modesChanged",

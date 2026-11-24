@@ -282,9 +282,9 @@ void rigid_tapping_reversal_bounds() {
   const auto ordinary = rig.preview("(G33.1 is not used here)\nG0 Z3 ; G33.1 Z-4\nM2\n");
   require(ordinary.state == PreviewState::ready && ordinary.check && ordinary.check->errors.empty(),
           "Tapping mentioned in a comment has no effect on an unqualified machine.");
-  rig.settings.refusal = "The preview helper is missing.";
+  rig.settings.refusal = PreviewError{0, "The preview helper is missing."};
   reject(metric, "not configured");
-  rig.settings.refusal.clear();
+  rig.settings.refusal.reset();
   rig.settings.rigid_tap = RigidTapLimits{300, 1, 500};
   for (const auto& program : {metric, std::string{
            "G20 G90\nG0 Z0.1\nS300 M3\nM51 P0\nG33.1 Z-0.15 K0.04\nM5\nM2\n"}}) {
@@ -1322,7 +1322,10 @@ void how_the_helper_ended() {
           "A whole result and exit 0: ready: " + text_of(o));
   o = with(result + "exit 7");
   require(o.state == PreviewState::failed && o.error && o.error->line == 0 &&
-              o.error->text.find("exit code 7") != std::string::npos && o.segments.size() == 1,
+              o.error->text.find("exit code 7") != std::string::npos &&
+              o.error->localization ==
+                  MessageKey{"backend.previewEngine.exitCode", {{"code", "7"}}} &&
+              o.segments.size() == 1,
           "`end ok`, then exit 7: failed, with the path: " + text_of(o));
   o = with(result + "kill -SEGV $$");
   require(o.state == PreviewState::failed && o.error && o.error->line == 0 &&
@@ -1336,8 +1339,18 @@ void how_the_helper_ended() {
   o = with("echo 'seg 2 f 0 0 0 0 1 0 0' >&3; echo 'error 2 broken' >&3; echo 'end error' >&3; "
            "exit 3");
   require(o.state == PreviewState::failed && o.error && o.error->line == 2 &&
-              o.error->text == "broken",
+              o.error->text == "broken" && !o.error->localization,
           "An error with its line stays the reason whatever the exit code: " + text_of(o));
+  o = with("echo 'stop 2 external detail' >&3; echo 'end stop' >&3; exit 0");
+  require(o.error == PreviewError{2, "The preview ends at line 2: external detail.",
+                                  MessageKey{"backend.previewEngine.endsAtLine",
+                                             {{"line", "2"}, {"detail", "external detail"}}}},
+          "Preview stop metadata includes the source line and the helper's reason");
+  o = with("echo 'cut 2 external detail' >&3; echo 'end cut' >&3; exit 0");
+  require(o.error == PreviewError{2, "Line 2: external detail.",
+                                  MessageKey{"backend.previewEngine.lineErrorStop",
+                                             {{"line", "2"}, {"detail", "external detail"}}}},
+          "Preview truncation retains its distinct fallback and key");
   // Closes its result and stays: ended after the grace, and nothing of it is left.
   const auto begun = std::chrono::steady_clock::now();
   o = with(result + "exec 3>&- 1>&- 2>&-; exec sleep 100");
@@ -1536,12 +1549,12 @@ void cam_samples() {
 
 void refusals_of_the_settings() {
   Rig rig{"settings"};
-  rig.settings.refusal = "Not on this machine.";
+  rig.settings.refusal = PreviewError{0, "Not on this machine."};
   auto o = rig.preview("G1 X1 F100\nM2\n");
   require(o.state == PreviewState::unavailable && o.error &&
               o.error->text == "Not on this machine." && rig.runs == 0,
           "A refusal of the settings is the preview's text");
-  rig.settings.refusal.clear();
+  rig.settings.refusal.reset();
   rig.inputs.program_file.reset();
   o = rig.compute().outcome;
   require(o.state == PreviewState::unavailable && !o.error, "No program: unavailable, no text");
@@ -1573,12 +1586,13 @@ void refusals_of_the_settings() {
                          "[EMCIO]\nTOOL_CHANGE_POSITION = 1 2 3\n"
                          "TOOL_CHANGE_QUILL_UP = 1\n");
   auto settings = load_preview_settings(config, helper, (rig.root / "work").string());
-  require(settings.refusal.empty() && near(settings.units_per_mm, 1 / 25.4, 1e-12) &&
+  require(!settings.refusal && near(settings.units_per_mm, 1 / 25.4, 1e-12) &&
               settings.search_path ==
                   std::vector<std::string>{config.directory, config.program_prefix,
                                            (rig.root / "subs").string(),
                                            (rig.root / "config" / "macros").string()} &&
-              settings.tool_change_position && near(*settings.tool_change_position, {25.4, 50.8, 76.2}) &&
+              settings.tool_change_position &&
+              near(*settings.tool_change_position, {25.4, 50.8, 76.2}) &&
               settings.tool_change_quill_up && !settings.tool_change_at_g30 &&
               settings.interpreter_options == std::vector<std::string>{"RETAIN_G43 = 1"},
           "The settings of an INI file; DISABLE_G92_PERSISTENCE is not passed on (review of "
@@ -1603,22 +1617,24 @@ void refusals_of_the_settings() {
   require(settings.tool_change_at_g30 && !settings.tool_change_quill_up,
           "-1 moves to G30 at a tool change, YES does not lift the quill, as in LinuxCNC");
   write(config.ini_file, "[EMCIO]\nRANDOM_TOOLCHANGER = -1\n");
-  require(!load_preview_settings(config, helper, "x").refusal.empty(),
+  require(load_preview_settings(config, helper, "x").refusal.has_value(),
           "-1 is a random tool changer");
   write(config.ini_file, "[RS274NGC]\nREMAP = M6 modalgroup=6 ngc=change\n"
                          "REMAP=M61   modalgroup=6 python=set_tool_number\nREMAP = G88.1 "
                          "modalgroup=1 argspec=xyz ngc=g881\n");
   settings = load_preview_settings(config, helper, "x");
-  require(settings.refusal.empty() &&
-              settings.remapped == std::vector<std::string>{"m6", "m61", "g88.1"},
+  require(!settings.refusal && settings.remapped == std::vector<std::string>{"m6", "m61", "g88.1"},
           "A machine that remaps codes gets a preview; every remapped code is known");
   write(config.ini_file, "[EMCIO]\nRANDOM_TOOLCHANGER = 1\n");
-  require(!load_preview_settings(config, helper, "x").refusal.empty(),
+  require(load_preview_settings(config, helper, "x").refusal.has_value(),
           "Nor one with a random tool changer");
   write(config.ini_file, "[EMCIO]\n");
-  require(load_preview_settings(config, (rig.root / "no-helper").string(), "x")
-                  .refusal.find("not installed") != std::string::npos,
-          "Nor one without the helper program");
+  const auto missing = load_preview_settings(config, (rig.root / "no-helper").string(), "x");
+  require(missing.refusal &&
+              missing.refusal->text ==
+                  "The preview program (coffeecnc-preview) is not installed." &&
+              missing.refusal->localization == MessageKey{"backend.previewEngine.notInstalled"},
+          "The missing helper diagnostic carries both the established text and catalog key");
 }
 
 } // namespace

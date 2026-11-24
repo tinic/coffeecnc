@@ -146,12 +146,17 @@ auto PanelComposer::compose(const PanelReading& reading, PageToken page, bool re
   made.state = PreviewState::unavailable;
   std::shared_ptr<const Preview> finished;
   if (preview_ == nullptr) {
-    made.error = PreviewError{0, std::string(no_preview_reason)};
+    made.error =
+        PreviewError{0, std::string(no_preview_reason), MessageKey{"messages.panelFeed.noPreview"}};
   } else if (status.program.file && no_start_state_) {
-    made.error = PreviewError{0, std::string(running_without_start_ ? no_start_state_reason
-                                                                    : not_settled_reason)};
+    made.error = running_without_start_
+                     ? PreviewError{0, std::string(no_start_state_reason),
+                                    MessageKey{"messages.panelFeed.noStartState"}}
+                     : PreviewError{0, std::string(not_settled_reason),
+                                    MessageKey{"messages.panelFeed.notSettled"}};
   } else if (status.program.file && plan_broken_) {
-    made.error = PreviewError{0, std::string(plan_broken_reason)};
+    made.error = PreviewError{0, std::string(plan_broken_reason),
+                              MessageKey{"messages.panelFeed.planBroken"}};
   } else if (status.program.file) {
     finished = preview_->latest();
     if (!finished || finished->context != status.preview_context) {

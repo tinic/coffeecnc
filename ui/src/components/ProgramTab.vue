@@ -57,7 +57,7 @@ const textCurrent = computed(() => program.value !== null && status.value !== nu
 const previewCurrent = computed(() => panel.preview !== null && status.value !== null && panel.preview.context === status.value.preview_context)
 const failure = computed(() => panel.preview?.state === 'failed' && previewCurrent.value ? panel.preview.error : null)
 const unavailableReason = computed(() => panel.preview?.state === 'unavailable' && previewCurrent.value && panel.preview.error
-  ? translateMessage(panel.preview.error.text) : undefined)
+  ? translateMessage(panel.preview.error.text, panel.preview.error.localization) : undefined)
 const drawn = useDrawnPreview(panel)
 const failureLine = computed(() => textCurrent.value ? lineInText(failure.value?.line ?? 0) : 0)
 const layouts = [['path', 'program.tab.layoutPreview'], ['text', 'program.tab.layoutCode'], ['split', 'program.tab.layoutSplit']] as const satisfies readonly (readonly [ProgramLayout, string])[]
@@ -312,7 +312,7 @@ async function showFailure(): Promise<void> {
             <button class="btn picked-close" type="button" :aria-label="t('program.ncText.clearSelected')" @click="pickedLine = 0"><AppIcon name="close" /></button>
           </div>
           <div v-if="failure && (panel.programLayout === 'text' || failureLine > 0)" class="failure preview-diagnostic tinted-band" role="status">
-            <AppIcon name="warning" /><span>{{ t('program.tab.previewStopped', { reason: translateMessage(failure.text) }) }}</span>
+            <AppIcon name="warning" /><span>{{ t('program.tab.previewStopped', { reason: translateMessage(failure.text, failure.localization) }) }}</span>
             <button v-if="failureLine > 0" class="btn show-line" type="button" @click="showFailure">{{ t('program.tab.showLine', { line: failureLine }) }}</button>
           </div>
           <SetterStatusBand v-else-if="unavailableReason && panel.programLayout === 'text'" class="preview-diagnostic" :line="{ text: unavailableReason, level: 'blocked' }" />

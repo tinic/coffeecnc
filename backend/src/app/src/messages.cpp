@@ -484,8 +484,11 @@ auto encode_preview(const Preview& preview) -> Encoded {
     return {{"line", dwell.line}, {"seconds", fields.real(dwell.seconds, "dwells.seconds")}};
   });
   Json error = nullptr;
-  if (preview.error)
+  if (preview.error) {
     error = {{"line", preview.error->line}, {"text", preview.error->text}};
+    if (const auto& key = preview.error->localization)
+      error["localization"] = {{"key", key->key}, {"params", key->params}};
+  }
   Json bounds = nullptr;
   if (preview.bounds)
     bounds = {{"min", fields.vec(preview.bounds->min, "bounds.min")},

@@ -333,7 +333,7 @@ export interface Preview {
    * `segments` then end where it stopped. `unavailable`: no program loaded, or no preview possible.
    */
   state: 'pending' | 'ready' | 'failed' | 'unavailable'
-  error: { line: number; text: string } | null
+  error: { line: number; text: string; localization?: MessageKey } | null
   segments: PreviewSegment[]
   /** Extent of the feed moves (tool tip, machine coordinates), or null without any. */
   bounds: { min: Vec3; max: Vec3 } | null

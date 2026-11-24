@@ -2396,16 +2396,21 @@ auto Session::start_gate(Queued& request, std::size_t index, bool held) -> std::
     if (auto stopped = tracked_stop(i); stopped.status != ActionStatus::accepted) {
       forget_press(request);
       const auto failure = stopped.status;
-      const auto detail = reply(std::move(stopped)).reason;
+      const auto detail = reply(std::move(stopped));
       if (i == index)
-        return answer(
-            reply({failure,
-                   std::format("The previous jog stop on this axis is not confirmed: {}", detail),
-                   MessageKey{"messages.session.previousStopThisAxis", {{"detail", detail}}}}));
+        return answer(reply(
+            {failure,
+             std::format("The previous jog stop on this axis is not confirmed: {}", detail.reason),
+             MessageKey{"messages.session.previousStopThisAxis",
+                        {{"detail", detail.reason}},
+                        parameter_localization("detail", detail.localization)}}));
       const std::string axis(1, letter(axes.at(i)));
       return answer(reply(
-          {failure, std::format("The previous jog stop on {} is not confirmed: {}", axis, detail),
-           MessageKey{"messages.session.previousStopAxis", {{"axis", axis}, {"detail", detail}}}}));
+          {failure,
+           std::format("The previous jog stop on {} is not confirmed: {}", axis, detail.reason),
+           MessageKey{"messages.session.previousStopAxis",
+                      {{"axis", axis}, {"detail", detail.reason}},
+                      parameter_localization("detail", detail.localization)}}));
     }
   }
   const std::scoped_lock lock{mutex_};

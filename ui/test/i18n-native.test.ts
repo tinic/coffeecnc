@@ -382,6 +382,19 @@ describe('translateMessage', () => {
     expect(translateMessage('Load a program first.')).toBe('先にプログラムを読み込んでください。')
   })
 
+  it('translates the reason a jog cannot start after an unconfirmed stop', async () => {
+    await setLanguage('fr')
+    expect(translateResult({
+      type: 'result', id: 56, outcome: 'timed_out',
+      reason: 'The previous jog stop on X is not confirmed: LinuxCNC did not answer.',
+      localization: {
+        key: 'messages.session.previousStopAxis',
+        params: { axis: 'X', detail: 'LinuxCNC did not answer.' },
+        params_localization: { detail: { key: 'messages.session.linuxcncNoAnswer', params: {} } },
+      },
+    })).toBe('L’arrêt de jog précédent sur X n’est pas confirmé : LinuxCNC n’a pas répondu.')
+  })
+
   it('uses a refusal key first and falls back when metadata is unknown or incomplete', async () => {
     await setLanguage('de')
     const fallback = 'The older panel can show this as-is.'

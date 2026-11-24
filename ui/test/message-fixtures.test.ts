@@ -1118,6 +1118,22 @@ const examples = [
   },
   {
     "type": "result",
+    "id": 89,
+    "outcome": "failed",
+    "reason": "The backup was not written: /home/cnc/mill.ini cannot be read: Input/output error",
+    "localization": {
+      "key": "backend.machineData.notWritten",
+      "params": { "detail": "/home/cnc/mill.ini cannot be read: Input/output error" },
+      "params_localization": {
+        "detail": {
+          "key": "backend.machineData.cannotRead",
+          "params": { "path": "/home/cnc/mill.ini", "detail": "Input/output error" }
+        }
+      }
+    }
+  },
+  {
+    "type": "result",
     "id": 58,
     "outcome": "rejected",
     "reason": "This line is inside a canned cycle.",

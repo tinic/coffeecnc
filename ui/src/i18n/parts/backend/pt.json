@@ -652,6 +652,11 @@
     "machineData": {
       "notWritten": "A cópia de segurança não foi escrita: {detail}",
       "cannotRead": "Não é possível ler {path}: {detail}",
+      "configNotOpened": "Não foi possível abrir {path}: {detail}",
+      "configNotRelative": "{path} não é um caminho simples dentro de {root}",
+      "configParentOutside": "{path} é acessado por um link simbólico ou está fora de {root}",
+      "configLinkTooLong": "Não foi possível ler {path}: link simbólico longo demais",
+      "configNotRegular": "{path} não é um arquivo regular",
       "tooLarge": "{path} tem mais de 16 MiB.",
       "archiveTooLarge": "O arquivo tem mais de 64 MiB.",
       "missing": "{path} não existe.",

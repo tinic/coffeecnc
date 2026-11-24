@@ -652,6 +652,11 @@
     "machineData": {
       "notWritten": "La sauvegarde n’a pas été écrite : {detail}",
       "cannotRead": "{path} ne peut pas être lu : {detail}",
+      "configNotOpened": "Impossible d’ouvrir {path} : {detail}",
+      "configNotRelative": "{path} n’est pas un chemin simple sous {root}",
+      "configParentOutside": "{path} est atteint via un lien symbolique ou ne se trouve pas sous {root}",
+      "configLinkTooLong": "Impossible de lire {path} : lien symbolique trop long",
+      "configNotRegular": "{path} n’est pas un fichier ordinaire",
       "tooLarge": "{path} dépasse 16 Mio.",
       "archiveTooLarge": "L’archive dépasse 64 Mio.",
       "missing": "{path} n’existe pas.",

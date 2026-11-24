@@ -175,12 +175,16 @@ auto read_file(ToolModelFiles& files, const std::string& path)
 
 // A configuration file `relative` beneath `root`, as LinuxCNC reads it; none when missing.
 auto read_config(ToolModelFiles& files, const std::string& root, const std::string& relative)
-    -> std::expected<std::optional<ToolModelFiles::Found>, std::string> {
+    -> std::expected<std::optional<ToolModelFiles::Found>, LocalizedReason> {
   auto found = files.read_beneath(root, relative, max_archive_entry_bytes);
   if (!found)
-    return std::unexpected(found.error());
-  if (const auto& file = *found; file && file->content.more)
-    return std::unexpected(std::format("{}/{} is larger than 16 MiB.", root, relative));
+    return std::unexpected(std::move(found.error()));
+  if (const auto& file = *found; file && file->content.more) {
+    const auto path = root + '/' + relative;
+    return std::unexpected(
+        LocalizedReason{std::format("{} is larger than 16 MiB.", path),
+                        MessageKey{"backend.machineData.tooLarge", {{"path", path}}}});
+  }
   return found;
 }
 
@@ -395,12 +399,14 @@ auto MachineData::backup(const std::string& directory) -> MachineDataAnswer {
             {},
             false,
             MessageKey{"messages.policy.backupFolder"}};
-  const auto failed = [](const std::string& detail) -> MachineDataAnswer {
+  const auto failed = [](const LocalizedReason& detail) -> MachineDataAnswer {
     return {CommandOutcome::failed,
-            std::format("The backup was not written: {}", detail),
+            std::format("The backup was not written: {}", detail.text),
             {},
             false,
-            MessageKey{"backend.machineData.notWritten", {{"detail", detail}}}};
+            MessageKey{"backend.machineData.notWritten",
+                       {{"detail", detail.text}},
+                       parameter_localization("detail", detail.localization)}};
   };
   std::vector<Source> sources;
   std::vector<BackupOmission> left_out;
@@ -466,13 +472,13 @@ auto MachineData::backup(const std::string& directory) -> MachineDataAnswer {
                      std::chrono::floor<std::chrono::seconds>(now).count()};
   const auto archive = write_archive(entries);
   if (!archive)
-    return failed(archive.error().text);
+    return failed(archive.error());
   const auto name =
       std::format("coffeecnc-{}-{}.tar.gz",
                   paths_.machine_id.empty() ? "machine" : paths_.machine_id, stamp(now));
   const auto target = (directory == "/" ? std::string{} : directory) + '/' + name;
   if (auto written = replace_file(files_, target, *archive); !written)
-    return failed(written.error());
+    return failed({written.error()});
   return {CommandOutcome::accepted,
           "",
           {encode_backup_written({target, included.size(), archive->size(), left_out})},
@@ -642,24 +648,25 @@ auto MachineData::check(const std::string& path) -> std::expected<Checked, Local
       return std::unexpected(LocalizedReason{
           std::format("Two files of the backup go to {}.", planned.target()),
           MessageKey{"backend.machineData.sameTarget", {{"path", planned.target()}}}});
-    const auto now = read_config(files_, planned.root, planned.relative);
-    if (!now)
+    const auto unreachable =
+        [&entry](const LocalizedReason& detail) -> std::unexpected<LocalizedReason> {
       return std::unexpected(
           LocalizedReason{std::format("{} cannot be restored: {}. The archive is refused.",
-                                      entry.name, now.error()),
+                                      entry.name, detail.text),
                           MessageKey{"backend.machineData.unreachable",
-                                     {{"name", entry.name}, {"detail", now.error()}}}});
+                                     {{"name", entry.name}, {"detail", detail.text}},
+                                     parameter_localization("detail", detail.localization)}});
+    };
+    const auto now = read_config(files_, planned.root, planned.relative);
+    if (!now)
+      return unreachable(now.error());
     const auto& current = *now;
     // A restore makes no folder (but the data folder): a target in a folder that is not there
     // cannot be written once LinuxCNC has stopped.
     if (!current && kind != "data") {
       const auto folder = files_.folder_exists_beneath(planned.root, planned.relative);
       if (!folder)
-        return std::unexpected(
-            LocalizedReason{std::format("{} cannot be restored: {}. The archive is refused.",
-                                        entry.name, folder.error()),
-                            MessageKey{"backend.machineData.unreachable",
-                                       {{"name", entry.name}, {"detail", folder.error()}}}});
+        return unreachable(folder.error());
       if (!*folder)
         return std::unexpected(LocalizedReason{
             std::format("{} cannot be restored: the folder of {} does not exist. The archive is "
@@ -888,7 +895,7 @@ auto apply_staged_restore(ToolModelFiles& files, const std::string& data_directo
     }
     auto before = read_config(files, step.root, step.relative);
     if (!before) {
-      reason = {before.error()};
+      reason = std::move(before.error());
       break;
     }
     // What was there when the restore was prepared, unless LinuxCNC or CoffeeCNC wrote it as

@@ -28,6 +28,18 @@ constexpr std::string_view temporary_suffix = ".coffeecnc-tmp";
 
 auto said(int error) -> std::string { return std::generic_category().message(error); }
 
+auto cannot_open(const std::string& path, int error) -> LocalizedReason {
+  const auto detail = said(error);
+  return {std::format("{} cannot be opened: {}", path, detail),
+          MessageKey{"backend.machineData.configNotOpened", {{"path", path}, {"detail", detail}}}};
+}
+
+auto cannot_read(const std::string& path, int error) -> LocalizedReason {
+  const auto detail = said(error);
+  return {std::format("{} cannot be read: {}", path, detail),
+          MessageKey{"backend.machineData.cannotRead", {{"path", path}, {"detail", detail}}}};
+}
+
 // A descriptor that is closed with its scope.
 class Descriptor {
 public:
@@ -102,22 +114,24 @@ struct Parent {
 // Why the parent could not be opened; `missing`: a folder on the way does not exist.
 struct NoParent {
   bool missing{};
-  std::string reason;
+  LocalizedReason reason;
 };
 
 auto parent_beneath(const std::string& root, const std::string& relative)
     -> std::expected<Parent, NoParent> {
   const auto shown = root + '/' + relative;
-  const auto fail = [](int error, std::string reason) -> std::unexpected<NoParent> {
+  const auto fail = [](int error, LocalizedReason reason) -> std::unexpected<NoParent> {
     return std::unexpected(NoParent{error == ENOENT, std::move(reason)});
   };
   if (!plain(relative))
-    return fail(0, std::format("{} is not a plain path beneath {}", relative, root));
+    return fail(0, {std::format("{} is not a plain path beneath {}", relative, root),
+                    MessageKey{"backend.machineData.configNotRelative",
+                               {{"path", relative}, {"root", root}}}});
   // The root is the configuration's own folder, as it is configured: it may be a link.
   const Descriptor top{::open(root.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC)};
   if (!top.valid()) {
     const int error = errno;
-    return fail(error, std::format("{} cannot be opened: {}", root, said(error)));
+    return fail(error, cannot_open(root, error));
   }
   const auto slash = relative.rfind('/');
   Parent found{Descriptor{}, slash == std::string::npos ? relative : relative.substr(slash + 1)};
@@ -128,15 +142,17 @@ auto parent_beneath(const std::string& root, const std::string& relative)
     if (!found.directory.valid()) {
       const int error = errno;
       if (error == ELOOP || error == EXDEV || error == ENOTDIR)
-        return fail(error, std::format("{} is reached through a symbolic link or is not "
-                                       "beneath {}",
-                                       shown, root));
-      return fail(error, std::format("{} cannot be opened: {}", shown, said(error)));
+        return fail(error, {std::format("{} is reached through a symbolic link or is not "
+                                        "beneath {}",
+                                        shown, root),
+                            MessageKey{"backend.machineData.configParentOutside",
+                                       {{"path", shown}, {"root", root}}}});
+      return fail(error, cannot_open(shown, error));
     }
   }
   if (!found.directory.valid()) {
     const int error = errno;
-    return fail(error, std::format("{} cannot be opened: {}", root, said(error)));
+    return fail(error, cannot_open(root, error));
   }
   return found;
 }
@@ -145,7 +161,7 @@ auto parent_beneath(const std::string& root, const std::string& relative)
 
 auto LocalToolModelFiles::read_beneath(const std::string& root, const std::string& relative,
                                        std::size_t limit)
-    -> std::expected<std::optional<Found>, std::string> {
+    -> std::expected<std::optional<Found>, LocalizedReason> {
   auto parent = parent_beneath(root, relative);
   if (!parent) {
     // A missing folder is a missing file.
@@ -158,7 +174,7 @@ auto LocalToolModelFiles::read_beneath(const std::string& root, const std::strin
   if (::fstatat(parent->directory.get(), parent->name.c_str(), &entry, AT_SYMLINK_NOFOLLOW) != 0) {
     if (errno == ENOENT)
       return std::optional<Found>{};
-    return std::unexpected(std::format("{} cannot be read: {}", shown, said(errno)));
+    return std::unexpected(cannot_read(shown, errno));
   }
   Found found;
   found.symlink = S_ISLNK(entry.st_mode);
@@ -167,9 +183,12 @@ auto LocalToolModelFiles::read_beneath(const std::string& root, const std::strin
     std::string target(PATH_MAX, '\0');
     const auto length =
         ::readlinkat(parent->directory.get(), parent->name.c_str(), target.data(), target.size());
-    if (length < 0 || static_cast<std::size_t>(length) >= target.size())
-      return std::unexpected(std::format("{} cannot be read: {}", shown,
-                                         length < 0 ? said(errno) : std::string("link too long")));
+    if (length < 0)
+      return std::unexpected(cannot_read(shown, errno));
+    if (static_cast<std::size_t>(length) >= target.size())
+      return std::unexpected(
+          LocalizedReason{std::format("{} cannot be read: link too long", shown),
+                          MessageKey{"backend.machineData.configLinkTooLong", {{"path", shown}}}});
     target.resize(static_cast<std::size_t>(length));
     found.link = std::move(target);
   }
@@ -178,11 +197,13 @@ auto LocalToolModelFiles::read_beneath(const std::string& root, const std::strin
   if (!file.valid()) {
     if (errno == ENOENT) // a link to nothing
       return std::optional<Found>{};
-    return std::unexpected(std::format("{} cannot be opened: {}", shown, said(errno)));
+    return std::unexpected(cannot_open(shown, errno));
   }
   struct stat info{};
   if (::fstat(file.get(), &info) != 0 || !S_ISREG(info.st_mode))
-    return std::unexpected(std::format("{} is not a regular file", shown));
+    return std::unexpected(
+        LocalizedReason{std::format("{} is not a regular file", shown),
+                        MessageKey{"backend.machineData.configNotRegular", {{"path", shown}}}});
   found.mode = info.st_mode & 07777U;
   found.group = info.st_gid;
   auto& bytes = found.content.bytes;
@@ -193,7 +214,7 @@ auto LocalToolModelFiles::read_beneath(const std::string& root, const std::strin
     if (got < 0 && errno == EINTR)
       continue;
     if (got < 0)
-      return std::unexpected(std::format("{} cannot be read: {}", shown, said(errno)));
+      return std::unexpected(cannot_read(shown, errno));
     if (got == 0)
       break;
     size += static_cast<std::size_t>(got);
@@ -211,7 +232,7 @@ auto LocalToolModelFiles::replace_beneath(const std::string& root, const std::st
   };
   auto parent = parent_beneath(root, relative);
   if (!parent)
-    return fail(parent.error().reason);
+    return fail(std::move(parent.error().reason.text));
   const auto shown = root + '/' + relative;
   const int directory = parent->directory.get();
   const auto temporary = parent->name + std::string(temporary_suffix);
@@ -270,7 +291,7 @@ auto LocalToolModelFiles::remove_beneath(const std::string& root, const std::str
   if (!parent) {
     if (parent.error().missing)
       return {};
-    return std::unexpected(parent.error().reason);
+    return std::unexpected(std::move(parent.error().reason.text));
   }
   const auto shown = root + '/' + relative;
   if (::unlinkat(parent->directory.get(), parent->name.c_str(), 0) != 0 && errno != ENOENT)
@@ -283,7 +304,7 @@ auto LocalToolModelFiles::remove_beneath(const std::string& root, const std::str
 
 auto LocalToolModelFiles::folder_exists_beneath(const std::string& root,
                                                 const std::string& relative)
-    -> std::expected<bool, std::string> {
+    -> std::expected<bool, LocalizedReason> {
   const auto parent = parent_beneath(root, relative);
   if (parent)
     return true;
@@ -296,7 +317,7 @@ auto LocalToolModelFiles::link_beneath(const std::string& root, const std::strin
                                        const std::string& target) -> Done {
   auto parent = parent_beneath(root, relative);
   if (!parent)
-    return std::unexpected(parent.error().reason);
+    return std::unexpected(std::move(parent.error().reason.text));
   const auto shown = root + '/' + relative;
   const int directory = parent->directory.get();
   const auto temporary = parent->name + std::string(temporary_suffix);

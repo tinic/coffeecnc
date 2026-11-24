@@ -145,12 +145,15 @@ public:
   // Steps: read_beneath, replace (before the rename), replace_sync (after it), remove,
   // folder_exists, relink.
   auto read_beneath(const std::string& root, const std::string& relative, std::size_t limit)
-      -> std::expected<std::optional<Found>, std::string> override {
+      -> std::expected<std::optional<Found>, LocalizedReason> override {
     const auto path = root + '/' + relative;
     if (begin("read_beneath", path))
-      return std::unexpected(path + " cannot be read: Input/output error");
+      return std::unexpected(
+          LocalizedReason{path + " cannot be read: Input/output error",
+                          MessageKey{"backend.machineData.cannotRead",
+                                     {{"path", path}, {"detail", "Input/output error"}}}});
     if (auto linked = through_link(root, relative))
-      return std::unexpected(*linked);
+      return std::unexpected(LocalizedReason{*linked});
     const auto linked = disk.links.find(path);
     const auto actual = linked == disk.links.end() ? path : linked->second;
     const auto file = disk.files.find(actual);
@@ -190,12 +193,15 @@ public:
   }
   // A folder exists when it was made or holds a file or a link.
   auto folder_exists_beneath(const std::string& root, const std::string& relative)
-      -> std::expected<bool, std::string> override {
+      -> std::expected<bool, LocalizedReason> override {
     const auto path = root + '/' + relative;
     if (begin("folder_exists", path))
-      return std::unexpected(path + " cannot be read: Input/output error");
+      return std::unexpected(
+          LocalizedReason{path + " cannot be read: Input/output error",
+                          MessageKey{"backend.machineData.cannotRead",
+                                     {{"path", path}, {"detail", "Input/output error"}}}});
     if (auto linked = through_link(root, relative))
-      return std::unexpected(*linked);
+      return std::unexpected(LocalizedReason{*linked});
     const auto folder = path.substr(0, path.rfind('/'));
     const auto below = [&](const auto& entries) {
       return std::ranges::any_of(

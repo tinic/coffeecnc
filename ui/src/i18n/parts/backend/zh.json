@@ -652,6 +652,11 @@
     "machineData": {
       "notWritten": "备份未写入：{detail}",
       "cannotRead": "无法读取 {path}：{detail}",
+      "configNotOpened": "无法打开 {path}：{detail}",
+      "configNotRelative": "{path} 不是 {root} 下的普通路径",
+      "configParentOutside": "{path} 经过符号链接访问，或不在 {root} 下",
+      "configLinkTooLong": "无法读取 {path}：符号链接过长",
+      "configNotRegular": "{path} 不是常规文件",
       "tooLarge": "{path} 大于 16 MiB。",
       "archiveTooLarge": "归档大于 64 MiB。",
       "missing": "{path} 不存在。",

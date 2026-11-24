@@ -3010,6 +3010,18 @@ void g0759_program(Rig& rig) {
         std::format("requested={} in_spindle={}",
                     status.controller.requested_tool ? *status.controller.requested_tool : -1,
                     status.controller.tool_in_spindle));
+  if (asked) {
+    rig.direct([&]() -> void {
+      const auto expired = rig.port.tool_changed(2, 0, always());
+      rig.direct_pump(20ms);
+      check("obsolete_tool_change_confirmation_is_localized",
+            expired.status == ActionStatus::failed &&
+                expired.reason == "LinuxCNC is not waiting for that tool change any more." &&
+                expired.localization == MessageKey{"backend.nmlPort.toolChangeGone"} &&
+                rig.probe.tool_change() && !rig.probe.tool_changed(),
+            expired.reason);
+    });
+  }
   const auto confirmed = rig.send(R"("type":"tool_changed")");
   const bool finished = traced(rig, 30s, [&]() -> bool {
     return rig.idle() && !rig.status().paused && near(rig.status().work[1], 4);

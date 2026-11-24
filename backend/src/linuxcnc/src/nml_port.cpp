@@ -3906,15 +3906,18 @@ auto NmlPort::tool_changed(int tool, std::uint64_t request, const Wanted& wanted
   static_cast<void>(impl_->begin(&wanted));
   const Impl::Scope scope{*impl_};
   if (impl_->hal == nullptr)
-    return failed("The CoffeeCNC HAL component is not available.");
+    return failed("The CoffeeCNC HAL component is not available.",
+                  MessageKey{"backend.nmlPort.halUnavailable"});
   if (!impl_->hal->view(HalShared::Clock::now()))
-    return failed("The CoffeeCNC HAL component is not being serviced.");
+    return failed("The CoffeeCNC HAL component is not being serviced.",
+                  MessageKey{"backend.nmlPort.halNotServiced"});
   // Asked at the moment the confirmation is handed to the control thread.
   if (!impl_->still())
     return withdrawn();
   // The request the decision was made on, not whatever the pins show by now.
   if (!impl_->hal->confirm_tool_changed({request, tool}))
-    return failed("LinuxCNC is not waiting for that tool change any more.");
+    return failed("LinuxCNC is not waiting for that tool change any more.",
+                  MessageKey{"backend.nmlPort.toolChangeGone"});
   return {};
 }
 

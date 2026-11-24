@@ -521,6 +521,9 @@ auto encoded_messages() -> std::vector<Encoded> {
       "halscope is not installed: it is not in the search path (/usr/bin:/bin).", {}, {},
       RefusalMessage{"backend.halDiagnostics.notInstalled",
                      {{"name", "halscope"}, {"path", "/usr/bin:/bin"}}}));
+  messages.emplace_back(encode_result(55, CommandOutcome::failed,
+                                      "LinuxCNC is not waiting for that tool change any more.", {},
+                                      {}, {}, MessageKey{"backend.nmlPort.toolChangeGone"}));
   return messages;
 }
 

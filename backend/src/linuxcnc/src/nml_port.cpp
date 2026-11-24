@@ -1626,14 +1626,15 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
       hal->finish_probe_cycle();
     // What the cycle leaves the operator: a later restore puts the operator's state back only
     // while this is unchanged. Unknown without status: no restore then.
-    if (auto& kept = impl_->probe_modal) {
-      kept->left.reset();
+    if (impl_->probe_modal) {
+      std::optional<Impl::ProbeModal::Left> left;
       if (const auto* s = impl_->stat(); s != nullptr && impl_->status.link() == Link::live) {
         const auto now = to_status(*s, impl_->config, hal, Link::live);
-        kept->left = Impl::ProbeModal::Left{std::ranges::contains(now.active_codes, "G91"),
-                                            now.programmed_feed, now.feed_override_enabled,
-                                            now.adaptive_feed_enabled};
+        left = Impl::ProbeModal::Left{std::ranges::contains(now.active_codes, "G91"),
+                                      now.programmed_feed, now.feed_override_enabled,
+                                      now.adaptive_feed_enabled};
       }
+      impl_->probe_modal->left = left;
     }
     // The cycle's own reason comes first: dropping the permit makes LinuxCNC report "motion
     // stopped by enable input", which says nothing about why the cycle stopped.

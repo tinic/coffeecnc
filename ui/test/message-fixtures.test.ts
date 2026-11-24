@@ -1085,6 +1085,32 @@ const examples = [
     }
   },
   {
+    "type": "message",
+    "level": "error",
+    "text": "Jog stop failed on X: LinuxCNC did not answer.",
+    "time": 1700000001400,
+    "localization": {
+      "key": "messages.session.jogStopFailed",
+      "params": { "axis": "X", "detail": "LinuxCNC did not answer." },
+      "params_localization": {
+        "detail": { "key": "messages.session.linuxcncNoAnswer", "params": {} }
+      }
+    }
+  },
+  {
+    "type": "result",
+    "id": 53,
+    "outcome": "failed",
+    "reason": "Saved on disk, but not reopened. LinuxCNC did not open the program.",
+    "localization": {
+      "key": "messages.session.savedNotReopened",
+      "params": { "detail": "LinuxCNC did not open the program." },
+      "params_localization": {
+        "detail": { "key": "backend.nmlPort.notOpened", "params": {} }
+      }
+    }
+  },
+  {
     "type": "result",
     "id": 41,
     "outcome": "accepted",

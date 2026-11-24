@@ -354,9 +354,7 @@ struct Rig {
   int reads{};
   std::filesystem::path program{scratch / "part.ngc"};
   NmlPanelSource source{
-      config,
-      mailbox,
-      [this]() -> std::optional<std::vector<LoadedTool>> { return loaded; },
+      config, mailbox, [this]() -> std::optional<std::vector<LoadedTool>> { return loaded; },
       [this](std::string_view path,
              std::uint64_t revision) -> std::expected<ProgramText, LocalizedReason> {
         ++reads;
@@ -367,8 +365,7 @@ struct Rig {
                               MessageKey{"backend.programStore.outsideDirectory"}});
         return ProgramText{revision, std::string(path), {"G0 X1", "M2"}, false, "0"};
       },
-      &loads,
-      [this]() -> NmlPanelSource::Clock::time_point { return now; }};
+      &loads, [this]() -> NmlPanelSource::Clock::time_point { return now; }};
 
   explicit Rig(std::string parameter_file = {}) : config{machine(std::move(parameter_file))} {
     write(config.tool_table, "T1 P1 Z50 D6 ;end mill\nT2 P2 Z40 D3\n");

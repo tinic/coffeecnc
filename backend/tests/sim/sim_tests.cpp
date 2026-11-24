@@ -2067,11 +2067,8 @@ void lines_across_open(Rig& rig) {
            "G1 X8 F600\n"   // 3
            "M2\n";          // 4
   }
-  NmlPanelSource source{rig.config,
-                        *rig.mailbox,
-                        {},
-                        [&](std::string_view path,
-                            std::uint64_t revision) -> std::expected<ProgramText, LocalizedReason> {
+  NmlPanelSource source{rig.config, *rig.mailbox, {},
+                        [&](std::string_view path, std::uint64_t revision) {
                           return rig.programs.read_program(path, revision);
                         },
                         rig.loads};
@@ -2223,17 +2220,15 @@ struct PreviewOracle {
 
   PreviewOracle(Rig& given, LoadedToolTable attached)
       : rig(given), table(attached),
-        source(
-            rig.config, *rig.mailbox,
-            [this]() -> std::optional<std::vector<LoadedTool>> {
-              pass = table.read_raw();
-              return loaded_tools(pass, rig.config.millimetres_per_unit);
-            },
-            [this](std::string_view path,
-                   std::uint64_t revision) -> std::expected<ProgramText, LocalizedReason> {
-              return rig.programs.read_program(path, revision);
-            },
-            rig.loads),
+        source(rig.config, *rig.mailbox,
+               [this]() -> std::optional<std::vector<LoadedTool>> {
+                 pass = table.read_raw();
+                 return loaded_tools(pass, rig.config.millimetres_per_unit);
+               },
+               [this](std::string_view path, std::uint64_t revision) {
+                 return rig.programs.read_program(path, revision);
+               },
+               rig.loads),
         engine(load_preview_settings(rig.config, COFFEECNC_PREVIEW_HELPER_BUILT,
                                      rig.config.directory + "/preview-work")),
         program(rig.config.program_prefix + "/coffeecnc_oracle.ngc") {
@@ -2585,8 +2580,7 @@ void preview_attached_mid_program(PreviewOracle& oracle) {
                           return loaded_tools(oracle.table.read_raw(),
                                               rig.config.millimetres_per_unit);
                         },
-                        [&](std::string_view path,
-                            std::uint64_t revision) -> std::expected<ProgramText, LocalizedReason> {
+                        [&](std::string_view path, std::uint64_t revision) {
                           return rig.programs.read_program(path, revision);
                         },
                         rig.loads};
@@ -3139,30 +3133,27 @@ auto print_tool_models(const std::string& ini_file) -> int {
 class ModelSession {
 public:
   ModelSession(Rig& rig, const LoadedToolTable& table)
-      : source_(
-            rig.config, *rig.mailbox,
-            [&rig, &table]() -> std::optional<std::vector<LoadedTool>> {
-              return loaded_tools(table.read_raw(), rig.config.millimetres_per_unit);
-            },
-            [&rig](std::string_view path,
-                   std::uint64_t revision) -> std::expected<ProgramText, LocalizedReason> {
-              return rig.programs.read_program(path, revision);
-            },
-            rig.loads),
+      : source_(rig.config, *rig.mailbox,
+                [&rig, &table]() -> std::optional<std::vector<LoadedTool>> {
+                  return loaded_tools(table.read_raw(), rig.config.millimetres_per_unit);
+                },
+                [&rig](std::string_view path,
+                       std::uint64_t revision) {
+                  return rig.programs.read_program(path, revision);
+                },
+                rig.loads),
         store_(files_, tool_model_location(rig.config),
                [this](PageToken at, const std::vector<std::string>& messages) -> void {
                  post(at, messages);
                }),
-        runtime_(
-            rig.port, rig.reader, rig.control, rig.config.limits, rig.programs,
-            [this](const Outcome& outcome) -> void { post(outcome.page, outcome.messages); },
-            &store_),
-        feed_(
-            source_,
-            [this](PageToken at, const std::vector<std::string>& messages) -> void {
-              post(at, messages);
-            },
-            nullptr, [this](PageToken at) -> void { store_.send_snapshot(at); }),
+        runtime_(rig.port, rig.reader, rig.control, rig.config.limits, rig.programs,
+                 [this](const Outcome& outcome) -> void { post(outcome.page, outcome.messages); },
+                 &store_),
+        feed_(source_,
+              [this](PageToken at, const std::vector<std::string>& messages) -> void {
+                post(at, messages);
+              },
+              nullptr, [this](PageToken at) -> void { store_.send_snapshot(at); }),
         page_(runtime_.begin_page()) {
     static_cast<void>(send(R"("type":"ready")"));
     feed_.page_ready(page_);
@@ -5380,26 +5371,23 @@ void gantry(Rig& rig) {
 class HistorySession {
 public:
   HistorySession(Rig& rig, const LoadedToolTable& table, OffsetHistoryStore& history)
-      : source_(
-            rig.config, *rig.mailbox,
-            [&rig, &table]() -> std::optional<std::vector<LoadedTool>> {
-              return loaded_tools(table.read_raw(), rig.config.millimetres_per_unit);
-            },
-            [&rig](std::string_view path,
-                   std::uint64_t revision) -> std::expected<ProgramText, LocalizedReason> {
-              return rig.programs.read_program(path, revision);
-            },
-            rig.loads),
-        runtime_(
-            rig.port, rig.reader, rig.control, rig.config.limits, rig.programs,
-            [this](const Outcome& outcome) -> void { post(outcome.page, outcome.messages); },
-            nullptr, {}, nullptr, nullptr, nullptr, &history),
-        feed_(
-            source_,
-            [this](PageToken at, const std::vector<std::string>& messages) -> void {
-              post(at, messages);
-            },
-            nullptr, {}, nullptr, &history),
+      : source_(rig.config, *rig.mailbox,
+                [&rig, &table]() -> std::optional<std::vector<LoadedTool>> {
+                  return loaded_tools(table.read_raw(), rig.config.millimetres_per_unit);
+                },
+                [&rig](std::string_view path,
+                       std::uint64_t revision) {
+                  return rig.programs.read_program(path, revision);
+                },
+                rig.loads),
+        runtime_(rig.port, rig.reader, rig.control, rig.config.limits, rig.programs,
+                 [this](const Outcome& outcome) -> void { post(outcome.page, outcome.messages); },
+                 nullptr, {}, nullptr, nullptr, nullptr, &history),
+        feed_(source_,
+              [this](PageToken at, const std::vector<std::string>& messages) -> void {
+                post(at, messages);
+              },
+              nullptr, {}, nullptr, &history),
         page_(runtime_.begin_page()) {
     static_cast<void>(send(R"("type":"ready")"));
     feed_.page_ready(page_);

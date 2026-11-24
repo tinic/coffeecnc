@@ -530,6 +530,7 @@
     },
     "previewWire": {
       "invalidStopCode": "an invalid preview stop code",
+      "invalidProblemCode": "an invalid preview diagnostic code",
       "segmentAfterEnd": "a segment after the record that ends the path",
       "segmentLine": "a segment with a line that is none of the program",
       "segmentKind": "a segment of an unknown kind",
@@ -584,6 +585,10 @@
       "rigidTapZFeed": "rigid tapping exceeds the configured Z feed limit",
       "rigidTapZOnly": "rigid tapping requires a downward Z-only move",
       "rigidTapAllowance": "rigid tapping has no valid reversal allowance",
+      "helperUvwArc": "an arc in a UVW plane cannot be shown",
+      "helperPointLimit": "the preview ends here: the path has more than {limit} points",
+      "helperSource": "{file} line {sourceLine}: {detail}",
+      "helperLineAndSource": "Line {line}: {file} line {sourceLine}: {detail}{suffix}",
       "rigidTapRestart": "Run this tapping program from the start to establish the spindle override state.",
       "cannotRead": "The program cannot be read for a preview, or is larger than {size}.",
       "endsAtLine": "The preview ends at line {line}: {detail}.",

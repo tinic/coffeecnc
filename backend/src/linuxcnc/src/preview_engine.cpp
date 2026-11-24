@@ -571,13 +571,15 @@ auto run_helper(const PreviewSettings& settings, const fs::path& directory,
   const std::string ini = "INI_FILE_NAME=" + (directory / "preview.ini").string();
   const auto restart_refusals = std::format("{}=1", preview_restart_refusals_env);
   const auto stop_codes = std::format("{}={}", preview_stop_codes_env, preview_stop_codes_version);
+  const auto problem_codes = std::format("{}=1", preview_problem_codes_env);
   std::array<char*, 4> arguments{const_cast<char*>("coffeecnc-preview"), // NOLINT: execve's type
                                  const_cast<char*>(request_file.c_str()), // NOLINT
                                  const_cast<char*>("3"), nullptr};        // NOLINT
-  std::array<char*, 10> environment{const_cast<char*>(home.c_str()),      // NOLINT
+  std::array<char*, 11> environment{const_cast<char*>(home.c_str()),      // NOLINT
                                     const_cast<char*>(ini.c_str()),       // NOLINT
                                     const_cast<char*>(restart_refusals.c_str()),    // NOLINT
                                     const_cast<char*>(stop_codes.c_str()),          // NOLINT
+                                    const_cast<char*>(problem_codes.c_str()),       // NOLINT
                                     const_cast<char*>("PATH=/usr/bin:/bin"),        // NOLINT
                                     const_cast<char*>("LC_ALL=C"),                  // NOLINT
                                     const_cast<char*>("PYTHONDONTWRITEBYTECODE=1"), // NOLINT
@@ -740,6 +742,26 @@ auto check_tool_files(const std::string& table, const std::string& sidecar) -> C
           sidecar.empty() ? std::nullopt : read_file(sidecar, max_tool_table_bytes)};
 }
 
+auto subroutine_problem(const PreviewError& problem, const PreviewStopSource& source,
+                        bool show_program_line, std::string_view suffix = {}) -> LocalizedReason {
+  const auto text = preview_stop_prefix(source) + problem.text;
+  const auto detail = parameter_localization("detail", problem.localization);
+  if (show_program_line)
+    return {std::format("Line {}: {}{}", problem.line, text, suffix),
+            MessageKey{"backend.previewEngine.helperLineAndSource",
+                       {{"line", std::to_string(problem.line)},
+                        {"file", source.file},
+                        {"sourceLine", std::to_string(source.line)},
+                        {"detail", problem.text},
+                        {"suffix", std::string(suffix)}},
+                       detail}};
+  return {text, MessageKey{"backend.previewEngine.helperSource",
+                           {{"file", source.file},
+                            {"sourceLine", std::to_string(source.line)},
+                            {"detail", problem.text}},
+                           detail}};
+}
+
 auto program_check(const PreviewSettings& settings, const PreviewInputs& inputs,
                    const HelperOutput& output, const PreviewOutcome& outcome,
                    const CheckToolFiles& files) -> ProgramCheck {
@@ -749,10 +771,17 @@ auto program_check(const PreviewSettings& settings, const PreviewInputs& inputs,
   if (!complete) {
     if (output.end == HelperEnd::error && output.problem && output.problem->line > 0 &&
         outcome.error) {
-      check.errors.push_back({std::format("Line {}: {}", outcome.error->line, outcome.error->text),
-                              MessageKey{"backend.previewEngine.lineError",
-                                         {{"line", std::to_string(outcome.error->line)},
-                                          {"detail", outcome.error->text}}}});
+      if (const auto& source = output.problem_source) {
+        auto issue = subroutine_problem(*output.problem, *source, true);
+        check.errors.push_back({std::move(issue.text), std::move(issue.localization)});
+      } else {
+        check.errors.push_back(
+            {std::format("Line {}: {}", outcome.error->line, outcome.error->text),
+             MessageKey{
+                 "backend.previewEngine.lineError",
+                 {{"line", std::to_string(outcome.error->line)}, {"detail", outcome.error->text}},
+                 parameter_localization("detail", outcome.error->localization)}});
+      }
     } else {
       check.warnings.push_back({"CoffeeCNC could only check part of this program.",
                                 MessageKey{"backend.previewEngine.partialCheck"}});
@@ -903,19 +932,30 @@ auto outcome_of(const PreviewSettings& settings, const PreviewInputs& inputs, He
     outcome.restart = output.restart;
     outcome.restart_blocked = std::move(output.restart_blocked);
     outcome.restart_blocked_localization = std::move(output.restart_blocked_localization);
-  }
-  else if (output.end == HelperEnd::error && output.problem)
-    // The interpreter's own error, with its line: that is the reason, however the helper
-    // ended after it.
-    outcome.error = std::move(output.problem);
-  else if ((output.end == HelperEnd::stop || output.end == HelperEnd::cut) && output.problem) {
+  } else if (output.end == HelperEnd::error && output.problem) {
+    // Keep the helper's error with its line, however the helper ended after it.
+    if (const auto& source = output.problem_source) {
+      auto error = subroutine_problem(*output.problem, *source, false);
+      outcome.error =
+          PreviewError{output.problem->line, std::move(error.text), std::move(error.localization)};
+    } else {
+      outcome.error = std::move(output.problem);
+    }
+  } else if ((output.end == HelperEnd::stop || output.end == HelperEnd::cut) && output.problem) {
     const auto& problem = *output.problem;
     if (output.end == HelperEnd::cut) {
-      outcome.error = PreviewError{
-          problem.line, std::format("Line {}: {}.", problem.line, problem.text),
-          MessageKey{"backend.previewEngine.lineErrorStop",
-                     {{"line", std::to_string(problem.line)}, {"detail", problem.text}}}};
-    } else if (const auto& source = output.stop_source) {
+      if (const auto& source = output.problem_source) {
+        auto error = subroutine_problem(problem, *source, true, ".");
+        outcome.error =
+            PreviewError{problem.line, std::move(error.text), std::move(error.localization)};
+      } else {
+        outcome.error = PreviewError{
+            problem.line, std::format("Line {}: {}.", problem.line, problem.text),
+            MessageKey{"backend.previewEngine.lineErrorStop",
+                       {{"line", std::to_string(problem.line)}, {"detail", problem.text}},
+                       parameter_localization("detail", problem.localization)}};
+      }
+    } else if (const auto& source = output.problem_source) {
       outcome.error =
           PreviewError{problem.line,
                        std::format("The preview ends at line {}: {} line {}: {}.", problem.line,

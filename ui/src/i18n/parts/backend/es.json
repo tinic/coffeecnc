@@ -530,6 +530,7 @@
     },
     "previewWire": {
       "invalidStopCode": "un código de detención de vista previa no válido",
+      "invalidProblemCode": "un código de diagnóstico de vista previa no válido",
       "segmentAfterEnd": "un segmento después del registro que termina la trayectoria",
       "segmentLine": "un segmento con una línea ajena al programa",
       "segmentKind": "un segmento de tipo desconocido",
@@ -584,6 +585,10 @@
       "rigidTapZFeed": "El roscado rígido supera el límite de avance en Z configurado",
       "rigidTapZOnly": "El roscado rígido requiere un movimiento descendente solo en Z",
       "rigidTapAllowance": "El roscado rígido no tiene un margen de inversión válido",
+      "helperUvwArc": "no se puede mostrar un arco en un plano UVW",
+      "helperPointLimit": "la vista previa termina aquí: la trayectoria tiene más de {limit} puntos",
+      "helperSource": "{file} línea {sourceLine}: {detail}",
+      "helperLineAndSource": "Línea {line}: {file} línea {sourceLine}: {detail}{suffix}",
       "rigidTapRestart": "Ejecute el programa de roscado desde el inicio para establecer la corrección de velocidad del husillo.",
       "cannotRead": "No se puede leer el programa para la vista previa, u ocupa más de {size}.",
       "endsAtLine": "La vista previa termina en la línea {line}: {detail}.",

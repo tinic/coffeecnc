@@ -530,6 +530,7 @@
     },
     "previewWire": {
       "invalidStopCode": "ein ungültiger Code für den Vorschaustopp",
+      "invalidProblemCode": "ein ungültiger Vorschau-Diagnosecode",
       "segmentAfterEnd": "ein Segment nach dem Eintrag, der den Pfad beendet",
       "segmentLine": "ein Segment mit einer Zeile außerhalb des Programms",
       "segmentKind": "ein Segment unbekannten Typs",
@@ -584,6 +585,10 @@
       "rigidTapZFeed": "Starres Gewindebohren überschreitet die konfigurierte Z-Vorschubgrenze",
       "rigidTapZOnly": "Starres Gewindebohren erfordert eine Abwärtsbewegung nur in Z",
       "rigidTapAllowance": "Für starres Gewindebohren ist kein gültiger Umkehrweg festgelegt",
+      "helperUvwArc": "ein Kreisbogen in einer UVW-Ebene kann nicht angezeigt werden",
+      "helperPointLimit": "die Vorschau endet hier: Die Bahn hat mehr als {limit} Punkte",
+      "helperSource": "{file} Zeile {sourceLine}: {detail}",
+      "helperLineAndSource": "Zeile {line}: {file} Zeile {sourceLine}: {detail}{suffix}",
       "rigidTapRestart": "Starten Sie das Gewindebohrprogramm von Anfang an, damit die Spindelkorrektur gesetzt wird.",
       "cannotRead": "Das Programm kann für eine Vorschau nicht gelesen werden oder ist größer als {size}.",
       "endsAtLine": "Die Vorschau endet bei Zeile {line}: {detail}.",

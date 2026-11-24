@@ -366,6 +366,17 @@ auto encoded_messages() -> std::vector<EncodedMessage> {
           {{"detail", {"backend.previewEngine.stopG92Restore"}}}}};
   messages.push_back(encode_preview(offset_restore));
 
+  Preview point_limit;
+  point_limit.context = 4821347;
+  point_limit.state = PreviewState::failed;
+  point_limit.error = PreviewError{
+      4, "Line 4: the preview ends here: the path has more than 1000 points.",
+      MessageKey{
+          "backend.previewEngine.lineErrorStop",
+          {{"line", "4"}, {"detail", "the preview ends here: the path has more than 1000 points"}},
+          {{"detail", {"backend.previewEngine.helperPointLimit", {{"limit", "1000"}}}}}}};
+  messages.push_back(encode_preview(point_limit));
+
   const PreviewSegment approach{4, MoveKind::rapid, 3, {{0, 0, 10}, {0, 0, 2}}};
   const PreviewSegment cut{
       5, MoveKind::feed, 3, {{0, 0, 2}, {0, 0, -1.5}, {30, 0, -1.5}, {30, 20.5, -1.5}}, 450};

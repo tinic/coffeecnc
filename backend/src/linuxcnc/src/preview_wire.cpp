@@ -230,12 +230,77 @@ auto valid_stop_source(const PreviewStopSource& source) -> bool {
          !source.file.contains('\0');
 }
 
-struct CodedStop {
+auto read_problem_source(std::string_view line, std::optional<PreviewStopSource>& source) -> bool {
+  auto tail = line;
+  if (word(tail).empty())
+    return true;
+  PreviewStopSource where;
+  if (!number(line, where.line))
+    return false;
+  where.file = rest(line);
+  if (!valid_stop_source(where))
+    return false;
+  source = std::move(where);
+  return true;
+}
+
+auto preview_problem_message(KnownPreviewProblem reason, std::size_t point_limit)
+    -> LocalizedReason {
+  switch (reason) {
+  case KnownPreviewProblem::uvw_arc:
+    return {"an arc in a UVW plane cannot be shown",
+            MessageKey{"backend.previewEngine.helperUvwArc"}};
+  case KnownPreviewProblem::tapping_spindle:
+    return {"rigid tapping is not configured for this spindle on this machine",
+            MessageKey{"backend.previewEngine.rigidTapSpindle"}};
+  case KnownPreviewProblem::tapping_direction:
+    return {"rigid tapping requires clockwise spindle rotation (M3)",
+            MessageKey{"backend.previewEngine.rigidTapDirection"}};
+  case KnownPreviewProblem::tapping_override:
+    return {"rigid tapping requires spindle override off (M51 P0)",
+            MessageKey{"backend.previewEngine.rigidTapOverride"}};
+  case KnownPreviewProblem::tapping_rpm:
+    return {"rigid tapping exceeds the configured fixed spindle limit",
+            MessageKey{"backend.previewEngine.rigidTapRpm"}};
+  case KnownPreviewProblem::tapping_z_feed:
+    return {"rigid tapping exceeds the configured Z feed limit",
+            MessageKey{"backend.previewEngine.rigidTapZFeed"}};
+  case KnownPreviewProblem::tapping_z_only:
+    return {"rigid tapping requires a downward Z-only move",
+            MessageKey{"backend.previewEngine.rigidTapZOnly"}};
+  case KnownPreviewProblem::tapping_allowance:
+    return {"rigid tapping has no valid reversal allowance",
+            MessageKey{"backend.previewEngine.rigidTapAllowance"}};
+  case KnownPreviewProblem::point_limit:
+    return {std::format("the preview ends here: the path has more than {} points", point_limit),
+            MessageKey{"backend.previewEngine.helperPointLimit",
+                       {{"limit", std::to_string(point_limit)}}}};
+  }
+  return {};
+}
+
+struct CodedProblem {
   LocalizedReason reason;
   std::optional<PreviewStopSource> source{};
+  std::string_view kind;
 };
 
-auto read_preview_stop(std::string_view line) -> std::optional<CodedStop> {
+auto read_preview_problem(std::string_view line) -> std::optional<CodedProblem> {
+  unsigned id = 0;
+  if (!number(line, id) || !std::in_range<std::uint8_t>(id))
+    return {};
+  const auto reason = static_cast<KnownPreviewProblem>(id);
+  const bool cut = reason == KnownPreviewProblem::point_limit;
+  std::size_t limit = 0;
+  if (cut && !number(line, limit))
+    return {};
+  CodedProblem parsed{preview_problem_message(reason, limit), {}, cut ? "cut" : "error"};
+  if (parsed.reason.empty() || !read_problem_source(line, parsed.source))
+    return {};
+  return parsed;
+}
+
+auto read_preview_stop(std::string_view line) -> std::optional<CodedProblem> {
   unsigned id = 0;
   if (!number(line, id) || !std::in_range<std::uint8_t>(id))
     return {};
@@ -262,16 +327,10 @@ auto read_preview_stop(std::string_view line) -> std::optional<CodedStop> {
   auto localized = preview_stop_message(reason, argument);
   if (localized.empty())
     return {};
-  auto tail = line;
-  if (word(tail).empty())
-    return CodedStop{std::move(localized)};
-  PreviewStopSource source;
-  if (!number(line, source.line))
+  CodedProblem parsed{std::move(localized), {}, "stop"};
+  if (!read_problem_source(line, parsed.source))
     return {};
-  source.file = rest(line);
-  if (!valid_stop_source(source))
-    return {};
-  return CodedStop{std::move(localized), std::move(source)};
+  return parsed;
 }
 
 auto restart_refusal_message(RestartRefusal reason) -> LocalizedReason {
@@ -622,6 +681,24 @@ auto write_preview_stop(int line, KnownPreviewStop reason,
   return out;
 }
 
+auto write_preview_problem(int line, KnownPreviewProblem reason,
+                           const std::optional<PreviewStopSource>& source, bool coded,
+                           std::size_t point_limit) -> std::string {
+  const bool cut = reason == KnownPreviewProblem::point_limit;
+  if (!coded || (source && !valid_stop_source(*source))) {
+    auto text = preview_stop_prefix(source) + preview_problem_message(reason, point_limit).text;
+    std::ranges::replace_if(text, [](char c) { return c == '\n' || c == '\r'; }, ' ');
+    return std::format("{} {} {}\n", cut ? "cut" : "error", line, text);
+  }
+  auto out = std::format("problem_known {} {}", line, static_cast<unsigned>(reason));
+  if (cut)
+    out += std::format(" {}", point_limit);
+  if (source)
+    out += std::format(" {} {}", source->line, source->file);
+  out += '\n';
+  return out;
+}
+
 auto parse_output(std::string_view text, const OutputLimits& limits) -> HelperOutput {
   HelperOutput output;
   std::size_t points = 0;
@@ -695,7 +772,8 @@ auto parse_output(std::string_view text, const OutputLimits& limits) -> HelperOu
         return defect("more dwells than the preview allows",
                       MessageKey{"backend.previewWire.tooManyDwells"});
       output.dwells.push_back(dwell);
-    } else if (key == "error" || key == "stop" || key == "stop_known" || key == "cut") {
+    } else if (key == "error" || key == "stop" || key == "stop_known" || key == "cut" ||
+               key == "problem_known") {
       PreviewError problem;
       if (output.problem)
         return defect("a second record that ends the path",
@@ -703,18 +781,25 @@ auto parse_output(std::string_view text, const OutputLimits& limits) -> HelperOu
       if (!line_number(line, problem.line))
         return defect("a record with a line that is none of the program",
                       MessageKey{"backend.previewWire.recordLine"});
-      if (key == "stop_known") {
-        auto parsed = read_preview_stop(line);
-        if (!parsed)
-          return defect("an invalid preview stop code",
-                        MessageKey{"backend.previewWire.invalidStopCode"});
+      if (key == "stop_known" || key == "problem_known") {
+        const bool stop = key == "stop_known";
+        auto parsed = stop ? read_preview_stop(line) : read_preview_problem(line);
+        if (!parsed) {
+          if (stop)
+            return defect("an invalid preview stop code",
+                          MessageKey{"backend.previewWire.invalidStopCode"});
+          return defect("an invalid preview diagnostic code",
+                        MessageKey{"backend.previewWire.invalidProblemCode"});
+        }
         problem.text = std::move(parsed->reason.text);
         problem.localization = std::move(parsed->reason.localization);
-        output.stop_source = std::move(parsed->source);
-      } else
+        output.problem_source = std::move(parsed->source);
+        problem_kind = parsed->kind;
+      } else {
         problem.text = rest(line);
+        problem_kind = key;
+      }
       output.problem = std::move(problem);
-      problem_kind = key == "stop_known" ? "stop" : key;
     } else if (key == "check") {
       if (!read_check(line, output.check))
         return defect("a malformed program check record",

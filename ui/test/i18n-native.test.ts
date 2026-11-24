@@ -380,6 +380,16 @@ describe('translateMessage', () => {
     })).toBe('L’aperçu s’arrête à la ligne 3 : G92.3 restaure un décalage enregistré dans le fichier de paramètres.')
   })
 
+  it('translates a coded helper error with its subroutine location', async () => {
+    await setLanguage('fr')
+    const detail = 'an arc in a UVW plane cannot be shown'
+    expect(translateMessage(`inner.ngc line 3: ${detail}`, {
+      key: 'backend.previewEngine.helperSource',
+      params: { file: 'inner.ngc', sourceLine: '3', detail },
+      params_localization: { detail: { key: 'backend.previewEngine.helperUvwArc', params: {} } },
+    })).toBe('inner.ngc, ligne 3 : un arc dans un plan UVW ne peut pas être affiché')
+  })
+
   it('translates a remap stop and retains the code', async () => {
     await setLanguage('fr')
     const detail = 'G88.1 is remapped on this machine ([RS274NGC] REMAP): what it does is not known to the preview'

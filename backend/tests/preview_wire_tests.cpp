@@ -108,7 +108,7 @@ void preview_stop_codes() {
   const auto at_source = write_preview_stop(3, probe, source, "3");
   const auto located = parse_output(at_source + "end stop\n");
   require(at_source == "stop_known 3 2 5 edge path.ngc\n" && located.end == HelperEnd::stop &&
-              located.stop_source == source &&
+              located.problem_source == source &&
               located.problem ==
                   PreviewError{3, fallback, MessageKey{"backend.previewEngine.stopProbe"}},
           "Version 3 keeps the main line, the file and its line even when the filename has spaces");
@@ -167,7 +167,7 @@ void preview_stop_codes() {
       "Older or unknown versions get text for the numbered stop, and version 2 keeps fixed codes");
   const auto numbered_source =
       parse_output(write_preview_stop(4, wcs, source, "3", 9) + "end stop\n");
-  require(numbered_source.end == HelperEnd::stop && numbered_source.stop_source == source &&
+  require(numbered_source.end == HelperEnd::stop && numbered_source.problem_source == source &&
               numbered_source.problem ==
                   PreviewError{
                       4, wcs_text,
@@ -257,13 +257,75 @@ void interpreter_stop_code_ids() {
       write_preview_stop(5, KnownPreviewStop::remapped_code, PreviewStopSource{"inner.ngc", 3}, "4",
                          std::string("G88.1"));
   require(location_wire == "stop_known 5 15 G88.1 3 inner.ngc\n" &&
-              parse_output(location_wire + "end stop\n").stop_source ==
+              parse_output(location_wire + "end stop\n").problem_source ==
                   PreviewStopSource{"inner.ngc", 3},
           "A token argument can be followed by a source location");
   const auto spaced = write_preview_stop(5, KnownPreviewStop::undefined_parameter, {}, "4",
                                          std::string("#<a name>"));
   require(spaced.starts_with("stop 5 reads #<a name>,"),
           "Arguments that do not fit the coded record retain the original text");
+}
+
+void helper_problem_code_ids() {
+  struct Case {
+    KnownPreviewProblem reason;
+    unsigned id;
+    std::string_view text;
+    std::string_view key;
+  };
+  const std::array errors{
+      Case{KnownPreviewProblem::uvw_arc, 1, "an arc in a UVW plane cannot be shown",
+           "helperUvwArc"},
+      Case{KnownPreviewProblem::tapping_spindle, 2,
+           "rigid tapping is not configured for this spindle on this machine", "rigidTapSpindle"},
+      Case{KnownPreviewProblem::tapping_direction, 3,
+           "rigid tapping requires clockwise spindle rotation (M3)", "rigidTapDirection"},
+      Case{KnownPreviewProblem::tapping_override, 4,
+           "rigid tapping requires spindle override off (M51 P0)", "rigidTapOverride"},
+      Case{KnownPreviewProblem::tapping_rpm, 5,
+           "rigid tapping exceeds the configured fixed spindle limit", "rigidTapRpm"},
+      Case{KnownPreviewProblem::tapping_z_feed, 6,
+           "rigid tapping exceeds the configured Z feed limit", "rigidTapZFeed"},
+      Case{KnownPreviewProblem::tapping_z_only, 7, "rigid tapping requires a downward Z-only move",
+           "rigidTapZOnly"},
+      Case{KnownPreviewProblem::tapping_allowance, 8,
+           "rigid tapping has no valid reversal allowance", "rigidTapAllowance"},
+  };
+  for (const auto& error : errors) {
+    const auto wire = write_preview_problem(4, error.reason, {}, true);
+    const auto output = parse_output(wire + "end error\n");
+    require(wire == std::format("problem_known 4 {}\n", error.id) &&
+                output.end == HelperEnd::error &&
+                output.problem ==
+                    PreviewError{4, std::string(error.text),
+                                 MessageKey{std::format("backend.previewEngine.{}", error.key)}} &&
+                write_preview_problem(4, error.reason, {}, false) ==
+                    std::format("error 4 {}\n", error.text),
+            std::format("Helper error {} keeps its ID, key, and legacy text", error.id));
+  }
+  const PreviewStopSource source{"inner part.ngc", 3};
+  const auto cut = write_preview_problem(7, KnownPreviewProblem::point_limit, source, true, 1000);
+  const auto output = parse_output(cut + "end cut\n");
+  require(cut == "problem_known 7 9 1000 3 inner part.ngc\n" && output.end == HelperEnd::cut &&
+              output.problem_source == source &&
+              output.problem ==
+                  PreviewError{
+                      7, "the preview ends here: the path has more than 1000 points",
+                      MessageKey{"backend.previewEngine.helperPointLimit", {{"limit", "1000"}}}} &&
+              write_preview_problem(7, KnownPreviewProblem::point_limit, source, false, 1000) ==
+                  "cut 7 inner part.ngc line 3: the preview ends here: the path has more than 1000 "
+                  "points\n",
+          "The point limit retains the numeric limit, source and fallback");
+  require(parse_output(cut + "end error\n").end == HelperEnd::missing,
+          "A cut record cannot end as an error");
+  for (const auto malformed :
+       {"problem_known 3 10\n", "problem_known 3 9\n", "problem_known 3 9 -1\n",
+        "problem_known 3 1 0 inner.ngc\n", "problem_known 3 1 2\n"}) {
+    const auto bad = parse_output(malformed);
+    require(bad.end == HelperEnd::missing && !bad.problem &&
+                bad.defect.localization == MessageKey{"backend.previewWire.invalidProblemCode"},
+            "An invalid helper diagnostic is rejected");
+  }
 }
 
 void block_refusal_code_ids() {
@@ -693,6 +755,7 @@ auto main() -> int {
     preview_stop_codes();
     fixed_preview_stop_code_ids();
     interpreter_stop_code_ids();
+    helper_problem_code_ids();
     block_refusal_code_ids();
     restart_refusal_codes();
     hostile_results();

@@ -973,6 +973,24 @@ const examples = [
     "dwells": []
   },
   {
+    "type": "preview",
+    "context": 4821339,
+    "state": "unavailable",
+    "error": {
+      "line": 0,
+      "text": "Cutter compensation (G41) is active: no preview.",
+      "localization": {
+        "key": "backend.previewEngine.cutterCompensation",
+        "params": {
+          "code": "G41"
+        }
+      }
+    },
+    "segments": [],
+    "bounds": null,
+    "dwells": []
+  },
+  {
     "type": "message",
     "level": "error",
     "text": "Joint 0 on limit switch error",

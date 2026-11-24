@@ -36,7 +36,7 @@ struct PreviewSettings {
   // the first block that uses one.
   std::vector<std::string> remapped;
   // Why no preview is computed on this machine at all; empty when one is.
-  std::string refusal;
+  std::optional<PreviewError> refusal;
   std::optional<Bounds> soft_travel{};
   std::optional<Bounds> physical_travel{};
   double max_spindle_rpm{};

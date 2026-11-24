@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { shallowMount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import PathView from '../src/components/PathView.vue'
+import { setLanguage, t } from '../src/i18n'
+import { describeProgramCheck } from '../src/program-check'
 import { panel } from '../src/machine'
 import { SimMachine } from '../src/sim/machine'
 
@@ -114,6 +116,27 @@ describe('preview messages', () => {
     panel.preview.segments = [{ line: 2, kind: 'feed', tool: 1, points: [0, 0, 0, 1, 0, 0], feed: 100 }]
     wrapper = shallowMount(PathView)
     expect(wrapper.get('.preview-banner').text()).toContain('Preview stopped at line 3: partial path shown')
+  })
+
+  it('translates a keyed preview error in the banner and Program Check', async () => {
+    if (panel.preview === null) throw new Error('Missing fixture')
+    try {
+      await setLanguage('de')
+      panel.preview.state = 'unavailable'
+      panel.preview.error = { line: 0, text: 'Older fallback text.', localization: {
+        key: 'backend.previewEngine.cutterCompensation', params: { code: 'G41' },
+      } }
+      const expected = t('backend.previewEngine.cutterCompensation', { code: 'G41' })
+      wrapper = shallowMount(PathView)
+      expect(wrapper.get('.preview-banner').text()).toBe(expected)
+      expect(describeProgramCheck(panel.preview, 'mm')?.warnings).toEqual([expected])
+
+      panel.preview.state = 'failed'
+      await nextTick()
+      expect(wrapper.get('.preview-banner').text()).toContain(expected)
+    } finally {
+      await setLanguage('en')
+    }
   })
 
   it('reports preview failures and obsolete contexts when a program is loaded', async () => {

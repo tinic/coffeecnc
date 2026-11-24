@@ -291,6 +291,12 @@ auto encoded_messages() -> std::vector<Encoded> {
   preview.bounds.reset();
   messages.push_back(encode_preview(preview));
   messages.push_back(encode_preview({}));
+  Preview unavailable;
+  unavailable.context = 4821339;
+  unavailable.error =
+      PreviewError{0, "Cutter compensation (G41) is active: no preview.",
+                   MessageKey{"backend.previewEngine.cutterCompensation", {{"code", "G41"}}}};
+  messages.push_back(encode_preview(unavailable));
 
   messages.emplace_back(
       encode_message(MessageLevel::error, "Joint 0 on limit switch error", 1700000000123ms));

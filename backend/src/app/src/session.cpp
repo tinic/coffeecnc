@@ -1348,7 +1348,7 @@ auto Session::plan_restart(Queued& request, PlanRestart command, const Controlle
     const auto shown = preview_->latest();
     if (shown && shown->context == command.preview_context) {
       if (const auto& error = shown->error)
-        return answer({CommandOutcome::rejected, error->text});
+        return answer({CommandOutcome::rejected, error->text, error->localization});
     }
     return refuse("Wait for an up-to-date program preview.",
                   RefusalMessage{"messages.session.waitPreview"});
@@ -1363,11 +1363,14 @@ auto Session::plan_restart(Queued& request, PlanRestart command, const Controlle
     return refuse("The program preview changed. Choose the line again.",
                   RefusalMessage{"messages.session.previewChanged"});
   const auto& outcome = computed.outcome;
-  if (!outcome.restart || outcome.restart->line != command.line || !computed.files_changed)
-    return answer({CommandOutcome::rejected,
-                   !outcome.restart_blocked.empty() ? outcome.restart_blocked
-                   : outcome.error ? outcome.error->text
-                                   : "No verified motion is available at that line."});
+  if (!outcome.restart || outcome.restart->line != command.line || !computed.files_changed) {
+    if (!outcome.restart_blocked.empty())
+      return answer({CommandOutcome::rejected, outcome.restart_blocked});
+    if (const auto& error = outcome.error)
+      return answer({CommandOutcome::rejected, error->text, error->localization});
+    return refuse("No verified motion is available at that line.",
+                  RefusalMessage{"messages.session.noVerifiedMotion"});
+  }
   auto point = *outcome.restart;
   if (tool_models_ != nullptr && tool_models_->touch_probe_loaded(point.tool) != false)
     return refuse("Restart requires a tool verified for machining.",

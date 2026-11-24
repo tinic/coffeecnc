@@ -3,6 +3,7 @@
 
 #include <coffeecnc/app/response.hpp>
 #include <coffeecnc/app/tool_model_store.hpp>
+#include <coffeecnc/core/controller_port.hpp>
 
 #include <array>
 #include <atomic>
@@ -75,11 +76,17 @@ struct MachineDataPaths {
 
 // The `backup_written` message: where the archive was written, how many files it holds, its
 // size, and the HAL files it does not hold, each with the reason.
+struct BackupOmission {
+  std::string path;
+  std::string reason;
+  std::optional<MessageKey> localization{};
+};
+
 struct BackupWritten {
   std::string path;
   std::size_t files{};
   std::size_t bytes{};
-  std::vector<std::pair<std::string, std::string>> not_included;
+  std::vector<BackupOmission> not_included;
 };
 
 // The `restore_summary` message: what a restore of the archive at `path` would write.
@@ -113,6 +120,7 @@ struct MachineDataAnswer {
   std::string reason;
   std::vector<std::string> messages;
   bool quit{};
+  std::optional<MessageKey> localization{};
 };
 
 // Where the session sends `backup`, `check_restore` and `restore`, on its worker thread. The
@@ -131,7 +139,7 @@ public:
   [[nodiscard]] virtual auto check_restore(const std::string& path) -> MachineDataAnswer = 0;
   [[nodiscard]] virtual auto restore(const std::string& path, const std::string& token,
                                      std::uint64_t page,
-                                     const std::function<std::string()>& recheck)
+                                     const std::function<LocalizedReason()>& recheck)
       -> MachineDataAnswer = 0;
   virtual void abandon_restore() = 0;
 
@@ -189,7 +197,7 @@ public:
   [[nodiscard]] auto backup(const std::string& directory) -> MachineDataAnswer override;
   [[nodiscard]] auto check_restore(const std::string& path) -> MachineDataAnswer override;
   [[nodiscard]] auto restore(const std::string& path, const std::string& token, std::uint64_t page,
-                             const std::function<std::string()>& recheck)
+                             const std::function<LocalizedReason()>& recheck)
       -> MachineDataAnswer override;
   void abandon_restore() override;
 
@@ -197,7 +205,7 @@ public:
   [[nodiscard]] auto staged() const -> bool { return staged_.load(); }
   // What came of a restore before this run, for the operator, once; empty when nothing. Any
   // thread.
-  [[nodiscard]] auto take_notice() -> std::optional<std::pair<MessageLevel, std::string>>;
+  [[nodiscard]] auto take_notice() -> std::optional<ControllerMessage>;
 
   struct Planned {
     std::string role;
@@ -218,7 +226,7 @@ private:
     std::int64_t created{};
     std::string token;
   };
-  [[nodiscard]] auto check(const std::string& path) -> std::expected<Checked, std::string>;
+  [[nodiscard]] auto check(const std::string& path) -> std::expected<Checked, LocalizedReason>;
   void report_last_restore(const Pause& pause);
 
   ToolModelFiles& files_;
@@ -231,7 +239,7 @@ private:
   std::mutex stage_mutex_;                // staging and abandoning
   std::vector<std::string> staged_files_; // the plan's copies, under stage_mutex_
   std::mutex mutex_;
-  std::optional<std::pair<MessageLevel, std::string>> notice_;
+  std::optional<ControllerMessage> notice_;
 };
 
 // What the helper asks while it writes; each may be empty.

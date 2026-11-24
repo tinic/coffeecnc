@@ -764,7 +764,8 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
           alarms->send_snapshot(page);
           // What a restore before this run came to, once.
           if (auto notice = machine_data->take_notice())
-            post(page, {encode_message(notice->first, notice->second, unix_now())});
+            post(page, {encode_message(notice->error ? MessageLevel::error : MessageLevel::info,
+                                       notice->text, unix_now(), notice->localization)});
         },
         progress.get(), history.get(), std::move(mirror));
     if (hooks.before_load)

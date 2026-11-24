@@ -17,8 +17,13 @@ auto dump(const Json& value) -> std::string {
 
 auto encode_backup_written(const BackupWritten& written) -> std::string {
   auto left_out = Json::array();
-  for (const auto& [path, reason] : written.not_included)
-    left_out.push_back({{"path", path}, {"reason", reason}});
+  for (const auto& item : written.not_included) {
+    Json omitted{{"path", item.path}, {"reason", item.reason}};
+    if (item.localization)
+      omitted["localization"] = {{"key", item.localization->key},
+                                 {"params", item.localization->params}};
+    left_out.push_back(std::move(omitted));
+  }
   return dump(Json{{"type", "backup_written"},
                    {"path", written.path},
                    {"files", written.files},

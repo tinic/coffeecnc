@@ -1511,7 +1511,7 @@
     "not_included": [
       {
         "path": "LIB:basic_sim.tcl",
-        "reason": "a HAL file of LinuxCNC's own library"
+        "reason": "a HAL file of LinuxCNC's own library", "localization": {"key": "backend.machineData.libHal", "params": {}}
       }
     ]
   },
@@ -1522,6 +1522,7 @@
     "bytes": 1024,
     "not_included": []
   },
+  {"type": "result", "id": 31, "outcome": "accepted", "reason": "Nothing to restore: every file is the same.", "localization": {"key": "backend.machineData.nothing", "params": {}}},
   {
     "type": "restore_summary",
     "path": "/media/cnc/STICK/coffeecnc-G0759-20261123-140200.tar.gz",

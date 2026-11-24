@@ -23,6 +23,7 @@ const adapter = import.meta.glob<string>([
   '../../backend/src/linuxcnc/src/nml_port.cpp',
   '../../backend/src/linuxcnc/src/nml_panel_source.cpp',
   '../../backend/src/linuxcnc/src/preview_engine.cpp',
+  '../../backend/src/app/src/operator_settings_store.cpp',
 ], { query: '?raw', import: 'default', eager: true })
 /** Panel modules whose English reaches the operator as run-time text (a result reason, an import error). */
 const modules = import.meta.glob<string>(['../src/bridge.ts', '../src/step.worker.ts', '../src/step-model.ts'],
@@ -235,7 +236,7 @@ describe('native and store sentences', () => {
 
     const value = /MessageKey\{\s*"([^"]+)"(?:,\s*\{([\s\S]*?)\}\s*\})?/g
     const argument = /\{\s*"(\w+)"\s*,/g
-    const beforeKey = /^(?:\s*,\s*\{\})*\s*,\s*MessageKey\{/
+    const beforeKey = /^(?:\s*,\s*(?:\{\}|true|false))*\s*,\s*MessageKey\{/
     const afterFormat = /^[^;"]*?\),[^;"]*?MessageKey\{/
     const named = /\b(?:std::string\((\w+)\)|(\w+))(?:\s*,\s*\{\})*\s*,\s*(MessageKey\{)/g
 

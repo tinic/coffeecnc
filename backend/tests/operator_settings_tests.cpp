@@ -324,8 +324,15 @@ void archive_and_restart() {
           "Storage becomes unavailable");
   OperatorSettingsArchive corrupt{files, limits};
   corrupt.open(owner.shared_location());
-  require(corrupt.settings().availability == ToolModelAvailability::unavailable,
-          "Corrupt startup file is unavailable");
+  const auto corrupt_snapshot = Json::parse(corrupt.snapshot());
+  const auto& localization = corrupt_snapshot.at("localization");
+  require(
+      corrupt.settings().availability == ToolModelAvailability::unavailable &&
+          corrupt_snapshot.at("reason").get<std::string>().starts_with(file + " is not usable:") &&
+          localization.at("key") == "backend.operatorSettingsStore.notUsable" &&
+          localization.at("params").at("file") == file &&
+          !localization.at("params").at("detail").get<std::string>().empty(),
+      "Corrupt storage sends both its English reason and a key with the original path");
   // The common directory is usable even if the independent tool-model file is corrupt.
   require(owner.shared_location().availability == ToolModelAvailability::available,
           "One shared directory lock");
@@ -347,11 +354,14 @@ void failures() {
     require(reply.outcome == CommandOutcome::failed, "File-system failure never reports success");
     if (step == "sync_directory") {
       require(reply.snapshot && archive.settings().revision == 2 &&
-                  reply.reason.find("uncertain") != std::string::npos,
+                  reply.reason.find("uncertain") != std::string::npos && reply.localization &&
+                  reply.localization->key == "backend.operatorSettingsStore.uncertain",
               "After rename, report uncertainty and read-back values");
     } else
-      require(disk.files.at(file) == saved && archive.settings().revision == 1,
-              "Before rename, original survives");
+      require(disk.files.at(file) == saved && archive.settings().revision == 1 &&
+                  reply.localization &&
+                  reply.localization->key == "backend.operatorSettingsStore.notSaved",
+              "Before rename, the result explains the original survives");
   }
   FakeDisk disk;
   FakeToolModelFiles first{disk}, second{disk};
@@ -411,14 +421,29 @@ void writer_delivery() {
                 Json::parse(deliveries[1][1]).at("outcome") == "accepted",
             "Updated snapshot precedes accepted result");
   }
-  store.page_ended(PageToken{1});
-  require(store.submit_operator_settings(PageToken{1}, 29, command(1)).has_value(),
-          "Ended page cannot queue a write");
-  store.send_snapshot(PageToken{2});
+  require(!store.submit_operator_settings(PageToken{1}, 29, command()), "Stale save is queued");
   wait(3);
   {
     const std::scoped_lock lock{mutex};
-    require(Json::parse(deliveries[2][1]).at("revision") == 1,
+    const auto result = Json::parse(deliveries[2].at(1));
+    require(Json::parse(deliveries[2].at(0)).at("revision") == 1 &&
+                result.at("outcome") == "rejected" &&
+                result.at("reason") ==
+                    "Settings changed since this editor opened. Nothing was saved." &&
+                result.at("localization") ==
+                    Json{{"key", "backend.operatorSettingsStore.changedSinceOpened"},
+                         {"params", Json::object()}},
+            "The writer keeps the old snapshot and then sends the keyed refusal with its English "
+            "reason");
+  }
+  store.page_ended(PageToken{1});
+  require(store.submit_operator_settings(PageToken{1}, 30, command(1)).has_value(),
+          "Ended page cannot queue a write");
+  store.send_snapshot(PageToken{2});
+  wait(4);
+  {
+    const std::scoped_lock lock{mutex};
+    require(Json::parse(deliveries[3][1]).at("revision") == 1,
             "A fresh page receives saved preferences");
   }
 }

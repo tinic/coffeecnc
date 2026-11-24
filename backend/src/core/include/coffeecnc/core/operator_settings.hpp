@@ -1,6 +1,7 @@
 #ifndef COFFEECNC_CORE_OPERATOR_SETTINGS_HPP
 #define COFFEECNC_CORE_OPERATOR_SETTINGS_HPP
 
+#include <coffeecnc/core/message_key.hpp>
 #include <coffeecnc/core/tool_models.hpp>
 
 #include <array>
@@ -50,6 +51,7 @@ struct OperatorSettings {
   ToolModelAvailability availability{ToolModelAvailability::session_only};
   std::string reason;
   std::optional<OperatorPreferences> document;
+  std::optional<MessageKey> localization{};
   friend auto operator==(const OperatorSettings&, const OperatorSettings&) -> bool = default;
 };
 

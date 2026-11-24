@@ -274,7 +274,7 @@ async function cdp(port) {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
-async function selectLineRange(page) {
+async function dragLineRange(page) {
   const points = await page.run(() => {
     const lines = document.querySelectorAll('.row .number.range-target')
     if (lines.length < 8) return null
@@ -283,7 +283,7 @@ async function selectLineRange(page) {
       return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
     })
   })
-  if (!points) throw new Error('Could not find editable program lines')
+  if (!points) return false
   const [first, middle, last] = points
   await page.call('Input.dispatchMouseEvent', { type: 'mouseMoved', ...first })
   await page.call('Input.dispatchMouseEvent', { type: 'mousePressed', button: 'left', buttons: 1, clickCount: 1, ...first })
@@ -291,10 +291,26 @@ async function selectLineRange(page) {
   await page.call('Input.dispatchMouseEvent', { type: 'mouseMoved', buttons: 1, ...last })
   await page.call('Input.dispatchMouseEvent', { type: 'mouseReleased', button: 'left', clickCount: 1, ...last })
   for (let i = 0; i < 10; i++) {
-    if (await page.run(() => Boolean(document.querySelector('.line-actions .range-label')))) return
+    if (await page.run(() => Boolean(document.querySelector('.line-actions .range-label')))) return true
     await sleep(50)
   }
-  throw new Error('Dragging line numbers did not open the multi-selection toolbar')
+  return false
+}
+
+// The rest of the sweep can use background tabs. A drag needs a live, foreground simulator
+// from the press to the release. Serialize the gestures so another tab cannot interrupt one.
+let rangeInput = Promise.resolve()
+function selectLineRange(page) {
+  const gesture = rangeInput.then(async () => {
+    await page.call('Page.bringToFront')
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (await dragLineRange(page)) return
+      await sleep(250)
+    }
+    throw new Error('Dragging line numbers did not open the multi-selection toolbar')
+  })
+  rangeInput = gesture.catch(() => undefined)
+  return gesture
 }
 
 async function open(page, base, entry, path) {
@@ -349,7 +365,12 @@ async function main() {
   const base = server.resolvedUrls.local[0]
   const profile = await mkdtemp(`${scratch}profile-`)
   const linux = process.platform === 'linux' ? ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'] : []
-  const chrome = spawn(chromePath(), ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--hide-scrollbars', '--no-first-run', ...linux, 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] })
+  const chrome = spawn(chromePath(), [
+    '--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--hide-scrollbars', '--no-first-run',
+    // The parallel tabs must keep the simulator's status heartbeat running in the background.
+    '--disable-background-timer-throttling', '--disable-renderer-backgrounding',
+    ...linux, 'about:blank',
+  ], { stdio: ['ignore', 'ignore', 'pipe'] })
   let chromeLog = ''
   chrome.stderr.on('data', (chunk) => { chromeLog = (chromeLog + String(chunk)).slice(-4000) })
   let port = null

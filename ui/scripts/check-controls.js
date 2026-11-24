@@ -24,7 +24,7 @@
 /* global document, window, getComputedStyle, PointerEvent -- the page functions below run in the browser */
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
 
@@ -276,21 +276,25 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 async function selectLineRange(page) {
   const points = await page.run(() => {
-    const [, line, next] = document.querySelectorAll('.row .number.range-target')
-    if (!line || !next) return null
-    return [line, next].map((el) => {
+    const lines = document.querySelectorAll('.row .number.range-target')
+    if (lines.length < 8) return null
+    return [lines[3], lines[5], lines[7]].map((el) => {
       const box = el.getBoundingClientRect()
       return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
     })
   })
   if (!points) throw new Error('Could not find editable program lines')
-  const [first, next] = points
+  const [first, middle, last] = points
+  await page.call('Input.dispatchMouseEvent', { type: 'mouseMoved', ...first })
   await page.call('Input.dispatchMouseEvent', { type: 'mousePressed', button: 'left', buttons: 1, clickCount: 1, ...first })
-  await page.call('Input.dispatchMouseEvent', { type: 'mouseMoved', button: 'left', buttons: 1, ...next })
-  await page.call('Input.dispatchMouseEvent', { type: 'mouseReleased', button: 'left', clickCount: 1, ...next })
-  if (!(await page.run(() => Boolean(document.querySelector('.line-actions .range-label'))))) {
-    throw new Error('Dragging line numbers did not open the multi-selection toolbar')
+  await page.call('Input.dispatchMouseEvent', { type: 'mouseMoved', buttons: 1, ...middle })
+  await page.call('Input.dispatchMouseEvent', { type: 'mouseMoved', buttons: 1, ...last })
+  await page.call('Input.dispatchMouseEvent', { type: 'mouseReleased', button: 'left', clickCount: 1, ...last })
+  for (let i = 0; i < 10; i++) {
+    if (await page.run(() => Boolean(document.querySelector('.line-actions .range-label')))) return
+    await sleep(50)
   }
+  throw new Error('Dragging line numbers did not open the multi-selection toolbar')
 }
 
 async function open(page, base, entry, path) {
@@ -343,7 +347,7 @@ async function main() {
   const server = await createServer({ root, configFile: `${root}vite.config.ts`, logLevel: 'error', server: { port: 5390, strictPort: false, host: '127.0.0.1' } })
   await server.listen()
   const base = server.resolvedUrls.local[0]
-  const profile = `${scratch}profile`
+  const profile = await mkdtemp(`${scratch}profile-`)
   const linux = process.platform === 'linux' ? ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'] : []
   const chrome = spawn(chromePath(), ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--hide-scrollbars', '--no-first-run', ...linux, 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] })
   let chromeLog = ''

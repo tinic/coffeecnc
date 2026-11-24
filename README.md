@@ -9,7 +9,7 @@ LinuxCNC continues to own motion, interpretation and real-time control. CoffeeCN
 
 CoffeeCNC is a LinuxCNC display program, like AXIS or Gmoccapy: it runs on any LinuxCNC 2.9 milling machine with X, Y and Z axes. It is developed on a Grizzly G0759 mill with a Mesa 7i76e ([configuration](docs/machines/g0759.md)).
 
-![CoffeeCNC Manual workspace on the G0759](ui/screenshots/g0759-manual.png)
+![CoffeeCNC Manual workspace with the jog controls, coordinates, and MDI](ui/screenshots/simulator-manual.png)
 
 ## Install
 
@@ -31,7 +31,7 @@ CoffeeCNC is a LinuxCNC display program, like AXIS or Gmoccapy: it runs on any L
 
 ### Tools
 
-![Tools and work offsets on the G0759](ui/screenshots/g0759-tools.png)
+![Tools and work offsets, with tool T1 loaded](ui/screenshots/simulator-tools.png)
 
 - The tool table shows which tool lengths are measured and valid.
 - **Touch off** measures the loaded tool on a fixed tool setter. Teach the setter once with the reference tool (T98), or with any tool that already has a valid length.
@@ -41,7 +41,7 @@ CoffeeCNC is a LinuxCNC display program, like AXIS or Gmoccapy: it runs on any L
 
 ### Touch off
 
-![Material touch-off with the T99 probe on the G0759](ui/screenshots/g0759-touch-off.png)
+![Material touch-off with the T99 probe loaded](ui/screenshots/simulator-touch-off.png)
 
 - With the touch probe (T99) loaded, probe the **Z top** or one workpiece edge: **X−** (left), **X+** (right), **Y−** (front) or **Y+** (back). The diagram shows which face each button probes.
 - **Corners** (X− Y−, X+ Y−, X− Y+, X+ Y+): probe Z top first, then jog the ball over the part within 10 mm of both edges. CoffeeCNC goes down beside each face and sets X0 and Y0 together.
@@ -81,7 +81,7 @@ CoffeeCNC is a LinuxCNC display program, like AXIS or Gmoccapy: it runs on any L
 
 </details>
 
-The G0759 screenshots come from the controller. The Machine screenshots come from the browser simulator.
+The screenshots above show the browser simulator. See also the G0759 controller captures for [Manual](ui/screenshots/g0759-manual.png), [Tools](ui/screenshots/g0759-tools.png), and [Touch off](ui/screenshots/g0759-touch-off.png).
 
 ## Try it in the browser
 

@@ -899,6 +899,15 @@ void active_comments_are_refused() {
             std::format("`{}` anywhere in the program: no preview, its line named: {}", form,
                         text_of(o)));
   }
+  const auto blocked = rig.preview(head + "(log,example)\nM2\n");
+  require(
+      blocked.error &&
+          blocked.error->localization ==
+              MessageKey{"backend.previewEngine.endsAtLine",
+                         {{"line", "3"}, {"detail", "a (log,...) comment writes a file"}},
+                         {{"detail",
+                           {"backend.previewEngine.stopFileWritingComment", {{"word", "log,"}}}}}},
+      "A preview scan refusal carries the key and argument of the detail.");
   require(!fs::exists(log), "No file a comment names was made");
 
   // The interpreter acts on `;py,` while it reads, and it reads lines it never executes: a
@@ -923,7 +932,14 @@ void active_comments_are_refused() {
         "o<effect> sub\nG1 X5 F100\n;py," + make + "\no<effect> endsub\nM2\n");
   auto in_sub = rig.preview("G21 G90\nG1 X1 F100\no<effect> call\nM2\n");
   require(in_sub.state == PreviewState::failed && in_sub.error && in_sub.error->line == 0 &&
-              in_sub.error->text.find("effect.ngc line 3") != std::string::npos &&
+              in_sub.error->text ==
+                  "No preview: effect.ngc line 3: a `;py,` line runs Python in the interpreter." &&
+              in_sub.error->localization ==
+                  MessageKey{"backend.previewEngine.subroutineForbidden",
+                             {{"name", "effect"},
+                              {"line", "3"},
+                              {"detail", "a `;py,` line runs Python in the interpreter"}},
+                             {{"detail", {"backend.previewEngine.stopPythonLine"}}}} &&
               rig.runs == 0 && !fs::exists(marker),
           "`;py,` in a subroutine file: refused with the file and its line: " + text_of(in_sub));
   write(rig.root / "subs" / "effect.ngc",

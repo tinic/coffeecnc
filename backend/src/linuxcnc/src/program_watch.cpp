@@ -36,7 +36,7 @@ auto active_comment(std::string_view comment) -> std::string_view {
 }
 
 // The side effect of one line's comments: Python, or a file written.
-auto comment_refusal(std::string_view line) -> std::optional<std::string> {
+auto comment_refusal(std::string_view line) -> LocalizedReason {
   std::string start;
   for (const char c : line) {
     if (std::isspace(static_cast<unsigned char>(c)) != 0)
@@ -46,7 +46,8 @@ auto comment_refusal(std::string_view line) -> std::optional<std::string> {
       break;
   }
   if (start == ";py,")
-    return std::string("a `;py,` line runs Python in the interpreter");
+    return {"a `;py,` line runs Python in the interpreter",
+            MessageKey{"backend.previewEngine.stopPythonLine"}};
   for (std::size_t i = 0; i < line.size(); ++i) {
     if (line[i] == ';')
       break;
@@ -58,9 +59,12 @@ auto comment_refusal(std::string_view line) -> std::optional<std::string> {
     const auto comment = line.substr(i + 1, end - i - 1);
     const auto word = active_comment(comment);
     if (word.starts_with("py"))
-      return std::format("a ({}...) comment runs Python in the interpreter", word);
+      return {std::format("a ({}...) comment runs Python in the interpreter", word),
+              MessageKey{"backend.previewEngine.stopPythonComment", {{"word", std::string(word)}}}};
     if (word.starts_with("log") || word.starts_with("probe"))
-      return std::format("a ({}...) comment writes a file", word);
+      return {std::format("a ({}...) comment writes a file", word),
+              MessageKey{"backend.previewEngine.stopFileWritingComment",
+                         {{"word", std::string(word)}}}};
     i = end;
   }
   return {};
@@ -185,13 +189,15 @@ auto first_forbidden_line(std::string_view text) -> std::optional<Forbidden> {
   for (int number = 1; !text.empty(); ++number) {
     const auto end = text.find('\n');
     const auto line = text.substr(0, end);
-    if (auto what = comment_refusal(line))
-      return Forbidden{number, std::move(*what)};
+    if (auto reason = comment_refusal(line); !reason.empty())
+      return Forbidden{number, std::move(reason)};
     const auto block = bare_block(line);
     if (const auto found = o_word(block); found && found->name.empty())
-      return Forbidden{number, "an O word whose name is computed or is not plainly a name "
-                               "(letters, digits, `_`, `-`, `.`): the interpreter would look "
-                               "for a file by it"};
+      return Forbidden{number,
+                       {"an O word whose name is computed or is not plainly a name "
+                        "(letters, digits, `_`, `-`, `.`): the interpreter would look "
+                        "for a file by it",
+                        MessageKey{"backend.previewEngine.stopOwordName"}}};
     text.remove_prefix(end == std::string_view::npos ? text.size() : end + 1);
   }
   return {};
@@ -303,8 +309,8 @@ auto first_rigid_tap_line(std::string_view text, const std::function<bool()>& ca
 
 auto refused_block(std::string_view line) -> std::optional<std::string> {
   // The comments first: an active one is not an ordinary comment, whatever it holds.
-  if (auto reason = comment_refusal(line))
-    return reason;
+  if (auto reason = comment_refusal(line); !reason.empty())
+    return std::move(reason.text);
   const auto block = bare_block(line);
   // The one parameter whose value the preview's interpreter has differently by design.
   if (block.find("#<_task>") != std::string::npos)

@@ -1,6 +1,8 @@
 #ifndef COFFEECNC_LINUXCNC_PROGRAM_WATCH_HPP
 #define COFFEECNC_LINUXCNC_PROGRAM_WATCH_HPP
 
+#include <coffeecnc/core/message_key.hpp>
+
 #include <cstdint>
 #include <cstddef>
 #include <functional>
@@ -114,7 +116,7 @@ struct ParameterUse {
 // first line, from 1, that must not reach the interpreter, and why.
 struct Forbidden {
   int line{};
-  std::string what;
+  LocalizedReason reason;
 };
 [[nodiscard]] auto first_forbidden_line(std::string_view text) -> std::optional<Forbidden>;
 

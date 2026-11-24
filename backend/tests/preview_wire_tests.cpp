@@ -86,6 +86,30 @@ void wire_formats() {
           "Nothing, and nothing but the end");
 }
 
+void preview_stop_codes() {
+  const auto probe = KnownPreviewStop::probe_move;
+  const std::string fallback = "a probe move (G38): where it ends depends on the machine";
+  require(write_preview_stop(3, probe, "", true) == "stop_known 3 2\n",
+          "A caller can opt into the stable probe stop code");
+  const auto known = parse_output("stop_known 3 2\nend stop\n");
+  require(known.end == HelperEnd::stop &&
+              known.problem ==
+                  PreviewError{3, fallback, MessageKey{"backend.previewEngine.stopProbe"}},
+          "The coded stop has the same fallback and a localization key");
+  const auto old = write_preview_stop(3, probe, "", false);
+  require(old == "stop 3 " + fallback + '\n' &&
+              parse_output(old + "end stop\n").problem == PreviewError{3, fallback},
+          "The unnegotiated helper keeps the original format");
+  const auto source = write_preview_stop(3, probe, "edge.ngc line 5: ", true);
+  require(source == "stop 3 edge.ngc line 5: " + fallback + '\n',
+          "A stop in a subroutine still includes the exact source location");
+  const std::string kept = "seg 2 r 0 0 0 0 1 2 3\n";
+  const auto unknown = parse_output(kept + "stop_known 3 99\nend stop\n");
+  require(unknown.defect.localization == MessageKey{"backend.previewWire.invalidStopCode"} &&
+              unknown.segments.size() == 1 && unknown.end == HelperEnd::missing,
+          "An unknown ID retains the path before the rejected record");
+}
+
 void restart_refusal_codes() {
   struct Row {
     unsigned code;
@@ -394,6 +418,7 @@ void called_names_are_bounded() {
 auto main() -> int {
   try {
     wire_formats();
+    preview_stop_codes();
     restart_refusal_codes();
     hostile_results();
     blocks_refused_by_their_text();

@@ -529,6 +529,7 @@
       "restartParametersChanged": "审核重启后，机床保存的参数已更改。请重新选择该行。"
     },
     "previewWire": {
+      "invalidStopCode": "无效的预览停止代码",
       "segmentAfterEnd": "路径结束记录后还有线段",
       "segmentLine": "线段的行号不在程序中",
       "segmentKind": "线段类型未知",
@@ -570,6 +571,10 @@
       "notExecuted": "此程序不会执行选定的行。"
     },
     "previewEngine": {
+      "stopNurbs": "预览不会计算 NURBS 移动（G5.2、G5.3）",
+      "stopProbe": "探测移动（G38）的终点取决于机床",
+      "stopWaitInput": "M66 等待机床输入",
+      "stopReadInput": "读取机床输入（M66）",
       "subroutineError": "{name}.ngc 第 {line} 行：{detail}",
       "rigidTapUnavailable": "此机床未配置 G33.1 刚性攻丝。",
       "rigidTapSpindle": "此机床的该主轴未配置刚性攻丝",

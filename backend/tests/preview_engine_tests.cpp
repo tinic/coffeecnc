@@ -497,8 +497,12 @@ void tool_length_and_tool_change() {
   rig.settings.tool_change_at_g30 = true;
   o = rig.preview("G21 G90\nG1 X5 F100\nT2 M6\nG1 X6\nM2\n");
   require(o.state == PreviewState::failed && o.error && o.error->line == 3 &&
+              o.error->localization &&
+              o.error->localization->params_localization.at("detail") ==
+                  MessageParameterKey{"backend.previewEngine.stopG30ToolChange"} &&
               o.segments.size() == 1,
-          "A tool change that goes to the saved G30 position ends the preview: " + text_of(o));
+          "A tool change that goes to the saved G30 position ends the preview with a key: " +
+              text_of(o));
 }
 
 void subroutines() {
@@ -610,16 +614,22 @@ void helper_with_closed_standard_descriptors() {
 void parameters_and_saved_positions() {
   Rig rig{"parameters"};
   const std::string head = "G21 G90\nG1 X1 F100\n";
-  const auto stops = [&](std::string_view line, std::string_view what) -> void {
+  const auto stops = [&](std::string_view line, std::string_view what) -> PreviewOutcome {
     const auto o = rig.preview(head + std::string(line) + "\nG1 X2\nM2\n");
     require(o.state == PreviewState::failed && o.error && o.error->line == 3 &&
                 o.error->text.find(what) != std::string::npos && o.segments.size() == 1 &&
                 o.segments[0].line == 2,
             std::format("`{}` ends the preview at its line with the path before it: {}", line,
                         text_of(o)));
+    return o;
   };
   // Without a parameter file the saved positions and the other work systems are not known.
-  stops("G28", "G28 moves to a position that is not in the machine's parameter file");
+  const auto g28 =
+      stops("G28", "G28 moves to a position that is not in the machine's parameter file");
+  require(g28.error->localization &&
+              g28.error->localization->params_localization.at("detail") ==
+                  MessageParameterKey{"backend.previewEngine.stopSavedPosition", {{"code", "28"}}},
+          "A coded saved-position stop names G28 in its translated detail");
   stops("G30 X1", "G30 moves to a position that is not in the machine's parameter file");
   stops("G55 G1 X1", "moves in G55, whose offsets are not in the machine's parameter file");
   {
@@ -641,7 +651,11 @@ void parameters_and_saved_positions() {
               saved_position_move("G28.1") == 0 && saved_position_move("(G28)G1 X1") == 0 &&
               motion_use("G+1 X5") == MotionUse::sets,
           "An explicit positive G word follows the same rules as the unsigned form");
-  stops("G38.2 X5 F10", "probe");
+  const auto probe = stops("G38.2 X5 F10", "probe");
+  require(probe.error->localization &&
+              probe.error->localization->params_localization.at("detail") ==
+                  MessageParameterKey{"backend.previewEngine.stopProbe"},
+          "The helper supplies the probe stop key");
   stops("M66 P0 L0", "M66");
   stops("M101", "M101");
   stops("M199 P1", "M199");

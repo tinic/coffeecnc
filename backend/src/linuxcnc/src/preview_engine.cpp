@@ -569,18 +569,20 @@ auto run_helper(const PreviewSettings& settings, const fs::path& directory,
   const std::string home = "HOME=" + directory.string();
   const std::string ini = "INI_FILE_NAME=" + (directory / "preview.ini").string();
   const auto restart_refusals = std::format("{}=1", preview_restart_refusals_env);
+  const auto stop_codes = std::format("{}=1", preview_stop_codes_env);
   std::array<char*, 4> arguments{const_cast<char*>("coffeecnc-preview"), // NOLINT: execve's type
                                  const_cast<char*>(request_file.c_str()), // NOLINT
                                  const_cast<char*>("3"), nullptr};        // NOLINT
-  std::array<char*, 9> environment{const_cast<char*>(home.c_str()),       // NOLINT
-                                   const_cast<char*>(ini.c_str()),        // NOLINT
-                                   const_cast<char*>(restart_refusals.c_str()),    // NOLINT
-                                   const_cast<char*>("PATH=/usr/bin:/bin"),        // NOLINT
-                                   const_cast<char*>("LC_ALL=C"),                  // NOLINT
-                                   const_cast<char*>("PYTHONDONTWRITEBYTECODE=1"), // NOLINT
-                                   const_cast<char*>("PYTHONNOUSERSITE=1"),        // NOLINT
-                                   const_cast<char*>("PYTHONSAFEPATH=1"),          // NOLINT
-                                   nullptr};
+  std::array<char*, 10> environment{const_cast<char*>(home.c_str()),      // NOLINT
+                                    const_cast<char*>(ini.c_str()),       // NOLINT
+                                    const_cast<char*>(restart_refusals.c_str()),    // NOLINT
+                                    const_cast<char*>(stop_codes.c_str()),          // NOLINT
+                                    const_cast<char*>("PATH=/usr/bin:/bin"),        // NOLINT
+                                    const_cast<char*>("LC_ALL=C"),                  // NOLINT
+                                    const_cast<char*>("PYTHONDONTWRITEBYTECODE=1"), // NOLINT
+                                    const_cast<char*>("PYTHONNOUSERSITE=1"),        // NOLINT
+                                    const_cast<char*>("PYTHONSAFEPATH=1"),          // NOLINT
+                                    nullptr};
   const auto cpu_seconds =
       static_cast<rlim_t>(std::chrono::duration_cast<std::chrono::seconds>(settings.timeout).count() + 2);
 
@@ -916,7 +918,8 @@ auto outcome_of(const PreviewSettings& settings, const PreviewInputs& inputs, He
       outcome.error = PreviewError{
           problem.line, std::format("The preview ends at line {}: {}.", problem.line, problem.text),
           MessageKey{"backend.previewEngine.endsAtLine",
-                     {{"line", std::to_string(problem.line)}, {"detail", problem.text}}}};
+                     {{"line", std::to_string(problem.line)}, {"detail", problem.text}},
+                     parameter_localization("detail", problem.localization)}};
     }
   } else {
     outcome.error = ending();

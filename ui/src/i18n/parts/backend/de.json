@@ -529,6 +529,7 @@
       "restartParametersChanged": "Die gespeicherten Parameter der Maschine haben sich geändert, nachdem der Neustart geprüft wurde. Wählen Sie die Zeile erneut."
     },
     "previewWire": {
+      "invalidStopCode": "ein ungültiger Code für den Vorschaustopp",
       "segmentAfterEnd": "ein Segment nach dem Eintrag, der den Pfad beendet",
       "segmentLine": "ein Segment mit einer Zeile außerhalb des Programms",
       "segmentKind": "ein Segment unbekannten Typs",
@@ -570,6 +571,10 @@
       "notExecuted": "Die ausgewählte Zeile wird in diesem Programm nicht ausgeführt."
     },
     "previewEngine": {
+      "stopNurbs": "eine NURBS-Bewegung (G5.2, G5.3), die die Vorschau nicht berechnet",
+      "stopProbe": "eine Antastbewegung (G38), deren Endpunkt von der Maschine abhängt",
+      "stopWaitInput": "M66 wartet auf einen Eingang der Maschine",
+      "stopReadInput": "liest einen Eingang der Maschine (M66)",
       "subroutineError": "{name}.ngc Zeile {line}: {detail}",
       "rigidTapUnavailable": "G33.1 ist für diese Maschine nicht konfiguriert.",
       "rigidTapSpindle": "Für diese Spindel ist kein starres Gewindebohren konfiguriert",

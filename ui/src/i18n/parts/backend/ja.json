@@ -529,6 +529,7 @@
       "restartParametersChanged": "再開を確認した後に機械の保存済みパラメータが変わりました。行をもう一度選んでください。"
     },
     "previewWire": {
+      "invalidStopCode": "無効なプレビュー停止コード",
       "segmentAfterEnd": "経路終了レコードの後にセグメントがあります",
       "segmentLine": "セグメントの行がプログラム内にありません",
       "segmentKind": "種類が不明なセグメントがあります",
@@ -570,6 +571,10 @@
       "notExecuted": "選択した行はこのプログラムでは実行されません。"
     },
     "previewEngine": {
+      "stopNurbs": "NURBS 移動（G5.2、G5.3）はプレビューで計算されません",
+      "stopProbe": "プローブ移動（G38）の終点は機械に依存します",
+      "stopWaitInput": "M66 は機械の入力を待ちます",
+      "stopReadInput": "機械の入力を読み取ります（M66）",
       "subroutineError": "{name}.ngc の {line} 行目: {detail}",
       "rigidTapUnavailable": "この機械には G33.1 リジッドタッピングが設定されていません。",
       "rigidTapSpindle": "この主軸にはリジッドタッピングが設定されていません",

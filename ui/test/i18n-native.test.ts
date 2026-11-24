@@ -4,6 +4,7 @@
 // sentence fails here until it is catalogued in parts/messages (or parts/backend).
 import { describe, expect, it } from 'vitest'
 
+import programWatch from '../../backend/src/linuxcnc/src/program_watch.cpp?raw'
 import { i18n, setLanguage } from '../src/i18n'
 import { matchMessage, translateMessage, translateResult } from '../src/i18n/messages'
 
@@ -23,6 +24,9 @@ const adapter = import.meta.glob<string>([
   '../../backend/src/linuxcnc/src/nml_port.cpp',
   '../../backend/src/linuxcnc/src/nml_panel_source.cpp',
   '../../backend/src/linuxcnc/src/preview_engine.cpp',
+  '../../backend/src/app/src/machine_data.cpp',
+  '../../backend/src/app/src/backup_archive.cpp',
+  '../../backend/src/app/src/restore_helper.cpp',
   '../../backend/src/app/src/operator_settings_store.cpp',
   '../../backend/src/app/src/tool_models.cpp',
   '../../backend/src/app/src/tool_model_store.cpp',
@@ -200,6 +204,19 @@ describe('native and store sentences', () => {
     })
   }
 
+  it('catalogues the file reader reasons embedded in preview diagnostics', () => {
+    const comments = programWatch.slice(programWatch.indexOf('auto comment_refusal('),
+      programWatch.indexOf('auto bare_block('))
+    const names = programWatch.slice(programWatch.indexOf('auto first_forbidden_line('),
+      programWatch.indexOf('// The words of a block'))
+    const phrases = cppLiterals(comments + names).map(({ text }) => text)
+      .filter((text) => /^(?:a|an) /.test(text))
+    expect(phrases.map((text) => matchMessage(text.replaceAll('{}', 'log'))?.key)).toEqual([
+      'backend.previewEngine.stopPythonLine', 'backend.previewEngine.stopPythonComment',
+      'backend.previewEngine.stopFileWritingComment', 'backend.previewEngine.stopOwordName',
+    ])
+  })
+
   it('catalogues every sentence of store.ts', () => {
     const sentences = storeSentences(store)
     expect(sentences.length).toBeGreaterThan(50)
@@ -374,6 +391,11 @@ describe('translateMessage', () => {
     // `two` is a catalog word ("deux"), but here it names a subroutine file.
     expect(translateMessage('No preview: two.ngc line 3: two.'))
       .toBe('Pas d’aperçu\u202f: two.ngc ligne 3\u202f: deux.')
+    const detail = 'a (log...) comment writes a file'
+    const expected = 'Pas d’aperçu\u202f: two.ngc ligne 3\u202f: un commentaire (log...) écrit un fichier.'
+    expect(translateMessage(`No preview: two.ngc line 3: ${detail}.`)).toBe(expected)
+    expect(translateMessage('Older fallback.', { key: 'backend.previewEngine.subroutineForbidden',
+      params: { name: 'two', line: '3', detail } })).toBe(expected)
     expect(translateMessage('the directory two cannot be made: Permission denied'))
       .toBe('impossible de créer le dossier two\u202f: Permission denied')
     expect(translateMessage("Can't open home: no such file")).not.toContain('Référencement')

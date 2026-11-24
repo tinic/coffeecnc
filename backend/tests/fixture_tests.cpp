@@ -282,7 +282,14 @@ auto encoded_messages() -> std::vector<Encoded> {
   preview.segments = {approach, cut};
   preview.bounds = Bounds{{0, 0, -1.5}, {30, 20.5, 2}};
   preview.dwells = {{6, 2}};
+  auto& check = preview.check.emplace();
+  check.errors = {{"T3 has no verified length in the tool table.",
+                   MessageKey{"backend.previewEngine.noVerifiedLength", {{"tool", "3"}}}}};
+  check.warnings = {{"Additional controller check is required."},
+                    {"Feed per revolution is excluded from the feed range.",
+                     MessageKey{"backend.previewEngine.feedPerRevolution"}}};
   messages.push_back(encode_preview(preview));
+  preview.check.reset();
   preview.dwells.clear();
   preview.context = 4821338;
   preview.state = PreviewState::failed;
@@ -419,13 +426,17 @@ auto encoded_messages() -> std::vector<Encoded> {
        R"({"axis":"x","type":"home"})"}};
   messages.emplace_back(encode_alarm_log(alarms));
   messages.emplace_back(encode_alarm_log({false, "No machine identity configured", 1, 0, {}}));
-  messages.emplace_back(encode_backup_written(
-      {"/media/cnc/STICK/coffeecnc-G0759-20261123-140200.tar.gz",
-       8,
-       5321,
-       {{"LIB:basic_sim.tcl", "a HAL file of LinuxCNC's own library"}}}));
+  messages.emplace_back(
+      encode_backup_written({"/media/cnc/STICK/coffeecnc-G0759-20261123-140200.tar.gz",
+                             8,
+                             5321,
+                             {{"LIB:basic_sim.tcl", "a HAL file of LinuxCNC's own library",
+                               MessageKey{"backend.machineData.libHal"}}}}));
   messages.emplace_back(
       encode_backup_written({"/home/cnc/coffeecnc-machine-20261123-140200.tar.gz", 3, 1024, {}}));
+  messages.emplace_back(encode_result(31, CommandOutcome::accepted,
+                                      "Nothing to restore: every file is the same.", {}, {}, {},
+                                      MessageKey{"backend.machineData.nothing"}));
   constexpr auto configs = "/home/cnc/linuxcnc/configs/g0759/";
   messages.emplace_back(encode_restore_summary(
       {"/media/cnc/STICK/coffeecnc-G0759-20261123-140200.tar.gz",

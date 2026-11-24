@@ -375,6 +375,8 @@
       "loadCuttingTool": "Carregue uma ferramenta de corte antes de verificar o seu comprimento.",
       "measureEdgeAgain": "Meça a aresta de novo antes de aplicar a rotação.",
       "frameChanged": "O referencial da peça ou a ferramenta mudou. Meça a aresta de novo.",
+      "probeFeatureAgain": "Apalpe o elemento novamente antes de aplicar a medição.",
+      "measuredFrameChanged": "O sistema da peça ou a ferramenta mudou. Apalpe o elemento novamente.",
       "rotationCancelled": "A rotação foi cancelada antes de escrever o sistema da peça.",
       "rotationCommand": "Não foi possível construir o comando de rotação da peça.",
       "rotationUnverified": "Não foi possível verificar a rotação aplicada. Verifique o sistema da peça ativo.",
@@ -570,7 +572,11 @@
       "stopExistsNamed": "pergunta fora de uma sub-rotina se existe {name}: na máquina pode existir de um programa ou bloco MDI anterior, o que a pré-visualização não sabe",
       "stopComputedParameter": "lê um parâmetro cujo número é calculado (#[...], ##): a pré-visualização não sabe qual é nem se o programa o definiu",
       "stopReturnValue": "lê {name} ou {other} antes de uma sub-rotina do programa ter retornado: a pré-visualização não conhece o seu valor de um programa ou bloco MDI anterior",
-      "stopDefinitionBlock": "uma palavra O numa definição de sub-rotina pertence a um bloco fora dela: a pré-visualização não sabe que linhas são executadas"
+      "stopDefinitionBlock": "uma palavra O numa definição de sub-rotina pertence a um bloco fora dela: a pré-visualização não sabe que linhas são executadas",
+      "stopPythonLine": "uma linha `;py,` executa Python no interpretador",
+      "stopPythonComment": "um comentário ({word}...) executa Python no interpretador",
+      "stopFileWritingComment": "um comentário ({word}...) escreve um ficheiro",
+      "stopOwordName": "uma palavra O tem um nome calculado ou que não é um nome simples (letras, algarismos, `_`, `-`, `.`): o interpretador procuraria um ficheiro com esse nome"
     },
     "nmlStatus": {
       "pauseFirst": "Coloque em pausa um programa em execução antes do jog de Z.",

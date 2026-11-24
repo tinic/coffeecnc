@@ -745,7 +745,7 @@ void parameters_and_saved_positions() {
   stops("G1 X#<_ini[axis_x]max_limit>", "reads an INI or HAL value");
   const auto prior_return =
       stops("G1 X#<_value>", "reads #<_value> or #<_value_returned> before a subroutine");
-  require(prior_return.error->localization &&
+  require(prior_return.error && prior_return.error->localization &&
               prior_return.error->localization->params_localization.at("detail") ==
                   MessageParameterKey{"backend.previewEngine.stopReturnValue",
                                       {{"name", "#<_value>"}, {"other", "#<_value_returned>"}}},
@@ -855,7 +855,7 @@ void parameters_and_saved_positions() {
   // interpreter does not know without the remap (finding 5): a stop, not the program's error.
   rig.settings.remapped = {"m6", "g88.1", "m10"};
   const auto remapped_m6 = stops("T1 M6", "M6 is remapped on this machine");
-  require(remapped_m6.error->localization &&
+  require(remapped_m6.error && remapped_m6.error->localization &&
               remapped_m6.error->localization->params_localization.at("detail") ==
                   MessageParameterKey{"backend.previewEngine.stopRemapped", {{"code", "M6"}}},
           "A remapped M-code carries its name to the panel");

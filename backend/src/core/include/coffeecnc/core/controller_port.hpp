@@ -194,8 +194,10 @@ public:
             MessageKey{"backend.controllerPort.breakpointsUnavailable"}};
   }
   // Validates the approach without sending controller commands and updates its clearance.
-  [[nodiscard]] virtual auto validate_restart(RestartPoint&, const PreviewInputs&) -> std::string {
-    return "Restart from line is unavailable on this controller.";
+  [[nodiscard]] virtual auto validate_restart(RestartPoint&, const PreviewInputs&)
+      -> LocalizedReason {
+    return {"Restart from line is unavailable on this controller.",
+            MessageKey{"backend.controllerPort.restartUnavailable"}};
   }
   // First call may stop at the normal tool-change prompt. The second follows its confirmation.
   [[nodiscard]] virtual auto start_restart(const RestartPoint&, const PreviewInputs&, bool,

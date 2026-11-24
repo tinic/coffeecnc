@@ -327,7 +327,7 @@ public:
                                        int line, const Wanted& current, const Wanted& wanted)
       -> ActionResult override;
   [[nodiscard]] auto validate_restart(RestartPoint& point, const PreviewInputs& inputs)
-      -> std::string override;
+      -> LocalizedReason override;
   [[nodiscard]] auto start_restart(const RestartPoint& point, const PreviewInputs& inputs,
                                    bool after_change, const Wanted& files_current,
                                    const Wanted& wanted) -> ActionResult override;

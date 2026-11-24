@@ -3045,15 +3045,18 @@ auto restart_idle(const NmlStatus& status, const MachineConfig& config) -> bool 
 
 auto check_restart_approach(RestartPoint& point, const NmlStatus& status,
                             const MachineConfig& config, std::optional<double> tool_length)
-    -> std::string {
+    -> LocalizedReason {
   if (point.tool == config.touch_probe_tool)
-    return "Remove the touch probe before running a program from a line.";
+    return {"Remove the touch probe before running a program from a line.",
+            MessageKey{"backend.nmlPort.removeProbe"}};
   if (point.spindle_direction != SpindleDirection::stopped &&
       point.spindle_rpm > config.limits.max_spindle_rpm)
-    return "The restart spindle speed exceeds the machine limit.";
+    return {"The restart spindle speed exceeds the machine limit.",
+            MessageKey{"backend.nmlPort.restartSpindleLimit"}};
   if (point.h > 0 && (!tool_length ||
       std::abs(*tool_length * config.millimetres_per_unit - point.tool_offset[2]) > 0.001))
-    return "The required tool length changed in the tool table.";
+    return {"The required tool length changed in the tool table.",
+            MessageKey{"backend.nmlPort.requiredLengthChanged"}};
   // Raise the controlled point enough for both tools before a manual exchange.
   const double original_clearance = restart_clearance(point);
   const double old_tool_difference = std::max(0.0, status.tool_offset[2] - point.tool_offset[2]);
@@ -3066,7 +3069,8 @@ auto check_restart_approach(RestartPoint& point, const NmlStatus& status,
   const double clearance = restart_clearance(point);
   if (!restart_travel(end, config) || !restart_travel({end[0], end[1], clearance}, config) ||
       !restart_travel({position[0], position[1], clearance}, config))
-    return "The restart approach is outside the configured machine travel.";
+    return {"The restart approach is outside the configured machine travel.",
+            MessageKey{"backend.nmlPort.approachOutside"}};
   return {};
 }
 
@@ -3154,7 +3158,7 @@ auto NmlPort::prepare_tool_measurement(int tool, std::uint64_t request, int line
                                   : std::max(setter_clearance, before.commanded_position[2])};
   at_setter.tool_offset = point.tool_offset;
   if (auto reason = check_restart_approach(nominal, at_setter, config, length); !reason.empty())
-    return failed(std::move(reason));
+    return failed(reason.text, std::move(reason.localization));
   if (!impl_->still())
     return withdrawn();
 
@@ -3213,7 +3217,8 @@ auto NmlPort::prepare_tool_measurement(int tool, std::uint64_t request, int line
                         });
 }
 
-auto NmlPort::validate_restart(RestartPoint& point, const PreviewInputs& inputs) -> std::string {
+auto NmlPort::validate_restart(RestartPoint& point, const PreviewInputs& inputs)
+    -> LocalizedReason {
   const auto s = status();
   const auto& config = impl_->config;
   // Task skips the blocks before the line without their effect on motion, the selection of a
@@ -3222,14 +3227,17 @@ auto NmlPort::validate_restart(RestartPoint& point, const PreviewInputs& inputs)
     static constexpr std::array names{"G54", "G55", "G56", "G57", "G58",
                                       "G59", "G59.1", "G59.2", "G59.3"};
     const auto* name = names.at(static_cast<std::size_t>(point.wcs - 1));
-    return std::format("This line runs in {}. Select {}, then choose the line again.", name, name);
+    return {std::format("This line runs in {}. Select {}, then choose the line again.", name, name),
+            MessageKey{"backend.nmlPort.restartSelectWcs", {{"wcs", name}}}};
   }
   if (!restart_frame(s, point, inputs))
-    return "Machine power, the program or the work coordinate system changed.";
+    return {"Machine power, the program or the work coordinate system changed.",
+            MessageKey{"backend.nmlPort.restartContextChanged"}};
   if (!restart_idle(s, config) || s.controller.tool_in_spindle != inputs.start.tool_in_spindle ||
       !restart_near(s.tool_offset, inputs.start.tool_offset) ||
       !restart_at(s, inputs.start.position, config.motion_tolerances.restart_position_mm))
-    return "The machine must remain stopped at the position shown in the preview.";
+    return {"The machine must remain stopped at the position shown in the preview.",
+            MessageKey{"backend.nmlPort.remainStopped"}};
   std::optional<double> length;
   if (point.h > 0) {
     const auto table = impl_->read_tool_table();

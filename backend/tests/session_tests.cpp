@@ -3203,9 +3203,9 @@ void uploads_do_not_replace_the_running_program() {
                              {{"detail", "Program cannot be read: Input/output error"}},
                              parameter_localization("detail", cannot_read)},
           "A successful publication retains the keyed reason that reopening failed");
-  const auto port_calls = port.calls;
+  port.calls.clear();
   const auto started = publish(part, true);
-  require(!started && published == 5 && port.calls == port_calls &&
+  require(!started && published == 5 && port.calls.empty() &&
               started.error().text == "Saved on disk, but not reopened. The program is running." &&
               started.error().localization ==
                   MessageKey{

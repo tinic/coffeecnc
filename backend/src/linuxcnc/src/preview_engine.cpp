@@ -744,10 +744,10 @@ auto check_tool_files(const std::string& table, const std::string& sidecar) -> C
 
 auto subroutine_problem(const PreviewError& problem, const PreviewStopSource& source,
                         bool show_program_line, std::string_view suffix = {}) -> LocalizedReason {
-  const auto text = preview_stop_prefix(source) + problem.text;
   const auto detail = parameter_localization("detail", problem.localization);
   if (show_program_line)
-    return {std::format("Line {}: {}{}", problem.line, text, suffix),
+    return {std::format("Line {}: {} line {}: {}{}", problem.line, source.file, source.line,
+                        problem.text, suffix),
             MessageKey{"backend.previewEngine.helperLineAndSource",
                        {{"line", std::to_string(problem.line)},
                         {"file", source.file},
@@ -755,11 +755,12 @@ auto subroutine_problem(const PreviewError& problem, const PreviewStopSource& so
                         {"detail", problem.text},
                         {"suffix", std::string(suffix)}},
                        detail}};
-  return {text, MessageKey{"backend.previewEngine.helperSource",
-                           {{"file", source.file},
-                            {"sourceLine", std::to_string(source.line)},
-                            {"detail", problem.text}},
-                           detail}};
+  return {std::format("{} line {}: {}", source.file, source.line, problem.text),
+          MessageKey{"backend.previewEngine.helperSource",
+                     {{"file", source.file},
+                      {"sourceLine", std::to_string(source.line)},
+                      {"detail", problem.text}},
+                     detail}};
 }
 
 auto program_check(const PreviewSettings& settings, const PreviewInputs& inputs,

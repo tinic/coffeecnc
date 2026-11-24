@@ -387,7 +387,7 @@ describe('translateMessage', () => {
       key: 'backend.previewEngine.helperSource',
       params: { file: 'inner.ngc', sourceLine: '3', detail },
       params_localization: { detail: { key: 'backend.previewEngine.helperUvwArc', params: {} } },
-    })).toBe('inner.ngc, ligne 3 : un arc dans un plan UVW ne peut pas être affiché')
+    })).toBe('inner.ngc ligne 3 : un arc dans un plan UVW ne peut pas être affiché')
   })
 
   it('translates a remap stop and retains the code', async () => {

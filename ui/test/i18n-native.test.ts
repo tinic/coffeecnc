@@ -63,9 +63,6 @@ const detail = 'Sample detail.'
  * with the composed sentence the operator sees.
  */
 const composed: Record<string, string> = {
-  // session.cpp: "The previous jog stop on " + letter + " is not confirmed: " + reason.
-  'The previous jog stop on ': `The previous jog stop on X is not confirmed: ${detail}`,
-  ' is not confirmed: ': `The previous jog stop on X is not confirmed: ${detail}`,
   // session.cpp: a refusal of its own, without a final period.
   'A touch probe is loaded': 'A touch probe is loaded',
 }

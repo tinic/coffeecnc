@@ -2327,7 +2327,10 @@ auto Session::jog(Queued& request, const Jog& command, const Decision& decision,
       if (started.status != ActionStatus::failed || !is_jog_inhibit_refusal(started.reason))
         return answer(reply(std::move(started)));
       if (watchdog_epoch_ > request.epoch)
-        return answer({CommandOutcome::failed, std::string(watchdog_stop_text)});
+        return answer({CommandOutcome::failed,
+                       std::string(watchdog_stop_text),
+                       {},
+                       MessageKey{"backend.jogStop.watchdog"}});
       // No period has raised the level since the stop decision: the inhibit that refused the
       // start was not ours, or not yet. No period for longer than control_fresh: the control
       // thread is stalled and may not have read a trip.
@@ -2373,12 +2376,16 @@ auto Session::start_gate(Queued& request, std::size_t index, bool held) -> std::
     if (auto stopped = tracked_stop(i); stopped.status != ActionStatus::accepted) {
       forget_press(request);
       const auto failure = stopped.status;
-      auto reason =
-          (i == index ? std::string("The previous jog stop on this axis is not confirmed: ")
-                      : std::string("The previous jog stop on ") + letter(axes.at(i)) +
-                            " is not confirmed: ") +
-          reply(std::move(stopped)).reason;
-      return answer(reply({failure, std::move(reason)}));
+      const auto detail = reply(std::move(stopped)).reason;
+      if (i == index)
+        return answer(
+            reply({failure,
+                   std::format("The previous jog stop on this axis is not confirmed: {}", detail),
+                   MessageKey{"messages.session.previousStopThisAxis", {{"detail", detail}}}}));
+      const std::string axis(1, letter(axes.at(i)));
+      return answer(reply(
+          {failure, std::format("The previous jog stop on {} is not confirmed: {}", axis, detail),
+           MessageKey{"messages.session.previousStopAxis", {{"axis", axis}, {"detail", detail}}}}));
     }
   }
   const std::scoped_lock lock{mutex_};
@@ -2388,8 +2395,11 @@ auto Session::start_gate(Queued& request, std::size_t index, bool held) -> std::
   if (request.epoch != epoch_ || (held && (axis.latched || !leases_.active(axes.at(index))))) {
     if (request.epoch == epoch_)
       axis.pressed = false;
-    return answer({request.sent ? CommandOutcome::failed : CommandOutcome::rejected,
-                   held && axis.latched ? release_reason : stopped_reason});
+    const auto outcome = request.sent ? CommandOutcome::failed : CommandOutcome::rejected;
+    if (held && axis.latched)
+      return answer({outcome, release_reason, {}, MessageKey{"messages.session.releaseJog"}});
+    return answer(
+        {outcome, stopped_reason, {}, MessageKey{"messages.session.jogStoppedBeforeStart"}});
   }
   // Not before the level has been low for whole control periods: LinuxCNC's servo thread, and
   // the HAL logic between the pin and motion, must have seen it fall.

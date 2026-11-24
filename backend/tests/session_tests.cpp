@@ -1442,6 +1442,7 @@ void late_jog_starts() {
     std::string_view outcome;
     std::string_view reason;
     Calls calls;
+    bool watchdog{};
   };
   const std::vector<Row> rows{
       {"released in flight",
@@ -1497,7 +1498,8 @@ void late_jog_starts() {
        "failed",
        "Jog stopped by the HAL watchdog: CoffeeCNC's heartbeat stalled for longer than the "
        "watchdog timeout.",
-       {"start_jog x 1 600 axis", "stop_jog x"}},
+       {"start_jog x 1 600 axis", "stop_jog x"},
+       true},
       {"released, then the watchdog tripped",
        [](Rig& rig) -> void {
          static_cast<void>(rig.session.submit(
@@ -1507,7 +1509,8 @@ void late_jog_starts() {
        "failed",
        "Jog stopped by the HAL watchdog: CoffeeCNC's heartbeat stalled for longer than the "
        "watchdog timeout.",
-       {"start_jog x 1 600 axis", "stop_jog x"}},
+       {"start_jog x 1 600 axis", "stop_jog x"},
+       true},
   };
   for (const auto& row : rows) {
     Rig rig;
@@ -1529,6 +1532,10 @@ void late_jog_starts() {
     require(press && press->at("outcome") == row.outcome && press->at("reason") == row.reason,
             std::format("{}: the press is {} \"{}\", got {}", row.name, row.outcome, row.reason,
                         press ? press->dump() : std::string("none")));
+    if (row.watchdog)
+      require(press && press->at("localization") ==
+                           Json{{"key", "backend.jogStop.watchdog"}, {"params", Json::object()}},
+              row.name + ": the press result can identify the watchdog");
     require(!error, row.name + ": no operator message");
     rig.acted(row.calls, row.name + ": the axis still gets its accepted stop");
     rig.clock += 10ms;
@@ -2277,8 +2284,13 @@ void no_start_over_an_unconfirmed_stop() {
                                  {ActionStatus::failed, "Still not connected."}};
   rig.expect(release_x, "failed", "Not connected.");
   rig.port.calls.clear();
-  rig.expect(hold_x, "failed",
-             "The previous jog stop on this axis is not confirmed: Still not connected.");
+  const auto denied = rig.result(hold_x);
+  require(denied.at("outcome") == "failed" &&
+              denied.at("reason") ==
+                  "The previous jog stop on this axis is not confirmed: Still not connected." &&
+              denied.at("localization") == Json{{"key", "messages.session.previousStopThisAxis"},
+                                                {"params", {{"detail", "Still not connected."}}}},
+          "The denied press names the unconfirmed stop on the same axis");
   rig.acted({"stop_jog x"}, "A new press first retries the stop and does not start");
   rig.accepted(hold_x);
   rig.acted({"stop_jog x", "start_jog x 1 600 axis"},

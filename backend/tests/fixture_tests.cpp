@@ -377,6 +377,15 @@ auto encoded_messages() -> std::vector<EncodedMessage> {
           {{"detail", {"backend.previewEngine.helperPointLimit", {{"limit", "1000"}}}}}}};
   messages.push_back(encode_preview(point_limit));
 
+  Preview setup_error;
+  setup_error.context = 4821348;
+  setup_error.state = PreviewState::failed;
+  setup_error.error =
+      PreviewError{0, "the start state `G18` was refused: Native message (42).",
+                   MessageKey{"backend.previewEngine.helperStartState",
+                              {{"code", "G18"}, {"detail", "Native message (42)."}}}};
+  messages.push_back(encode_preview(setup_error));
+
   const PreviewSegment approach{4, MoveKind::rapid, 3, {{0, 0, 10}, {0, 0, 2}}};
   const PreviewSegment cut{
       5, MoveKind::feed, 3, {{0, 0, 2}, {0, 0, -1.5}, {30, 0, -1.5}, {30, 20.5, -1.5}}, 450};

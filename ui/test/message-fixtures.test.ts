@@ -1039,6 +1039,22 @@ const examples = [
   },
   {
     "type": "preview",
+    "context": 4821348,
+    "state": "failed",
+    "error": {
+      "line": 0,
+      "text": "the start state `G18` was refused: Native message (42).",
+      "localization": {
+        "key": "backend.previewEngine.helperStartState",
+        "params": { "code": "G18", "detail": "Native message (42)." }
+      }
+    },
+    "segments": [],
+    "bounds": null,
+    "dwells": []
+  },
+  {
+    "type": "preview",
     "context": 4821337,
     "state": "pending",
     "error": null,

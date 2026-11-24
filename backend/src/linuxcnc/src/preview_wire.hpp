@@ -91,6 +91,8 @@ struct HelperRequest {
 //   cut <line> <text>       a limit was reached
 //   problem_known <line> <id> [point-limit] [source-line file]
 //                          a CoffeeCNC error or point limit, identified by its ID
+//   setup_known 0 <id> <detail-bytes> <detail> <code-bytes> <code>
+//                          a setup error with two length-prefixed text fields (possibly empty)
 //   restart_refused <id>   a CoffeeCNC restart refusal; old helpers send restart_blocked <text>
 //   end ok|error|stop|cut   the last line of a helper that ended by itself
 //
@@ -201,6 +203,24 @@ inline constexpr char preview_problem_codes_env[] = "COFFEECNC_PREVIEW_PROBLEM_C
 [[nodiscard]] auto write_preview_problem(int line, KnownPreviewProblem reason,
                                          const std::optional<PreviewStopSource>& source, bool coded,
                                          std::size_t point_limit = 0) -> std::string;
+
+enum class PreviewSetupError : std::uint8_t {
+  read_subroutines = 1,
+  source_too_large = 2,
+  read_source = 3,
+  interpreter_start = 4,
+  active_work_system = 5,
+  start_state = 6,
+  open_program = 7,
+};
+struct PreviewSetupArguments {
+  std::string_view detail{};
+  std::string_view code{};
+};
+inline constexpr char preview_setup_codes_env[] = "COFFEECNC_PREVIEW_SETUP_CODES";
+
+[[nodiscard]] auto write_preview_setup_error(PreviewSetupError reason, bool coded,
+                                             PreviewSetupArguments args = {}) -> std::string;
 
 struct HelperOutput {
   std::vector<PreviewSegment> segments;

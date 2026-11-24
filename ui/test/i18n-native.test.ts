@@ -380,6 +380,16 @@ describe('translateMessage', () => {
     })).toBe('L’aperçu s’arrête à la ligne 3 : G92.3 restaure un décalage enregistré dans le fichier de paramètres.')
   })
 
+  it('translates a helper setup failure around the original interpreter diagnostic', async () => {
+    await setLanguage('fr')
+    const detail = 'Native message (42).'
+    const code = 'G18'
+    expect(translateMessage('the start state `G18` was refused: Native message (42).', {
+      key: 'backend.previewEngine.helperStartState',
+      params: { code, detail },
+    })).toBe('l’état initial `G18` a été refusé : Native message (42).')
+  })
+
   it('translates a coded helper error with its subroutine location', async () => {
     await setLanguage('fr')
     const detail = 'an arc in a UVW plane cannot be shown'

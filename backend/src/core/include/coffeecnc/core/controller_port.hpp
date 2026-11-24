@@ -236,7 +236,7 @@ public:
   // The tool length offset in effect, read from the controller's status and tool table. A port
   // that cannot tell reports none.
   [[nodiscard]] virtual auto tool_length_in_effect()
-      -> std::expected<ToolLengthInEffect, std::string> {
+      -> std::expected<ToolLengthInEffect, LocalizedReason> {
     return ToolLengthInEffect{};
   }
   // Replaces the row with this tool number, or adds it.

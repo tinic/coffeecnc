@@ -283,7 +283,10 @@ void tool_comments() {
   const auto edited = with_tool("T+7 P7 Z12.5 X1\n", replacement, 1);
   require(edited == "T7 P7 Z12.5 D2 X1 ;gage pin\n", "Replace the existing positive T row");
   replacement.comment = std::string(255, 'c');
-  require(!with_tool("", replacement, 1), "A long formatted row never reaches the tool table");
+  const auto oversized = with_tool("", replacement, 1);
+  require(!oversized &&
+              oversized.error().localization == MessageKey{"backend.toolTable.rowTooLong"},
+          "A long formatted row reports a localized error before reaching the tool table");
 }
 
 void parameter_file_systems() {

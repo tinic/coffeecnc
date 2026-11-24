@@ -409,6 +409,8 @@ auto encode_status(const Status& status, std::uint64_t seq) -> Encoded {
                            {"max_lift", fields.real(z->max_lift, "paused_z.max_lift")},
                            {"displaced", z->displaced},
                            {"reason", z->reason}};
+    if (const auto& key = z->localization)
+      message["paused_z"]["localization"] = {{"key", key->key}, {"params", key->params}};
     switch (z->spindle) {
     case PausedSpindle::can_stop:
       message["paused_z"]["spindle"] = "can_stop";
@@ -530,11 +532,30 @@ auto encode_preview(const Preview& preview) -> Encoded {
                         {"feed", range(check->feed)},
                         {"spindle", range(check->spindle)},
                         {"units", std::move(units)},
-                        {"errors", check->errors},
-                        {"warnings", check->warnings},
                         {"travel", check->travel == TravelCheck::fits      ? "fits"
                                    : check->travel == TravelCheck::outside ? "outside"
                                                                            : "unknown"}};
+    auto& report = message.at("check");
+    const auto issues = [&](const std::string& field,
+                            const std::vector<ProgramCheckIssue>& findings) {
+      auto fallback = Json::array();
+      auto localization = Json::array();
+      bool translated = false;
+      for (const auto& finding : findings) {
+        fallback.push_back(finding.text);
+        if (const auto& key = finding.localization) {
+          localization.push_back({{"key", key->key}, {"params", key->params}});
+          translated = true;
+        } else {
+          localization.push_back(nullptr);
+        }
+      }
+      report[field] = std::move(fallback);
+      if (translated)
+        report[field + "_localization"] = std::move(localization);
+    };
+    issues("errors", check->errors);
+    issues("warnings", check->warnings);
   }
   return fields.finish(message);
 }
@@ -646,11 +667,14 @@ auto encode_offset_history(const OffsetHistory& history) -> Encoded {
          {"restores", entry.restores ? fields.count(*entry.restores, "entries.restores")
                                      : Json(nullptr)}});
   }
-  return fields.finish({{"type", "offset_history"},
-                        {"revision", fields.count(history.revision, "revision")},
-                        {"storage", history.saved ? "saved" : "session_only"},
-                        {"reason", history.reason},
-                        {"entries", std::move(entries)}});
+  Json message{{"type", "offset_history"},
+               {"revision", fields.count(history.revision, "revision")},
+               {"storage", history.saved ? "saved" : "session_only"},
+               {"reason", history.reason},
+               {"entries", std::move(entries)}};
+  if (const auto& key = history.localization)
+    message["localization"] = {{"key", key->key}, {"params", key->params}};
+  return fields.finish(message);
 }
 
 auto diagnostic_name(DiagnosticRole role) -> std::string_view {

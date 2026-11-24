@@ -27,8 +27,8 @@ const past = computed(() => alarmGroups(panel.alarmLog).map((group) => ({
 const notice = computed(() => {
   const log = panel.alarmLog
   if (log === null) return ''
-  if (log.storage === 'session_only') return t('status.log.notSaved', { reason: translateMessage(log.reason) })
-  return translateMessage(log.reason)
+  const reason = translateMessage(log.reason, log.localization)
+  return log.storage === 'session_only' ? t('status.log.notSaved', { reason }) : reason
 })
 
 const faults = computed(() => [

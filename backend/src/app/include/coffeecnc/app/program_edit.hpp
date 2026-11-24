@@ -34,25 +34,26 @@ public:
 
   // The resolved path of the program written, or why nothing was written.
   [[nodiscard]] auto replace_line(std::string_view path, int line, std::string_view before,
-                                  std::string_view after) -> std::expected<std::string, std::string>;
+                                  std::string_view after)
+      -> std::expected<std::string, LocalizedReason>;
 
   // Writes a new program, durably as above: `text` exactly, to a path ProgramStore's
   // resolve_new_program accepts. Something of that name is replaced only with `replace`;
   // without it, a name taken in the meantime is not written over either (link, not rename).
   // The resolved path of the program written, or why nothing was written.
   [[nodiscard]] auto create(std::string_view path, std::string_view text, bool replace)
-      -> std::expected<std::string, std::string>;
+      -> std::expected<std::string, LocalizedReason>;
 
   // Imports the bytes from a file or the LAN. A publisher can serialize the final, atomic
   // write against controller commands after the temporary file has been synchronized.
   [[nodiscard]] auto receive(std::string_view path, std::string_view bytes, bool replace,
                              const Publish& publish = {})
-      -> std::expected<std::string, std::string>;
+      -> std::expected<std::string, LocalizedReason>;
 
   // All writes stay under Programs. Copy may read a file from another browser location.
   // Rename and delete refuse the file LinuxCNC has open and any folder which contains it.
   [[nodiscard]] auto manage(const ManageProgramFile& command, std::string_view loaded)
-      -> std::expected<void, std::string>;
+      -> std::expected<void, LocalizedReason>;
 
   // Writes the program editor's `text` over the existing program `path`, durably as
   // replace_line. Check `stamp` before writing and check the bytes again after syncing the
@@ -62,20 +63,20 @@ public:
   // rename leaves either the old file or the new one, never a part of either.
   // The final controller check returns a refusal reason or an empty string to proceed.
   [[nodiscard]] auto replace(std::string_view path, std::string_view text, std::string_view stamp,
-                             const std::function<std::string()>& check_controller = {})
-      -> std::expected<std::string, std::string>;
+                             const std::function<LocalizedReason()>& check_controller = {})
+      -> std::expected<std::string, LocalizedReason>;
 
 private:
   [[nodiscard]] auto write_new(ProgramStore::NewProgram target, std::string_view bytes,
                                bool replace, std::string temporary_name, const Publish& publish)
-      -> std::expected<std::string, std::string>;
+      -> std::expected<std::string, LocalizedReason>;
 
   // Replaces the file `resolved` with `bytes` through `<directory>/.<name><suffix>`.
   [[nodiscard]] auto write_over(const std::string& resolved, std::string_view bytes,
                                 std::string_view suffix,
                                 std::optional<std::string_view> previous = std::nullopt,
-                                const std::function<std::string()>& check_controller = {})
-      -> std::expected<void, std::string>;
+                                const std::function<LocalizedReason()>& check_controller = {})
+      -> std::expected<void, LocalizedReason>;
 
   const ProgramStore& programs_;
   ToolModelFiles& files_;

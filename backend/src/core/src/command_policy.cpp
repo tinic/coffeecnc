@@ -384,7 +384,7 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s,
             return reject("The paused spindle state changed. Review the controls and try again.",
                           RefusalMessage{"messages.policy.pausedSpindleChanged"});
           if (!stopping_spindle && !s.paused_z->reason.empty())
-            return {false, {}, s.paused_z->reason, {}};
+            return {false, {}, s.paused_z->reason, {}, s.paused_z->localization};
           if (!std::isfinite(s.paused_z->max_lift) ||
               !between(std::abs(c.distance), 0, s.paused_z->max_lift) || c.distance == 0)
             return reject("The paused Z jog distance is out of range.",

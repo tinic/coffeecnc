@@ -17,6 +17,7 @@
 #include <map>
 #include <stdexcept>
 #include <string>
+#include <system_error>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -150,12 +151,12 @@ void launcher(const std::filesystem::path& scratch) {
   // halmeter ends at once.
   program(bin, "halmeter", std::format("echo started >> {}/halmeter", marks.string()));
   // Not executable: not a tool.
-  std::ofstream(other / "halshow") << "#!/bin/sh\n";
+  std::ofstream(other / "halshow") << "#!/nonexistent-coffeecnc-test-interpreter\n";
   std::filesystem::permissions(other / "halshow", std::filesystem::perms::owner_read);
   pid_t scope{};
   {
-    HalToolLauncher tools{std::format("relative:{}:{}", other.string(), bin.string()),
-                          {"INI_FILE_NAME=/machine/mill.ini", "PATH=/usr/bin:/bin"}};
+    const auto search_path = std::format("relative:{}:{}", other.string(), bin.string());
+    HalToolLauncher tools{search_path, {"INI_FILE_NAME=/machine/mill.ini", "PATH=/usr/bin:/bin"}};
     auto states = tools.states();
     require(states.size() == 3 && states[0].tool == HalTool::halshow && !states[0].available &&
                 states[1].available && states[2].available && !states[1].open && !states[2].open,
@@ -163,8 +164,21 @@ void launcher(const std::filesystem::path& scratch) {
     require(tools.program(HalTool::halscope) == (bin / "halscope").string(),
             "The first match in the search path");
     const auto missing = tools.launch(HalTool::halshow);
-    require(missing && missing->find("halshow is not installed") != std::string::npos,
-            "A tool that is not installed is refused");
+    require(missing && missing->text.starts_with("halshow is not installed") &&
+                missing->localization == MessageKey{"backend.halDiagnostics.notInstalled",
+                                                    {{"name", "halshow"}, {"path", search_path}}},
+            "A missing tool reports its name and the search path");
+
+    std::filesystem::permissions(other / "halshow", std::filesystem::perms::owner_exec,
+                                 std::filesystem::perm_options::add);
+    const auto failed = tools.launch(HalTool::halshow);
+    const auto detail = std::make_error_code(std::errc::no_such_file_or_directory).message();
+    require(failed && failed->text == std::format("halshow could not be started: {}.", detail) &&
+                failed->localization ==
+                    MessageKey{"backend.halDiagnostics.notStartedBecause",
+                               {{"name", "halshow"}, {"system_error", detail}}} &&
+                !tools.states()[0].open,
+            "A spawn failure still reports the operating system error and leaves the tool closed");
 
     require(!tools.launch(HalTool::halscope), "halscope starts");
     require(wait_for([&]() -> bool { return std::filesystem::exists(marks / "halscope"); }),
@@ -176,7 +190,10 @@ void launcher(const std::filesystem::path& scratch) {
     require(getsid(scope) == scope, "In a session of its own");
     require(tools.states()[2].open, "Shown open");
     const auto twice = tools.launch(HalTool::halscope);
-    require(twice && *twice == "halscope is already open.", "Never two of one tool");
+    require(twice && twice->text == "halscope is already open." &&
+                twice->localization ==
+                    MessageKey{"backend.halDiagnostics.alreadyOpen", {{"name", "halscope"}}},
+            "An open tool is refused with its name");
 
     require(!tools.launch(HalTool::halmeter), "halmeter starts");
     require(wait_for([&]() -> bool { return !tools.states()[1].open; }),

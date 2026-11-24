@@ -42,7 +42,7 @@ The [storage contract](../docs/design/native-tool-model-storage.md) defines docu
 
 ## Backup and restore
 
-`backup` writes an archive of the machine's data into `directory` and is answered with `backup_written` (path, number of files, size, and the HAL files `not_included` with the reason) before its result. `check_restore` reads the archive at `path` and writes nothing; `restore_summary` precedes its result with every file of the archive, its `role` (`ini`, `hal`, `tool_table`, `parameters`, `data`), the `target` it would replace on this machine, its `change` (`new`, `changed`, `same`; `at_exit` for the `.var` file and the data files, which LinuxCNC and CoffeeCNC write as they stop and which are compared after that; the alarm log is in the backup but is not restored and is not listed), whether the target is a `symlink` (the restore replaces the link by the file), and a `token`. `restore` takes `path` and that `token`; an archive that changed since is refused. Both are refused unless the machine is off or in E-stop and no program runs. An accepted `restore` quits the application like `quit`: the files are written after LinuxCNC has stopped, and the next start sends an operator message with the outcome. A restore that changes nothing (and has no `.var` file and no data file) is accepted with a reason and does not quit. File handling: [backend rules](../docs/backend-rules.md).
+`backup` writes an archive of the machine's data into `directory` and is answered with `backup_written` (path, number of files, size, and the HAL files `not_included` with the reason) before its result. `check_restore` reads the archive at `path` and writes nothing; `restore_summary` precedes its result with every file of the archive, its `role` (`ini`, `hal`, `tool_table`, `parameters`, `data`), the `target` it would replace on this machine, its `change` (`new`, `changed`, `same`; `at_exit` for the `.var` file and the data files, which LinuxCNC and CoffeeCNC write as they stop and which are compared after that; the alarm log is in the backup but is not restored and is not listed), whether the target is a `symlink` (the restore replaces the link by the file), and a `token`. `restore` takes `path` and that `token`; an archive that changed since is refused. Both are refused unless the machine is off or in E-stop and no program runs. An accepted `restore` quits the application like `quit`: the files are written after LinuxCNC has stopped, and the next start sends an operator message with the outcome. A restore that changes nothing (and has no `.var` file and no data file) is accepted with a reason and does not quit. File handling: [backend rules](../docs/backend-rules.md). Each omitted file can also carry a `localization` key and named arguments alongside its original English reason. Archive manifests keep their existing shape.
 
 ## Rigid tapping
 
@@ -52,11 +52,17 @@ An optional `hello.rigid_tap` object exposes `max_rpm` (programmed rpm), `revers
 
 `alarm_log` is sent once after `hello`: what the operator was told before the page was loaded, oldest first, at most 500 entries, of earlier runs of CoffeeCNC and of earlier pages of this run. What is told after it arrives as `message` and `result` as before. Each entry has the run it was told in (`session`, from 1; the message's own `session` is this run), `time`, `level`, `text`, the `outcome` of a result (null for an operator message) and the `command` the result answers, as a panel sent it without its id (null when it is not known; only its `type` when it was longer than 512 bytes). A panel reads `command` defensively: an older panel may have sent it. `storage` is `saved` or `session_only` with the `reason`; `reason` also says when the log cannot be read or written now. `skipped` counts lines of the saved log that could not be read. The panel shows the entries under its own, grouped by run. File format and limits: [backend rules](../docs/backend-rules.md).
 
+The alarm-log snapshot may include top-level `localization` for its storage `reason`. The English reason and the saved JSONL record format are preserved.
+
 ## Version mismatch
 
 A hello with a different protocol version puts the panel in an incompatible connection state. It clears controller snapshots and ignores subsequent messages until a compatible hello arrives; fresh status is then required to show a live connection again. New commands are rejected locally with a result and an operator message.
 
-A rejected `result` may include `refusal`. Operator `message` records, non-accepted results, `alarm_log.entries`, `preview.error`, and `operator_settings` may include `localization` with the same shape. Each carries a catalog `key` and `params`, an object of named string arguments. Static messages use an empty object. English `reason` and `text` continue to be sent. The panel translates by key when it recognizes the key and its expected arguments. It uses the fallback text for older peers, unknown keys, and invalid arguments. The alarm log retains the optional metadata across reloads with the same version 1 format.
+A rejected `result` may include `refusal`. Operator `message` records, results with an operator message, `alarm_log.entries`, `preview.error`, and `operator_settings` may include `localization` with the same shape. Each carries a catalog `key` and `params`, an object of named string arguments. Static messages use an empty object. English `reason` and `text` continue to be sent. The panel translates by key when it recognizes the key and its expected arguments. It uses the fallback text for older peers, unknown keys, and invalid arguments. The alarm log retains the optional metadata across reloads with the same version 1 format.
+
+Program Check keeps its English `errors` and `warnings` arrays and may also send `errors_localization` or `warnings_localization`. Entries in these arrays match the corresponding English array by position. A null entry uses its English fallback.
+
+When the decoder has a catalog key and an unambiguous request ID, the rejected result carries the key. Field names are supplied as text parameters. Invalid requests without a usable ID are reported with the `messages.session.requestIgnored` operator message and its detail.
 
 Reconnect (`ready`), abort, jog-stop-all, held-jog release and software E-stop requests remain available as attempts. Their outcomes are not trusted while the protocol is incompatible, and unanswered attempts retain the normal timeout reporting. `set_machine: off` is not exempt: it can reset an E-stop, so it cannot be treated as an unconditional stop request here. Compatible protocol v1 behavior is unchanged.
 
@@ -115,6 +121,10 @@ The native shell reports the active system from the controller's current G5x off
 
 The operator can select an unavailable system through the existing MDI controls to observe its active values; receiving an unavailable row never issues that command automatically. Stale/silent readings are labeled as history, while down/incompatible/connecting values are withheld. Invalid or duplicate rows are also withheld. The browser simulator knows its full internal table and emits explicit `available: true` for all nine entries. Like the native shell it marks the inactive ones `current: false` while something runs, and after a program until the mode leaves auto.
 
+## Offset history storage
+
+An `offset_history` snapshot can include `localization` for its storage `reason`. The English reason is still present, and the saved `offset-history.json` remains version 1.
+
 ## Program text and directory completeness
 
 `program.truncated` and `directory.truncated` are additive optional booleans. New native encoders emit them explicitly. True means the supplied text/listing is partial; the panel keeps a visible notice beside the affected view. A partial program's supplied line count is not its total length, and text delivery limits do not shorten the program LinuxCNC executes. Preview generation must use the complete source independently. The existing simulator sends complete snapshots; absent/false retains the complete-snapshot presentation for older v1 peers.
@@ -130,6 +140,8 @@ Directory paths and parents are canonical paths within the configured program ro
 ## Cutting cycle status
 
 The optional `status.program.cycle` reports `running` during a cutting cycle (including pauses), `completed` after a verified finish, and `idle` otherwise. It is independent of `restart_hint`, which may arrive after Stop once the preview is ready.
+
+A `status.paused_z` record may include `localization` for its `reason`. It uses the same catalog metadata as a rejected paused-Z jog. The English reason remains available for older panels.
 
 ## Application shutdown
 

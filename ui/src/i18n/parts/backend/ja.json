@@ -693,7 +693,7 @@
       "notInstalled": "{name} はインストールされていません。検索パス（{path}）にありません。",
       "alreadyOpen": "{name} はすでに開いています。",
       "notStarted": "{name} を起動できませんでした。",
-      "notStartedBecause": "{name} を起動できませんでした：{error}。",
+      "notStartedBecause": "{name} を起動できませんでした：{system_error}。",
       "cannotStart": "ここでは HAL ツールを起動できません。"
     }
   }

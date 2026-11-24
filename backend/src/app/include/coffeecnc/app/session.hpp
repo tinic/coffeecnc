@@ -76,7 +76,7 @@ public:
   virtual void watch(PageToken page, bool on) = 0;
   // Starts the tool as a program of its own. A reason for the operator when it is not started.
   // Called without the session's mutex: it may take as long as starting a process does.
-  [[nodiscard]] virtual auto launch(HalTool tool) -> std::optional<std::string> = 0;
+  [[nodiscard]] virtual auto launch(HalTool tool) -> std::optional<LocalizedReason> = 0;
   // This page and every one before it has ended: nothing more is sent for them.
   virtual void page_ended(PageToken page) = 0;
 
@@ -415,7 +415,8 @@ private:
   [[nodiscard]] auto execute(Queued& request, const Clock& clock) -> Stage;
   [[nodiscard]] auto check_program_start(const Queued& request, const Run& command,
                                          const ControllerState& state,
-                                         const CheckedPreview& check) const -> std::string;
+                                         const CheckedPreview& check) const
+      -> std::optional<ProgramCheckIssue>;
   [[nodiscard]] auto probe_block(const Command& command, const ControllerState& state) const -> std::string;
   [[nodiscard]] auto plan_restart(Queued& request, PlanRestart command,
                                   const ControllerState& state) -> Stage;

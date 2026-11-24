@@ -833,6 +833,42 @@ describe('offsets and tools', () => {
   })
 })
 
+describe('program check messages', () => {
+  const spindleLimit = 3000
+  const requestedRpm = spindleLimit + 1000
+  const spindleKey = { key: 'backend.previewEngine.spindleLimit',
+    params: { requested: String(requestedRpm), limit: String(spindleLimit) } }
+
+  it.each([
+    ['T1 M6', { key: 'backend.previewEngine.noVerifiedLength', params: { tool: '1' } }],
+    [`G53 G0 X${String(travel.max[0] + 100)}`, { key: 'backend.previewEngine.exceedsTravel', params: {} }],
+    [`S${String(requestedRpm)} M3`, spindleKey],
+  ] as const)('uses the preview finding key when Run rejects %s', (blocks, refusal) => {
+    const r = rig({ max_spindle_rpm: spindleLimit })
+    r.home()
+    expect(r.send({ type: 'set_tool',
+      tool: { number: 1, pocket: 1, length: 0, diameter: 50, comment: '' } }).outcome).toBe('accepted')
+    r.load(`G21 G90\n${blocks}\nM2`)
+    const { check, context } = r.preview()
+    expect(check?.errors_localization).toEqual([refusal])
+    const result = r.send({ type: 'run', preview_context: context, display_units: 'mm', confirmed: true })
+    expect(result).toMatchObject({ outcome: 'rejected', reason: check?.errors[0], refusal })
+    expect(r.status().interp).toBe('idle')
+  })
+
+  it('keeps an interpreter error aligned with a later keyed finding', () => {
+    const r = rig({ max_spindle_rpm: spindleLimit })
+    r.home()
+    r.load(`S${String(requestedRpm)} M3\nG999\nM2`)
+    const { check, context, error } = r.preview()
+    expect(error).not.toBeNull()
+    expect(check?.errors_localization).toEqual([null, spindleKey])
+    const result = r.send({ type: 'run', preview_context: context, display_units: 'mm', confirmed: true })
+    expect(result).toMatchObject({ outcome: 'rejected', reason: error?.text })
+    expect(result.refusal).toBeUndefined()
+  })
+})
+
 describe('preview context', () => {
   it('reports no preview without a program', () => {
     const r = rig()

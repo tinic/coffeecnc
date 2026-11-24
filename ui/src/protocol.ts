@@ -227,6 +227,7 @@ export interface Status {
     max_lift: number
     displaced: boolean
     reason: string
+    localization?: MessageKey
     spindle?: 'can_stop' | 'stopping' | 'restore' | 'recover'
   }
   tool: {
@@ -325,6 +326,9 @@ export interface ProgramCheck {
   travel: 'unknown' | 'fits' | 'outside'
   errors: string[]
   warnings: string[]
+  /** Optional per-entry catalog metadata in the order of errors and warnings. */
+  errors_localization?: (MessageKey | null)[]
+  warnings_localization?: (MessageKey | null)[]
 }
 
 /**
@@ -412,6 +416,7 @@ export interface OffsetHistory {
   storage: 'saved' | 'session_only'
   /** Why the history is not saved, or what went wrong reading or writing it; empty otherwise. */
   reason: string
+  localization?: MessageKey
   entries: HistoryEntry[]
 }
 
@@ -422,7 +427,7 @@ export interface BackupWritten {
   files: number
   bytes: number
   /** HAL files the INI names that are not in the archive: LinuxCNC's own, or outside the configuration folder. */
-  not_included: { path: string; reason: string }[]
+  not_included: { path: string; reason: string; localization?: MessageKey }[]
 }
 
 export type BackupRole = 'ini' | 'hal' | 'tool_table' | 'parameters' | 'data'
@@ -474,6 +479,7 @@ export interface AlarmLog {
   storage: 'saved' | 'session_only'
   /** Why the log is not saved, or what went wrong reading or writing it; empty otherwise. */
   reason: string
+  localization?: MessageKey
   /** This run's session number. */
   session: number
   /** Lines of the saved log that could not be read. */

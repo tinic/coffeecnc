@@ -2,6 +2,7 @@
 #define COFFEECNC_LINUXCNC_HAL_DIAGNOSTICS_HPP
 
 #include <coffeecnc/core/diagnostics.hpp>
+#include <coffeecnc/core/message_key.hpp>
 #include <coffeecnc/linuxcnc/machine_config.hpp>
 
 #include <array>
@@ -90,7 +91,7 @@ public:
 
   // A reason for the operator when it is not started: not installed, already open, or the start
   // failed.
-  [[nodiscard]] auto launch(HalTool tool) -> std::optional<std::string>;
+  [[nodiscard]] auto launch(HalTool tool) -> std::optional<LocalizedReason>;
   // Each tool: installed, and open. Notes the tools that have ended.
   [[nodiscard]] auto states() -> std::vector<HalToolState>;
   // The program of a tool: the first executable regular file of that name in the search path.

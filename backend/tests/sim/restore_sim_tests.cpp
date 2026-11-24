@@ -76,10 +76,12 @@ auto run(std::span<char*> arguments) -> int {
   if (words[1] == "report" && words.size() == 3) {
     const auto notice = machine.take_notice();
     std::cout << "notice_level="
-              << (!notice                               ? "none"
-                  : notice->first == MessageLevel::info ? "info"
-                                                        : "error")
-              << " notice=" << (notice ? notice->second : std::string{}) << '\n';
+              << (!notice         ? "none"
+                  : notice->error ? "error"
+                                  : "info")
+              << " notice=" << (notice ? notice->text : std::string{}) << '\n';
+    if (notice && notice->localization)
+      std::cout << "notice_key=" << notice->localization->key << '\n';
     return notice ? 0 : 1;
   }
   if (words[1] == "backup" && words.size() == 4) {
@@ -102,7 +104,7 @@ auto run(std::span<char*> arguments) -> int {
                 << " change=" << file["change"].get<std::string>()
                 << " target=" << file["target"].get<std::string>() << '\n';
     const auto staged = machine.restore(archive, summary["token"].get<std::string>(), 1,
-                                        [] { return std::string{}; });
+                                        [] { return LocalizedReason{}; });
     if (staged.outcome != CommandOutcome::accepted || !staged.quit || !machine.staged())
       throw std::runtime_error("the restore is not staged: " + staged.reason);
     // As start_restore_helper does it; run.sh ends what carries its run's variable.

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <format>
 #include <ranges>
 #include <tuple>
 #include <utility>
@@ -132,40 +133,55 @@ auto ProgramStore::has_program_directory() const noexcept -> bool {
   return !start_.empty() || (!root_.empty() && root_ != "/");
 }
 
-auto ProgramStore::resolve(std::string_view path) const -> std::expected<Resolved, std::string> {
+auto ProgramStore::resolve(std::string_view path) const
+    -> std::expected<Resolved, LocalizedReason> {
   if (root_.empty())
-    return std::unexpected(std::string("No program directory is configured."));
+    return std::unexpected(LocalizedReason{"No program directory is configured.",
+                                           MessageKey{"backend.programStore.noDirectory"}});
   if (path.empty())
-    return std::unexpected(std::string("Path is empty."));
+    return std::unexpected(
+        LocalizedReason{"Path is empty.", MessageKey{"backend.programStore.pathEmpty"}});
   if (path.find('\0') != std::string_view::npos)
-    return std::unexpected(std::string("Path contains a NUL byte."));
+    return std::unexpected(
+        LocalizedReason{"Path contains a NUL byte.", MessageKey{"backend.programStore.pathNul"}});
   auto root = files_.canonical(root_);
   if (!root)
-    return std::unexpected("The program directory is not available: " + root.error());
+    return std::unexpected(LocalizedReason{
+        std::format("The program directory is not available: {}", root.error()),
+        MessageKey{"backend.programStore.directoryUnavailable", {{"detail", root.error()}}}});
   auto resolved = files_.canonical(path.front() == '/' ? std::string(path) : child(*root, path));
   if (!resolved)
-    return std::unexpected("Path is not available: " + resolved.error());
+    return std::unexpected(LocalizedReason{
+        std::format("Path is not available: {}", resolved.error()),
+        MessageKey{"backend.programStore.pathUnavailable", {{"detail", resolved.error()}}}});
   if (!inside(*root, *resolved))
-    return std::unexpected(std::string("Path is outside the program directory."));
+    return std::unexpected(LocalizedReason{"Path is outside the program directory.",
+                                           MessageKey{"backend.programStore.outsideDirectory"}});
   if (!utf8(*resolved))
-    return std::unexpected(std::string("Path is not UTF-8 text."));
+    return std::unexpected(
+        LocalizedReason{"Path is not UTF-8 text.", MessageKey{"backend.programStore.notUtf8"}});
   return Resolved{std::move(*root), std::move(*resolved)};
 }
 
 auto ProgramStore::list(const std::optional<std::string>& path) const
-    -> std::expected<Directory, std::string> {
+    -> std::expected<Directory, LocalizedReason> {
   const auto where = resolve(path ? std::string_view{*path}
                                   : std::string_view{start_.empty() ? root_ : start_});
   if (!where)
     return std::unexpected(where.error());
   const auto info = files_.info(where->path);
   if (!info)
-    return std::unexpected("Directory is not available: " + info.error());
+    return std::unexpected(LocalizedReason{
+        std::format("Directory is not available: {}", info.error()),
+        MessageKey{"backend.programStore.folderUnavailable", {{"detail", info.error()}}}});
   if (info->kind != FileKind::directory)
-    return std::unexpected(std::string("Path is not a directory."));
+    return std::unexpected(LocalizedReason{"Path is not a directory.",
+                                           MessageKey{"backend.programStore.notDirectory"}});
   const auto names = files_.names(where->path, max_directory_names);
   if (!names)
-    return std::unexpected("Directory cannot be read: " + names.error());
+    return std::unexpected(LocalizedReason{
+        std::format("Directory cannot be read: {}", names.error()),
+        MessageKey{"backend.programStore.folderUnreadable", {{"detail", names.error()}}}});
 
   Directory directory;
   directory.path = where->path;
@@ -203,26 +219,32 @@ auto ProgramStore::list(const std::optional<std::string>& path) const
 }
 
 auto ProgramStore::resolve_program(std::string_view path) const
-    -> std::expected<std::string, std::string> {
+    -> std::expected<std::string, LocalizedReason> {
   auto where = resolve(path);
   if (!where)
     return std::unexpected(where.error());
   const auto info = files_.info(where->path);
   if (!info)
-    return std::unexpected("Program is not available: " + info.error());
+    return std::unexpected(LocalizedReason{
+        std::format("Program is not available: {}", info.error()),
+        MessageKey{"backend.programStore.programUnavailable", {{"detail", info.error()}}}});
   if (info->kind != FileKind::file)
-    return std::unexpected(std::string("Path is not a regular file."));
+    return std::unexpected(LocalizedReason{"Path is not a regular file.",
+                                           MessageKey{"backend.programStore.notRegularFile"}});
   if (where->path.size() > max_program_path_bytes)
-    return std::unexpected(std::string("Program path is longer than 254 bytes."));
+    return std::unexpected(LocalizedReason{"Program path is longer than 254 bytes.",
+                                           MessageKey{"backend.programStore.pathTooLong"}});
   return std::move(where->path);
 }
 
 auto ProgramStore::resolve_new_program(std::string_view path) const
-    -> std::expected<NewProgram, std::string> {
+    -> std::expected<NewProgram, LocalizedReason> {
   if (path.empty() || path.ends_with('/'))
-    return std::unexpected(std::string("Name the program file."));
+    return std::unexpected(
+        LocalizedReason{"Name the program file.", MessageKey{"backend.programStore.nameFile"}});
   if (path.find('\0') != std::string_view::npos)
-    return std::unexpected(std::string("Path contains a NUL byte."));
+    return std::unexpected(
+        LocalizedReason{"Path contains a NUL byte.", MessageKey{"backend.programStore.pathNul"}});
   const auto programs = resolve(start_.empty() ? root_ : start_);
   if (!programs)
     return std::unexpected(programs.error());
@@ -230,19 +252,23 @@ auto ProgramStore::resolve_new_program(std::string_view path) const
   const auto slash = absolute.rfind('/');
   const auto name = std::string_view{absolute}.substr(slash + 1);
   if (!listable(name) || name == "..")
-    return std::unexpected(
-        std::string("Use a file name without control characters that does not start with a dot."));
+    return std::unexpected(LocalizedReason{
+        "Use a file name without control characters that does not start with a dot.",
+        MessageKey{"backend.programStore.fileName"}});
   const auto directory = resolve(slash == 0 ? std::string("/") : absolute.substr(0, slash));
   if (!directory)
     return std::unexpected(directory.error());
   if (!inside(programs->path, directory->path))
-    return std::unexpected(std::string("New programs go in the program directory."));
+    return std::unexpected(LocalizedReason{"New programs go in the program directory.",
+                                           MessageKey{"backend.programStore.newInDirectory"}});
   const auto info = files_.info(directory->path);
   if (!info || info->kind != FileKind::directory)
-    return std::unexpected(std::string("The folder of the new program is not a directory."));
+    return std::unexpected(LocalizedReason{"The folder of the new program is not a directory.",
+                                           MessageKey{"backend.programStore.folderNotDirectory"}});
   NewProgram created{child(directory->path, name), false};
   if (created.path.size() > max_program_path_bytes)
-    return std::unexpected(std::string("Program path is longer than 254 bytes."));
+    return std::unexpected(LocalizedReason{"Program path is longer than 254 bytes.",
+                                           MessageKey{"backend.programStore.pathTooLong"}});
   // A link of that name counts, also one that leads nowhere: it is never written through.
   created.exists = files_.info(created.path).has_value() || files_.canonical(created.path).has_value();
   return created;
@@ -252,7 +278,7 @@ auto ProgramStore::read_program(std::string_view path, std::uint64_t revision) c
     -> std::expected<ProgramText, std::string> {
   auto file = resolve_program(path);
   if (!file)
-    return std::unexpected(file.error());
+    return std::unexpected(file.error().text);
   const auto content = files_.read(*file, max_program_bytes + 1);
   if (!content)
     return std::unexpected("Program cannot be read: " + content.error());

@@ -693,7 +693,7 @@
       "notInstalled": "{name} is not installed: it is not in the search path ({path}).",
       "alreadyOpen": "{name} is already open.",
       "notStarted": "{name} could not be started.",
-      "notStartedBecause": "{name} could not be started: {error}.",
+      "notStartedBecause": "{name} could not be started: {system_error}.",
       "cannotStart": "HAL tools cannot be started here."
     }
   }

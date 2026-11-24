@@ -35,6 +35,9 @@ struct RestartPlan {
                                  const std::optional<RefusalMessage>& refusal = {},
                                  const std::optional<MessageKey>& localization = {}) -> std::string;
 
+// JSON body of an HTTP program upload response.
+[[nodiscard]] auto encode_upload_reply(const LocalizedReason& reason) -> std::string;
+
 // Wire text of an OperatorMessage. The time is since the Unix epoch.
 [[nodiscard]] auto encode_message(MessageLevel level, std::string_view text,
                                   std::chrono::milliseconds unix_time,

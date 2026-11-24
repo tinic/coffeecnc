@@ -113,6 +113,14 @@ void program_uploads(const std::string& assets) {
                       [&](std::string_view name, std::string_view bytes,
                           bool replace) -> std::expected<void, LocalizedReason> {
                         ++calls;
+                        if (name == "Running.ngc")
+                          return std::unexpected(LocalizedReason{
+                              "Saved on disk, but not reopened. The program is running.",
+                              MessageKey{
+                                  "messages.session.savedNotReopened",
+                                  {{"detail", "The program is running."}},
+                                  parameter_localization(
+                                      "detail", MessageKey{"backend.programFiles.running"})}});
                         if (name != "Plate 2.ngc" || bytes != "G21\r\nM2\r\n" || replace)
                           return std::unexpected(LocalizedReason{
                               "A program named Plate 2.ngc exists already.",
@@ -147,6 +155,15 @@ void program_uploads(const std::string& assets) {
                         {{"key", "backend.programEdit.exists"},
                          {"params", {{"name", "Plate 2.ngc"}}}}}},
           "A writer refusal is reported to the browser");
+
+  const auto wrote = upload(io, server.port(), host, "http://" + host, "Running.ngc", true);
+  const auto reply = Json::parse(wrote.body());
+  require(wrote.result() == http::status::conflict && calls == 3 &&
+              reply.at("reason") == "Saved on disk, but not reopened. The program is running." &&
+              reply.at("localization").at("key") == "messages.session.savedNotReopened" &&
+              reply.at("localization").at("params_localization").at("detail").at("key") ==
+                  "backend.programFiles.running",
+          "The LAN reply carries both the save warning and its named reopen failure");
   trace("Destroy upload server");
 }
 
@@ -193,7 +210,8 @@ void slow_model_download(net::io_context& io, std::uint16_t port, const std::str
   header.skip(true);
   trace("Read slow STEP headers");
   http::read_header(socket, input, header);
-  require(header.get().result() == http::status::ok && header.content_length() == size,
+  const auto content_length = header.content_length();
+  require(header.get().result() == http::status::ok && content_length && *content_length == size,
           "The slow STEP viewer receives the full length in the header.");
   std::vector<char> chunk(2uz * 1024 * 1024);
   for (std::size_t received = input.size(); received < size;) {

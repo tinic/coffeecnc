@@ -27,8 +27,8 @@ void OperatorSettingsArchive::show(OperatorSettings settings) {
   auto encoded = encode_operator_settings(settings);
   if (!encoded) {
     settings = unavailable(
-        std::format("Operator settings cannot be shown: {}", encoded.error().text),
-        MessageKey{"backend.operatorSettingsStore.cannotShow", {{"detail", encoded.error().text}}});
+        std::format("Operator settings cannot be shown: {}", encoded.error()),
+        MessageKey{"backend.operatorSettingsStore.cannotShow", {{"detail", encoded.error()}}});
     encoded = encode_operator_settings(settings);
   }
   settings_ = std::move(settings);
@@ -132,7 +132,7 @@ auto OperatorSettingsArchive::apply(const SetOperatorSettings& command) -> ToolM
   const auto text =
       encode_operator_settings_file({command.machine_id, next.revision, *next.document});
   if (!text)
-    return {CommandOutcome::rejected, text.error().text, false};
+    return {CommandOutcome::rejected, text.error(), false};
   const bool language_changed =
       settings_.document && settings_.document->language != command.document.language;
   if (const auto step = replace(file_name, temporary_name, *text); !step)
@@ -152,7 +152,7 @@ auto OperatorSettingsArchive::apply(const SetOperatorSettings& command) -> ToolM
   if (language_changed) {
     const auto language = encode_panel_language_file(command.machine_id, command.document.language);
     const auto step = language ? replace(language_name, language_temporary_name, *language)
-                               : ToolModelFiles::Done{std::unexpected(language.error().text)};
+                               : ToolModelFiles::Done{std::unexpected(language.error())};
     if (!step)
       return uncertain(step.error());
   }

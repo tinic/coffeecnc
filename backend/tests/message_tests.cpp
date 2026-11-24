@@ -29,13 +29,13 @@ constexpr auto nan = std::numeric_limits<double>::quiet_NaN();
 constexpr auto infinity = std::numeric_limits<double>::infinity();
 constexpr std::uint64_t max_safe_integer = 9007199254740991;
 
-auto parsed(const Encoded& encoded) -> Json {
+auto parsed(const EncodedMessage& encoded) -> Json {
   require(encoded.has_value(), "Message encodes: " + encoded.error_or(LocalizedReason{}).text);
   return Json::parse(encoded.value_or("null"));
 }
 
 // The message is refused and the reason names the field.
-void refused(const Encoded& encoded, const std::string& field, std::string_view key = {}) {
+void refused(const EncodedMessage& encoded, const std::string& field, std::string_view key = {}) {
   require(!encoded.has_value(), "Refused, not sent: " + field);
   const auto error = encoded.error_or(LocalizedReason{});
   require(error.text.starts_with(field + ' '), "The reason names " + field + ": " + error.text);

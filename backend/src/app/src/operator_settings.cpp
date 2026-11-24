@@ -266,12 +266,6 @@ template <typename Read> auto checked(Read read) -> std::expected<decltype(read(
     return std::unexpected(error.what());
   }
 }
-
-template <typename Write> auto checked_encoding(Write write) -> Encoded {
-  return checked(std::move(write)).transform_error([](std::string reason) {
-    return LocalizedReason{std::move(reason)};
-  });
-}
 } // namespace
 
 auto operator_preferences_error(const OperatorPreferences& document) -> LocalizedReason {
@@ -335,7 +329,7 @@ auto decode_operator_preferences(std::string_view text)
   return checked([&]() -> OperatorPreferences { return read_document(parse(text), Damaged::refuse); });
 }
 auto encode_operator_settings(const OperatorSettings& settings) -> Encoded {
-  return checked_encoding([&]() -> std::string {
+  return checked([&]() -> std::string {
     const bool available = settings.availability == ToolModelAvailability::available;
     if (settings.revision > max_tool_model_revision ||
         (settings.machine_id && !valid_machine_id(*settings.machine_id)) ||
@@ -361,7 +355,7 @@ auto encode_operator_settings(const OperatorSettings& settings) -> Encoded {
   });
 }
 auto encode_operator_settings_file(const OperatorSettingsFile& file) -> Encoded {
-  return checked_encoding([&]() -> std::string {
+  return checked([&]() -> std::string {
     if (!valid_machine_id(file.machine_id) || file.revision == 0 ||
         file.revision > max_tool_model_revision)
       throw std::runtime_error("Invalid settings file identity or revision.");
@@ -390,7 +384,7 @@ auto decode_operator_settings_file(std::string_view text)
   });
 }
 auto encode_panel_language_file(std::string_view machine_id, PanelLanguage language) -> Encoded {
-  return checked_encoding([&]() -> std::string {
+  return checked([&]() -> std::string {
     if (!valid_machine_id(machine_id) || language_name(language).empty())
       throw std::runtime_error("Invalid panel presentation.");
     return Json{{"machine_id", machine_id}, {"language", language_name(language)}}.dump();

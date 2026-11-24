@@ -49,7 +49,7 @@ auto StatusPublisher::publish(const PanelState& state, bool snapshots,
     -> std::expected<std::vector<std::string>, LocalizedReason> {
   std::vector<std::string> messages;
   LocalizedReason error;
-  const auto add = [&](PanelRecord record, std::string_view type, Encoded encoded) -> bool {
+  const auto add = [&](PanelRecord record, std::string_view type, EncodedMessage encoded) -> bool {
     if (!encoded) {
       error = std::move(encoded.error());
       const auto prefix = std::string(type) + ": ";

@@ -196,7 +196,7 @@ public:
     if (error_.empty())
       error_ = field_error(field, problem);
   }
-  auto finish(const Json& message) -> Encoded {
+  auto finish(const Json& message) -> EncodedMessage {
     if (!error_.empty())
       return std::unexpected(std::move(error_));
     // File names and controller text are not guaranteed to be UTF-8; dump() must not throw.
@@ -243,7 +243,7 @@ auto wait(Fields& fields, const Wait& w) -> Json {
 
 } // namespace
 
-auto encode_hello(const Hello& hello) -> Encoded {
+auto encode_hello(const Hello& hello) -> EncodedMessage {
   Fields fields;
   auto axes = Json::array();
   auto axis_velocity = Json::object();
@@ -346,7 +346,7 @@ auto encode_hello(const Hello& hello) -> Encoded {
   return fields.finish(message);
 }
 
-auto encode_status(const Status& status, std::uint64_t seq) -> Encoded {
+auto encode_status(const Status& status, std::uint64_t seq) -> EncodedMessage {
   Fields fields;
   auto axes = Json::array();
   std::ranges::transform(status.axes, std::back_inserter(axes),
@@ -469,7 +469,7 @@ auto encode_status(const Status& status, std::uint64_t seq) -> Encoded {
   return fields.finish(message);
 }
 
-auto encode_tool_table(const ToolTable& table) -> Encoded {
+auto encode_tool_table(const ToolTable& table) -> EncodedMessage {
   Fields fields;
   auto tools = Json::array();
   std::ranges::transform(table.tools, std::back_inserter(tools),
@@ -479,7 +479,7 @@ auto encode_tool_table(const ToolTable& table) -> Encoded {
                         {"tools", std::move(tools)}});
 }
 
-auto encode_work_offsets(const WorkOffsets& offsets) -> Encoded {
+auto encode_work_offsets(const WorkOffsets& offsets) -> EncodedMessage {
   Fields fields;
   auto systems = Json::array();
   for (std::size_t i = 0; i < offsets.systems.size(); ++i)
@@ -494,7 +494,7 @@ auto encode_work_offsets(const WorkOffsets& offsets) -> Encoded {
                         {"systems", std::move(systems)}});
 }
 
-auto encode_program(const ProgramText& program) -> Encoded {
+auto encode_program(const ProgramText& program) -> EncodedMessage {
   Fields fields;
   return fields.finish({{"type", "program"},
                         {"revision", fields.count(program.revision, "revision")},
@@ -504,7 +504,7 @@ auto encode_program(const ProgramText& program) -> Encoded {
                         {"stamp", program.stamp}});
 }
 
-auto encode_preview(const Preview& preview) -> Encoded {
+auto encode_preview(const Preview& preview) -> EncodedMessage {
   Fields fields;
   auto segments = Json::array();
   for (const auto& segment : preview.segments) {
@@ -598,7 +598,7 @@ auto encode_preview(const Preview& preview) -> Encoded {
   return fields.finish(message);
 }
 
-auto encode_directory(const Directory& directory) -> Encoded {
+auto encode_directory(const Directory& directory) -> EncodedMessage {
   Fields fields;
   auto entries = Json::array();
   for (const auto& entry : directory.entries) {
@@ -680,7 +680,7 @@ auto history_name(HistoryField field) -> std::string_view {
   return "x";
 }
 
-auto encode_offset_history(const OffsetHistory& history) -> Encoded {
+auto encode_offset_history(const OffsetHistory& history) -> EncodedMessage {
   Fields fields;
   const auto value = [&](const std::optional<double>& number, std::string_view field) -> Json {
     return number ? fields.real(*number, field) : Json(nullptr);
@@ -761,7 +761,7 @@ auto diagnostic_name(DiagnosticState state) -> std::string_view {
   return "missing";
 }
 
-auto encode_diagnostics(const Diagnostics& diagnostics) -> Encoded {
+auto encode_diagnostics(const Diagnostics& diagnostics) -> EncodedMessage {
   Fields fields;
   auto inputs = Json::array();
   for (const auto& reading : diagnostics.inputs) {

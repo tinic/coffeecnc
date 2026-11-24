@@ -324,6 +324,9 @@ auto encoded_messages() -> std::vector<Encoded> {
   messages.emplace_back(
       encode_result(42, CommandOutcome::rejected, "Home all configured axes first."));
   messages.emplace_back(encode_result(
+      51, CommandOutcome::rejected, "The interpreter modes changed. Review a fresh program check.",
+      {}, {}, RefusalMessage{"backend.nmlPort.modesChanged"}));
+  messages.emplace_back(encode_result(
       46, CommandOutcome::rejected, "Jog velocity is above the Z axis limit of 750 mm/min.", {}, {},
       RefusalMessage{"messages.policy.jogVelocityAxisLimit", {{"axis", "Z"}, {"limit", "750"}}}));
   messages.emplace_back(encode_result(43, CommandOutcome::failed, "LinuxCNC reported an error.", {},

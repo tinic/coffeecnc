@@ -1075,6 +1075,16 @@
   },
   {
     "type": "result",
+    "id": 51,
+    "outcome": "rejected",
+    "reason": "The interpreter modes changed. Review a fresh program check.",
+    "refusal": {
+      "key": "backend.nmlPort.modesChanged",
+      "params": {}
+    }
+  },
+  {
+    "type": "result",
     "id": 46,
     "outcome": "rejected",
     "reason": "Jog velocity is above the Z axis limit of 750 mm/min.",

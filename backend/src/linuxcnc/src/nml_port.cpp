@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -53,9 +54,10 @@ auto file_stamp(const std::string& path) -> std::optional<FileStamp> {
   struct stat info{};
   if (path.empty() || ::stat(path.c_str(), &info) != 0)
     return std::nullopt;
+  const auto modified =
+      std::chrono::seconds{info.st_mtim.tv_sec} + std::chrono::nanoseconds{info.st_mtim.tv_nsec};
   return FileStamp{.inode = static_cast<std::uint64_t>(info.st_ino),
-                   .modified = (std::int64_t{info.st_mtim.tv_sec} * 1'000'000'000) +
-                               std::int64_t{info.st_mtim.tv_nsec},
+                   .modified = modified.count(),
                    .size = std::int64_t{info.st_size}};
 }
 
@@ -121,20 +123,23 @@ auto load_spindle_tool(const std::filesystem::path& path) -> std::optional<int> 
 constexpr std::string_view breakpoint_message = "CoffeeCNC breakpoint ";
 
 auto with_breakpoint(std::string_view program, int target, std::string_view receipt)
-    -> std::expected<std::string, std::string> {
+    -> std::expected<std::string, LocalizedReason> {
   std::size_t insertion = std::string_view::npos;
   auto remaining = program;
   for (int line = 1; !remaining.empty(); ++line) {
     const auto end = remaining.find('\n');
     const auto block = remaining.substr(0, end);
     if (o_word_name(block))
-      return std::unexpected("A breakpoint needs a program without subroutines or loops.");
+      return std::unexpected(
+          LocalizedReason{"A breakpoint needs a program without subroutines or loops.",
+                          MessageKey{"backend.nmlPort.breakpointPlainProgram"}});
     if (line == target && motion_use(block) != MotionUse::none)
       insertion = program.size() - remaining.size();
     remaining.remove_prefix(end == std::string_view::npos ? remaining.size() : end + 1);
   }
   if (insertion == std::string_view::npos)
-    return std::unexpected("Choose a motion block in the loaded program.");
+    return std::unexpected(LocalizedReason{"Choose a motion block in the loaded program.",
+                                           MessageKey{"backend.nmlPort.breakpointMotionBlock"}});
   // The copy preserves the original words, comments and line endings on every source line.
   std::string copied{program};
   // LinuxCNC tags M0 with the previous motion line. This queued message is delivered after
@@ -3113,9 +3118,9 @@ auto NmlPort::start_checked(const PreviewInputs& inputs, const Wanted& current,
     return withdrawn();
   constexpr auto stale = "The program or tool data changed. Review the new program check.";
   if (!current())
-    return failed(stale);
-  if (const auto reason = validate_program_inputs(inputs); !reason.empty())
-    return failed(reason);
+    return failed(stale, MessageKey{"messages.session.programOrToolsChanged"});
+  if (auto reason = validate_program_inputs(inputs); !reason.empty())
+    return {ActionStatus::failed, std::move(reason.text), std::move(reason.localization)};
   EMC_TASK_PLAN_OPEN open;
   if (!inputs.program_file || !put(open.file, execution_path.value_or(*inputs.program_file)))
     return failed("The program path is too long for LinuxCNC.",
@@ -3136,9 +3141,9 @@ auto NmlPort::start_checked(const PreviewInputs& inputs, const Wanted& current,
       !accepted(settled))
     return settled;
   if (!current())
-    return failed(stale);
-  if (const auto reason = validate_program_inputs(inputs); !reason.empty())
-    return failed(reason);
+    return failed(stale, MessageKey{"messages.session.programOrToolsChanged"});
+  if (auto reason = validate_program_inputs(inputs); !reason.empty())
+    return {ActionStatus::failed, std::move(reason.text), std::move(reason.localization)};
   EMC_TASK_PLAN_RUN message;
   message.line = 0;
   return impl_->start(message, from);
@@ -3152,12 +3157,12 @@ auto NmlPort::run_to_breakpoint(const PreviewInputs& inputs, std::string_view pr
   const auto receipt = std::to_string(Clock::now().time_since_epoch().count());
   const auto copy = with_breakpoint(program, line, receipt);
   if (!copy)
-    return failed(copy.error());
+    return failed(copy.error().text, copy.error().localization);
   if (!current())
     return failed("The program or tool data changed. Review the new program check.",
                   MessageKey{"messages.session.programOrToolsChanged"});
-  if (const auto reason = validate_program_inputs(inputs); !reason.empty())
-    return failed(reason);
+  if (auto reason = validate_program_inputs(inputs); !reason.empty())
+    return {ActionStatus::failed, std::move(reason.text), std::move(reason.localization)};
   impl_->breakpoint = std::make_shared<const BreakpointSource>(
       *inputs.program_file, impl_->breakpoint_copy.string(), line, receipt);
   if (!impl_->save_breakpoint() || !write_sidecar(impl_->breakpoint_copy, *copy)) {
@@ -3279,11 +3284,12 @@ auto check_restart_approach(RestartPoint& point, const NmlStatus& status,
 
 } // namespace
 
-auto NmlPort::validate_program_inputs(const PreviewInputs& inputs) -> std::string {
+auto NmlPort::validate_program_inputs(const PreviewInputs& inputs) -> LocalizedReason {
   const auto s = status();
   const auto& start = inputs.start;
   if (s.controller.link == Link::live && s.active_codes != start.active_codes)
-    return "The interpreter modes changed. Review a fresh program check.";
+    return {"The interpreter modes changed. Review a fresh program check.",
+            MessageKey{"backend.nmlPort.modesChanged"}};
   if (start.wcs < 1 || start.wcs > 9 || s.controller.link != Link::live ||
       !restart_idle(s, impl_->config) || s.controller.program_file != inputs.program_file ||
       s.wcs != start.wcs || s.block_delete != inputs.block_delete ||
@@ -3293,11 +3299,13 @@ auto NmlPort::validate_program_inputs(const PreviewInputs& inputs) -> std::strin
       std::abs(s.spindle_rpm - start.spindle_speed) > 1e-6 ||
       std::abs(s.programmed_feed - start.feed) > 1e-6 || !restart_at(s, start.position, impl_->config.motion_tolerances.restart_position_mm) ||
       !restart_near(s.tool_offset, start.tool_offset) || !restart_near(s.g92, inputs.g92))
-    return "The machine state changed. Review a fresh program check.";
+    return {"The machine state changed. Review a fresh program check.",
+            MessageKey{"backend.nmlPort.stateChanged"}};
   const auto& system = inputs.systems.at(static_cast<std::size_t>(start.wcs - 1));
   if (!system.available || !restart_near(s.g5x, system.offset) ||
       std::abs(s.rotation_xy - system.rotation_xy) > 1e-6)
-    return "The work origin changed. Review a fresh program check.";
+    return {"The work origin changed. Review a fresh program check.",
+            MessageKey{"backend.nmlPort.workOriginChanged"}};
   return {};
 }
 

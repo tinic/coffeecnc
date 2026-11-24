@@ -401,12 +401,12 @@ export class SimProbe {
       if (!(surface > 0) || Math.hypot(startFrame[0] - circle.centre[0], startFrame[1] - circle.centre[1]) >= surface)
         return 'The circle through the contacts does not enclose the confirmed starting point.'
       if (!inside && !bossDiameterPlausible(2 * surface, command.diameter))
-        return `The contacts give a boss of Ø ${(2 * surface).toFixed(3)} mm, not about the entered Ø ${command.diameter.toFixed(3)} mm. Check that all three touched the boss, then probe again.`
+        return `The contacts give a boss of Ø ${(2 * surface).toFixed(3)} mm, which differs from the entered Ø ${command.diameter.toFixed(3)} mm by more than 0.5 mm or 10 %. Check that all three touched the boss, then probe again.`
       // The simulated latch repeats exactly: each contact counts with the 1 µm floor.
       const sigma = contactSigma(0)
       const uncertainty = arcCentreUncertainty([a, b, c], circle.centre, [sigma, sigma, sigma])
       if (uncertainty === null || uncertainty > arcMaxCentreUncertainty)
-        return `The centre is uncertain by ${(uncertainty ?? Infinity).toFixed(3)} mm, more than 0.02 mm: the contacts cover ${span.toFixed(1)}° with a latch spread up to 0.0000 mm. Spread the angles further and probe again.`
+        return `The estimated centre uncertainty from latch repeatability is ${(uncertainty ?? Infinity).toFixed(3)} mm, more than 0.02 mm: the contacts cover ${span.toFixed(1)}° with a latch spread up to 0.0000 mm. Spread the angles further and probe again.`
       const offset = origin(corner(circle.centre[0], circle.centre[1]), 'XY')
       return { ...offset, finish: () => ({ ...offset.finish(), center_diameter: 2 * surface, arc_span: span, center_uncertainty: uncertainty }) }
     }

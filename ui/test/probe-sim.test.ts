@@ -275,7 +275,7 @@ describe('browser probe scene', () => {
     const before = structuredClone(sim.status().offsets)
     const id = submit({ action: 'boss_arc', angles: [90, 180, 270], diameter: 30 })
     sim.advanceUntil(() => result(id) !== undefined, 30_000)
-    expect(result(id)?.reason).toBe('The contacts give a boss of Ø 24.040 mm, not about the entered Ø 30.000 mm. ' +
+    expect(result(id)?.reason).toBe('The contacts give a boss of Ø 24.040 mm, which differs from the entered Ø 30.000 mm by more than 0.5 mm or 10 %. ' +
       'Check that all three touched the boss, then probe again.')
     expect(sim.status().offsets).toEqual(before)
   })

@@ -1389,14 +1389,15 @@ void arc_scenarios(NmlPort& port, double scale, double degrees, const auto& mdi,
     at(2, 1);
     refused_run("bore_start_outside", SetterAction::bore_arc, {-45, 0, 45},
                 "does not enclose the confirmed starting point");
-    // Boss: a burr on the face at 180° (point 2), then at 270° (point 3): an early trip.
+    // Boss: a large burr on the face at 180° (point 2), then at 270° (point 3): an early trip of
+    // 6 mm, a gross fault the diameter check catches. A burr of 1-2 mm would pass it.
     probe_input("sim-arc-boss-burr");
     box(-13, -12, 0, 2);
     at(3, -1);
-    refused_run("boss_early_point_2", SetterAction::boss_arc, {90, 180, 270}, "not about the entered");
+    refused_run("boss_early_point_2", SetterAction::boss_arc, {90, 180, 270}, "differs from the entered");
     box(-2, 0, -13, -12);
     at(3, -1);
-    refused_run("boss_early_point_3", SetterAction::boss_arc, {90, 180, 270}, "not about the entered");
+    refused_run("boss_early_point_3", SetterAction::boss_arc, {90, 180, 270}, "differs from the entered");
     // A stop while the second contact searches, 0.7 s after its probe cycle began: the cycle
     // ends without a write.
     box(1000, 1001, 1000, 1001);

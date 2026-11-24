@@ -2273,16 +2273,18 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
           "The circle through the contacts does not enclose the confirmed starting point.");
     if (boss_arc && !boss_diameter_plausible(2 * surface, request.gauge_width_mm))
       return std::unexpected(std::format(
-          "The contacts give a boss of Ø {:.3f} mm, not about the entered Ø {:.3f} mm. Check "
-          "that all three touched the boss, then probe again.",
+          "The contacts give a boss of Ø {:.3f} mm, which differs from the entered Ø {:.3f} mm "
+          "by more than 0.5 mm or 10 %. Check that all three touched the boss, then probe "
+          "again.",
           2 * surface, request.gauge_width_mm));
     std::array<double, 3> sigma{};
     std::ranges::transform(latch_spreads, sigma.begin(), contact_sigma);
     const auto uncertainty = arc_centre_uncertainty(contacts, circle->centre, sigma);
     if (!uncertainty || !(*uncertainty <= arc_max_centre_uncertainty_mm))
       return std::unexpected(std::format(
-          "The centre is uncertain by {:.3f} mm, more than 0.02 mm: the contacts cover {:.1f}° "
-          "with a latch spread up to {:.4f} mm. Spread the angles further and probe again.",
+          "The estimated centre uncertainty from latch repeatability is {:.3f} mm, more than "
+          "0.02 mm: the contacts cover {:.1f}° with a latch spread up to {:.4f} mm. Spread the "
+          "angles further and probe again.",
           uncertainty.value_or(std::numeric_limits<double>::infinity()), span,
           std::ranges::max(latch_spreads)));
     SetterState state{calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,

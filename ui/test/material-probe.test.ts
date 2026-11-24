@@ -201,7 +201,7 @@ describe('recess and ridge setup', () => {
     await answer({ outcome: 'accepted', reason: '', setter: { calibration: null, measurement: null,
       material: { wcs: 2, axis: 'XY' }, center_diameter: 16, arc_span: 117.3, center_uncertainty: 0.0053 } })
     expect(fixture.get('.setter-band.done p').text())
-      .toBe('G55 X0 Y0 set at the circle centre, Ø 16.000 mm, from contacts over 117°. Centre uncertainty ±0.005 mm.')
+      .toBe('G55 X0 Y0 set at the circle centre, Ø 16.000 mm, from contacts over 117°. Centre estimated ±0.005 mm (latch repeatability only).')
   })
 
   it('shows the clearance and depth rows for a 3-point boss, probed from beside it, not for a bore', async () => {
@@ -210,6 +210,8 @@ describe('recess and ridge setup', () => {
       const limits = fixture.get('.limits').text()
       expect(limits.includes('Traverse clearance'), label).toBe(beside)
       expect(limits.includes('Ball centre at contact'), label).toBe(beside)
+      // Only gross faults change the diameter enough: the operator can check it first.
+      expect(fixture.text().includes('use Measure only to check the reported diameter'), label).toBe(beside)
       fixture.unmount()
       wrapper = undefined
     }

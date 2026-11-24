@@ -40,10 +40,18 @@ auto bounded(std::string text, std::size_t limit) -> std::string {
 
 // Ignore invalid optional metadata so an older or edited record keeps its English text.
 auto localization_of(const Json& value, std::string_view field) -> std::optional<MessageKey> {
-  const auto metadata = value.find(field);
-  if (metadata == value.end() || !metadata->is_object() ||
-      dump(*metadata).size() > AlarmLog::max_text_bytes)
+  const auto found = value.find(field);
+  if (found == value.end() || !found->is_object())
     return std::nullopt;
+  const auto* metadata = &*found;
+  Json without_lists;
+  if (dump(*metadata).size() > AlarmLog::max_text_bytes) {
+    without_lists = *metadata;
+    if (without_lists.erase("params_lists") == 0 ||
+        dump(without_lists).size() > AlarmLog::max_text_bytes)
+      return std::nullopt;
+    metadata = &without_lists;
+  }
   auto parsed = message_parameter_from_json(*metadata);
   if (!parsed)
     return std::nullopt;

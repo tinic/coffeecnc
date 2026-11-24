@@ -203,6 +203,46 @@ void localization_survives_reload() {
           "The alarm log provides keys and arguments to the next page");
 }
 
+void oversized_warning_lists_keep_the_alarm_key() {
+  Fixture f;
+  const std::string error = "Permission denied";
+  MessageKey restore{"backend.machineData.notPutBack",
+                     {{"detail", "Replacement failed"}, {"files", ""}, {"path", "/backup"}},
+                     {{"detail",
+                       {"backend.machineData.configNotReplaced",
+                        {{"path", "/config/tool.tbl"}, {"detail", error}}}}}};
+  auto& list = restore.params_lists["files"];
+  for (int i = 0; i < 6; ++i) {
+    const auto path = std::format("/config/{}/{}.hal", std::string(100, 'p'), i);
+    const auto reason = std::format("{} cannot be removed: {}", path, error);
+    if (i != 0)
+      restore.params["files"] += "; ";
+    restore.params["files"] += reason;
+    list.push_back({reason, MessageParameterKey{"backend.machineData.rollbackRemove",
+                                                {{"path", path}, {"osError", error}}}});
+  }
+  const auto fallback = "Restore incomplete: " + restore.params.at("files");
+  const auto input = encode_message(MessageLevel::error, fallback, epoch, restore);
+  const auto metadata = Json::parse(input).at("localization");
+  require(metadata.dump().size() > AlarmLog::max_text_bytes,
+          "Six warnings exceed the per-alarm localization allowance");
+  auto base = restore;
+  base.params_lists.clear();
+  auto too_large = restore;
+  too_large.params["files"] = std::string(AlarmLog::max_text_bytes, 'f');
+  const std::vector messages{
+      input, encode_message(MessageLevel::error, "Fallback only", epoch, too_large)};
+  f.log->posted(page, messages, epoch);
+  f.log->settle();
+  f.open();
+  const auto view = f.log->view();
+  require(view.entries.size() == 2 && view.entries[0].text == fallback &&
+              view.entries[0].localization == base,
+          "The alarm retains its key, original warning strings and nested cause after reload");
+  require(view.entries[1].text == "Fallback only" && !view.entries[1].localization,
+          "An oversized base reason keeps its fallback without exceeding the original limit");
+}
+
 void snapshot_has_what_came_before() {
   Fixture f;
   f.message("before the page");
@@ -627,6 +667,7 @@ auto main(int argc, char** argv) -> int {
   try {
     records_messages_and_refusals();
     localization_survives_reload();
+    oversized_warning_lists_keep_the_alarm_key();
     snapshot_has_what_came_before();
     ordering_across_restarts();
     corruption_tolerance();

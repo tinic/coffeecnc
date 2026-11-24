@@ -154,6 +154,7 @@ void restart_refusal_codes() {
   }
   require(
       !parse_output("restart_refused 999\nend ok\n").defect.empty() &&
+          !parse_output("restart_refused 257\nend ok\n").defect.empty() &&
           !parse_output("restart_refused 2 extra\nend ok\n").defect.empty() &&
           !parse_output("restart_refused 2\nrestart_blocked A refusal.\nend ok\n").defect.empty(),
       "Unknown, malformed, and duplicate restart refusals invalidate the helper result");

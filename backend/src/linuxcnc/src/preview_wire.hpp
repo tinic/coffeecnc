@@ -99,7 +99,7 @@ enum class HelperEnd : std::uint8_t {
 };
 
 // The numbers are written by the helper. Keep assigned values stable.
-enum class RestartRefusal : unsigned {
+enum class RestartRefusal : std::uint8_t {
   none = 0,
   cutter_compensation = 1,
   canned_cycle = 2,

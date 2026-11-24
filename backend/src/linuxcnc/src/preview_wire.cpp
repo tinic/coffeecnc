@@ -458,6 +458,8 @@ auto parse_output(std::string_view text, const OutputLimits& limits) -> HelperOu
         unsigned id = 0;
         if (!number(line, id) || !word(line).empty())
           return defect("a malformed restart refusal");
+        if (!std::in_range<std::uint8_t>(id))
+          return defect("an unknown restart refusal");
         auto reason = restart_refusal_message(static_cast<RestartRefusal>(id));
         if (reason.empty())
           return defect("an unknown restart refusal");

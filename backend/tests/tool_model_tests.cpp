@@ -857,10 +857,10 @@ void archive_reads() {
       value["document"]["assignments"][0]["holder"] = "retired-holder";
     });
     Rig rig{unknown_holder};
-    const auto state = Json::parse(encode_tool_models_reason(rig.archive.models()).value());
-    const auto localization = state.at("localization");
-    const auto tool = localization.at("params_localization").at("detail");
-    const auto holder = tool.at("params_localization").at("detail");
+    const auto state = Json::parse(encode_tool_models_reason(rig.archive.models()).value_or("null"));
+    const auto& localization = state.at("localization");
+    const auto& tool = localization.at("params_localization").at("detail");
+    const auto& holder = tool.at("params_localization").at("detail");
     require(localization.at("key") == "backend.toolModelStore.notUsable" &&
                 tool.at("key") == "backend.toolModels.toolProblem" &&
                 holder.at("key") == "backend.toolModels.unknownHolder" &&
@@ -1802,7 +1802,7 @@ void on_the_host(const std::filesystem::path& scratch) {
     require(archive.models().availability == ToolModelAvailability::unavailable &&
                 has(archive.models().reason, "cannot be read"),
             "What is not a regular file cannot be read: " + archive.models().reason);
-    const auto state = Json::parse(encode_tool_models_reason(archive.models()).value());
+    const auto state = Json::parse(encode_tool_models_reason(archive.models()).value_or("null"));
     require(state.at("localization").at("params_localization").at("detail").at("key") ==
                 "backend.toolModelStore.notRegularFile",
             "The native read failure retains its storage detail key");

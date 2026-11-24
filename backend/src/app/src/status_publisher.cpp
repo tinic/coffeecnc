@@ -54,9 +54,8 @@ auto StatusPublisher::publish(const PanelState& state, bool snapshots,
       error = std::move(encoded.error());
       const auto prefix = std::string(type) + ": ";
       error.text.insert(0, prefix);
-      if (auto& key = error.localization)
-        if (const auto field = key->params.find("field"); field != key->params.end())
-          field->second.insert(0, prefix);
+      if (error.localization && error.localization->params.contains("field"))
+        error.localization->params.at("field").insert(0, prefix);
       return false;
     }
     messages.push_back(std::move(*encoded));

@@ -2353,71 +2353,78 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
   // machine Z), and verifies the command against the encoder lag. The probe cycle has already
   // returned to clearance.
   const auto set_origin = [&](const std::array<double, 3>& origin,
-                              const std::array<bool, 3>& axes = {true, true, false})
-      -> std::expected<void, std::string> {
-      const auto from = impl_->begin(&wanted);
-      const Impl::Scope scope{*impl_};
-      const auto* current = impl_->stat();
-      if (current == nullptr || impl_->status.link() != Link::live || !impl_->still())
-        return std::unexpected<std::string>("Probing was cancelled before setting the work origin.");
-      const auto after = to_status(*current, impl_->config, impl_->hal, Link::live);
-      if (!ready(*current, after) || after.controller.mode != TaskMode::mdi ||
-          after.controller.tool_in_spindle != tool || frame_of(after) != frame ||
-          after.tool_offset != before.tool_offset ||
-          after.controller.program_units != before.controller.program_units ||
-          impl_->read_tool_table() != table ||
-          (apply_measurement && current_runout(impl_->config, table) != runout))
-        return std::unexpected<std::string>("Machine or tool table changed before setting the work origin.");
-      // G10 L20 applies at the commanded position (see the single faces).
-      const auto& commanded = current->motion.traj.position;
-      const std::array<double, 3> machine_at{commanded.tran.x * machine_scale,
-                                             commanded.tran.y * machine_scale,
-                                             commanded.tran.z * machine_scale};
-      const auto at = to_frame(machine_at);
-      std::array<double, 3> expected{at[0] - origin[0], at[1] - origin[1], at[2] - origin[2]};
-      // In a rotated system one work axis moves the stored origin along both machine axes, as
-      // for a single face: write both, the axis not measured at its commanded work value.
-      const bool xy = axes[0] || axes[1];
-      const std::array written{axes[0] || (rotated && xy), axes[1] || (rotated && xy), axes[2]};
-      const auto commanded_work = work_position(machine_at, after.g5x, after.g92,
-                                                after.tool_offset, after.rotation_xy);
-      for (std::size_t axis = 0; axis < axes.size(); ++axis)
-        if (!axes[axis])
-          expected[axis] = commanded_work[axis];
-      const double scale = after.controller.program_units == LengthUnit::inch ? 25.4 : 1.0;
-      EMC_TASK_PLAN_EXECUTE command;
-      std::string code{"G10 L20 P0"};
-      for (std::size_t axis = 0; axis < written.size(); ++axis)
-        if (written[axis])
-          code += std::format(" {}{:.8f}", "XYZ"[axis], expected[axis] / scale);
-      if (!put(command.command, code))
-        return std::unexpected<std::string>("Could not format the work origin.");
-      const auto result = impl_->run(command, from);
-      if (!accepted(result))
-        return std::unexpected<std::string>(result.reason.empty() ? "LinuxCNC did not set the work origin."
-                                                     : result.reason);
-      if (impl_->loads != nullptr)
-        ++impl_->loads->mdi_blocks;
-      const bool verified = until(settle_timeout, [&] {
-        const auto* applied = impl_->stat();
-        if (applied == nullptr || applied->echo_serial_number != impl_->serial ||
-            applied->status != RCS_DONE || impl_->status.link() != Link::live)
+                              const std::array<bool, 3>& axes = {
+                                  true, true, false}) -> std::expected<void, LocalizedReason> {
+    const auto from = impl_->begin(&wanted);
+    const Impl::Scope scope{*impl_};
+    const auto* current = impl_->stat();
+    if (current == nullptr || impl_->status.link() != Link::live || !impl_->still())
+      return setter_failure("Probing was cancelled before setting the work origin.",
+                            MessageKey{"backend.nmlPort.originCancelled"});
+    const auto after = to_status(*current, impl_->config, impl_->hal, Link::live);
+    if (!ready(*current, after) || after.controller.mode != TaskMode::mdi ||
+        after.controller.tool_in_spindle != tool || frame_of(after) != frame ||
+        after.tool_offset != before.tool_offset ||
+        after.controller.program_units != before.controller.program_units ||
+        impl_->read_tool_table() != table ||
+        (apply_measurement && current_runout(impl_->config, table) != runout))
+      return setter_failure("Machine or tool table changed before setting the work origin.",
+                            MessageKey{"backend.nmlPort.originChanged"});
+    // G10 L20 applies at the commanded position (see the single faces).
+    const auto& commanded = current->motion.traj.position;
+    const std::array<double, 3> machine_at{commanded.tran.x * machine_scale,
+                                           commanded.tran.y * machine_scale,
+                                           commanded.tran.z * machine_scale};
+    const auto at = to_frame(machine_at);
+    std::array<double, 3> expected{at[0] - origin[0], at[1] - origin[1], at[2] - origin[2]};
+    // In a rotated system one work axis moves the stored origin along both machine axes, as
+    // for a single face: write both, the axis not measured at its commanded work value.
+    const bool xy = axes[0] || axes[1];
+    const std::array written{axes[0] || (rotated && xy), axes[1] || (rotated && xy), axes[2]};
+    const auto commanded_work =
+        work_position(machine_at, after.g5x, after.g92, after.tool_offset, after.rotation_xy);
+    for (std::size_t axis = 0; axis < axes.size(); ++axis)
+      if (!axes[axis])
+        expected[axis] = commanded_work[axis];
+    const double scale = after.controller.program_units == LengthUnit::inch ? 25.4 : 1.0;
+    EMC_TASK_PLAN_EXECUTE command;
+    std::string code{"G10 L20 P0"};
+    for (std::size_t axis = 0; axis < written.size(); ++axis)
+      if (written[axis])
+        code += std::format(" {}{:.8f}", "XYZ"[axis], expected[axis] / scale);
+    if (!put(command.command, code))
+      return setter_failure("Could not format the work origin.",
+                            MessageKey{"backend.nmlPort.originFormat"});
+    const auto result = impl_->run(command, from);
+    if (!accepted(result))
+      return result.reason.empty() ? setter_failure("LinuxCNC did not set the work origin.",
+                                                    MessageKey{"backend.nmlPort.originNotSet"})
+                                   : setter_failure(result.reason, result.localization);
+    if (impl_->loads != nullptr)
+      ++impl_->loads->mdi_blocks;
+    const bool verified = until(settle_timeout, [&] {
+      const auto* applied = impl_->stat();
+      if (applied == nullptr || applied->echo_serial_number != impl_->serial ||
+          applied->status != RCS_DONE || impl_->status.link() != Link::live)
+        return false;
+      const auto s = to_status(*applied, impl_->config, impl_->hal, Link::live);
+      const auto& traj = applied->motion.traj;
+      // The encoder lag along the work axes.
+      const auto lag =
+          to_frame({(traj.actualPosition.tran.x - traj.position.tran.x) * machine_scale,
+                    (traj.actualPosition.tran.y - traj.position.tran.y) * machine_scale,
+                    (traj.actualPosition.tran.z - traj.position.tran.z) * machine_scale});
+      for (std::size_t i = 0; i < written.size(); ++i)
+        if (written[i]
+                ? (!std::isfinite(s.work[i]) || std::abs(s.work[i] - lag[i] - expected[i]) > 0.01)
+                : !(std::abs(s.g5x[i] - frame.g5x[i]) <= 1e-6))
           return false;
-        const auto s = to_status(*applied, impl_->config, impl_->hal, Link::live);
-        const auto& traj = applied->motion.traj;
-        // The encoder lag along the work axes.
-        const auto lag = to_frame({(traj.actualPosition.tran.x - traj.position.tran.x) * machine_scale,
-                                   (traj.actualPosition.tran.y - traj.position.tran.y) * machine_scale,
-                                   (traj.actualPosition.tran.z - traj.position.tran.z) * machine_scale});
-        for (std::size_t i = 0; i < written.size(); ++i)
-          if (written[i] ? (!std::isfinite(s.work[i]) || std::abs(s.work[i] - lag[i] - expected[i]) > 0.01)
-                         : !(std::abs(s.g5x[i] - frame.g5x[i]) <= 1e-6))
-            return false;
-        return s.wcs == before.wcs && s.g92 == before.g92 && s.rotation_xy == before.rotation_xy &&
-               s.tool_offset == before.tool_offset;
-      });
-      if (!verified)
-        return std::unexpected<std::string>("Could not verify the work origin. Check the active WCS.");
+      return s.wcs == before.wcs && s.g92 == before.g92 && s.rotation_xy == before.rotation_xy &&
+             s.tool_offset == before.tool_offset;
+    });
+    if (!verified)
+      return setter_failure("Could not verify the work origin. Check the active WCS.",
+                            MessageKey{"backend.nmlPort.originUnverified"});
     return {};
   };
   // A measure-only probe (#247): every probed surface point, and the result that would have been
@@ -2486,7 +2493,7 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
   if (applying) {
     const auto& measurement = *applying;
     if (auto set = set_origin(measurement.origin, measurement.axes); !set)
-      return setter_failure(set.error());
+      return std::unexpected(std::move(set.error()));
     const auto& axes = measurement.axes;
     return SetterState{calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,
                        std::move(current_marks),
@@ -2961,7 +2968,7 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     if (request.measure_only)
       return measured(std::move(state), origin, {true, true, false});
     if (auto set = set_origin(origin); !set)
-      return setter_failure(set.error());
+      return std::unexpected(std::move(set.error()));
     return state;
   };
   if (inside_corner || pocket || slot || ridge) {
@@ -3067,7 +3074,7 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     if (request.measure_only)
       return measured(std::move(state), {origin[0], origin[1], 0}, {axes[0], axes[1], false});
     if (auto set = set_origin({origin[0], origin[1], 0}, {axes[0], axes[1], false}); !set)
-      return setter_failure(set.error());
+      return std::unexpected(std::move(set.error()));
     return state;
   }
   if (angle) {
@@ -3236,7 +3243,7 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     if (request.measure_only)
       return measured(std::move(state), {centre_x, centre_y, 0}, {true, true, false});
     if (auto set = set_origin({centre_x, centre_y}); !set)
-      return setter_failure(set.error());
+      return std::unexpected(std::move(set.error()));
     return state;
   }
   if (radial_bore) {
@@ -3454,7 +3461,7 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
       if (request.measure_only)
         return measured(std::move(state), {centre_x, centre_y, 0}, {true, true, false});
       if (auto set = set_origin({centre_x, centre_y}); !set)
-        return setter_failure(set.error());
+        return std::unexpected(std::move(set.error()));
       return state;
     }
     if (ball) {
@@ -3533,7 +3540,7 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     if (request.measure_only)
       return measured(std::move(state), {*x_face, *y_face, 0}, {true, true, false});
     if (auto set = set_origin({*x_face, *y_face}); !set)
-      return setter_failure(set.error());
+      return std::unexpected(std::move(set.error()));
     return state;
   }
   if (material) {

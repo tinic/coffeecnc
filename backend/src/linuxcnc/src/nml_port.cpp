@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -53,9 +54,10 @@ auto file_stamp(const std::string& path) -> std::optional<FileStamp> {
   struct stat info{};
   if (path.empty() || ::stat(path.c_str(), &info) != 0)
     return std::nullopt;
+  const auto modified =
+      std::chrono::seconds{info.st_mtim.tv_sec} + std::chrono::nanoseconds{info.st_mtim.tv_nsec};
   return FileStamp{.inode = static_cast<std::uint64_t>(info.st_ino),
-                   .modified = (std::int64_t{info.st_mtim.tv_sec} * 1'000'000'000) +
-                               std::int64_t{info.st_mtim.tv_nsec},
+                   .modified = modified.count(),
                    .size = std::int64_t{info.st_size}};
 }
 
@@ -136,20 +138,23 @@ auto load_spindle_tool(const std::filesystem::path& path) -> std::optional<int> 
 constexpr std::string_view breakpoint_message = "CoffeeCNC breakpoint ";
 
 auto with_breakpoint(std::string_view program, int target, std::string_view receipt)
-    -> std::expected<std::string, std::string> {
+    -> std::expected<std::string, LocalizedReason> {
   std::size_t insertion = std::string_view::npos;
   auto remaining = program;
   for (int line = 1; !remaining.empty(); ++line) {
     const auto end = remaining.find('\n');
     const auto block = remaining.substr(0, end);
     if (o_word_name(block))
-      return std::unexpected("A breakpoint needs a program without subroutines or loops.");
+      return std::unexpected(
+          LocalizedReason{"A breakpoint needs a program without subroutines or loops.",
+                          MessageKey{"backend.nmlPort.breakpointPlainProgram"}});
     if (line == target && motion_use(block) != MotionUse::none)
       insertion = program.size() - remaining.size();
     remaining.remove_prefix(end == std::string_view::npos ? remaining.size() : end + 1);
   }
   if (insertion == std::string_view::npos)
-    return std::unexpected("Choose a motion block in the loaded program.");
+    return std::unexpected(LocalizedReason{"Choose a motion block in the loaded program.",
+                                           MessageKey{"backend.nmlPort.breakpointMotionBlock"}});
   // The copy preserves the original words, comments and line endings on every source line.
   std::string copied{program};
   // LinuxCNC tags M0 with the previous motion line. This queued message is delivered after
@@ -877,16 +882,22 @@ struct NmlPort::Impl {
     return millimetres_per_minute / config.millimetres_per_unit / seconds_per_minute;
   }
 
-  [[nodiscard]] auto read_tool_table() const -> std::expected<std::string, std::string> {
+  [[nodiscard]] auto read_tool_table() const -> std::expected<std::string, LocalizedReason> {
     if (config.tool_table.empty())
-      return std::unexpected(std::string("No tool table is configured ([EMCIO] TOOL_TABLE)."));
+      return std::unexpected(LocalizedReason{"No tool table is configured ([EMCIO] TOOL_TABLE).",
+                                             MessageKey{"backend.nmlPort.noToolTable"}});
     auto text = read_text_file(config.tool_table, max_tool_table_bytes);
-    if (!text)
-      return std::unexpected(text.error() == TextFileError::too_large
-                                 ? std::format("Tool table {} is larger than 4 MiB.",
-                                               config.tool_table)
-                                 : std::format("Cannot read tool table {}.", config.tool_table));
-    return std::move(*text);
+    if (text)
+      return std::move(*text);
+
+    const auto& file = config.tool_table;
+    if (text.error() == TextFileError::too_large)
+      return std::unexpected(
+          LocalizedReason{std::format("Tool table {} is larger than 4 MiB.", file),
+                          MessageKey{"backend.nmlPort.toolTableTooLarge", {{"file", file}}}});
+    return std::unexpected(
+        LocalizedReason{std::format("Cannot read tool table {}.", file),
+                        MessageKey{"backend.nmlPort.cannotReadToolTable", {{"file", file}}}});
   }
 
   // Replaces the file in one step, then has LinuxCNC read it: two commits. Until the first the
@@ -895,14 +906,17 @@ struct NmlPort::Impl {
     // On disk before LinuxCNC reads it: a power cut leaves the old table or the new one.
     const std::string temporary = config.tool_table + ".coffeecnc";
     if (!write_synced(temporary, table))
-      return failed(std::format("Cannot write tool table {}.", temporary));
+      return failed(std::format("Cannot write tool table {}.", temporary),
+                    MessageKey{"backend.nmlPort.cannotWriteToolTable", {{"file", temporary}}});
     if (!still()) {
       std::error_code error;
       std::filesystem::remove(temporary, error);
       return withdrawn();
     }
     if (!rename_synced(temporary, config.tool_table))
-      return failed(std::format("Cannot replace tool table {}.", config.tool_table));
+      return failed(
+          std::format("Cannot replace tool table {}.", config.tool_table),
+          MessageKey{"backend.nmlPort.cannotReplaceToolTable", {{"file", config.tool_table}}});
     const auto from = mark();
     EMC_TOOL_LOAD_TOOL_TABLE message;
     std::ranges::fill(message.file, '\0'); // the configured table
@@ -910,9 +924,11 @@ struct NmlPort::Impl {
     // Withdrawn between the two commits. Nothing is rolled back: the file may have been edited
     // again by now.
     if (loaded.status == ActionStatus::cancelled)
-      return failed(std::format("The tool table file {} was changed, but the request was "
-                                "cancelled before LinuxCNC was told to load it.",
-                                config.tool_table));
+      return failed(
+          std::format("The tool table file {} was changed, but the request was "
+                      "cancelled before LinuxCNC was told to load it.",
+                      config.tool_table),
+          MessageKey{"backend.nmlPort.toolTableNotLoaded", {{"file", config.tool_table}}});
     if (accepted(loaded) && loads != nullptr)
       ++loads->tool_tables;
     return loaded;
@@ -1105,9 +1121,15 @@ void NmlPort::idle_maintenance(const Wanted& wanted) {
   });
   if (mode != TaskMode::mdi && wanted() && status().controller.machine == MachineState::on)
     static_cast<void>(set_task_mode(mode, wanted));
-  impl_->messages.push_back({!verified, verified
-      ? std::format("T{} restored in the spindle.", tool)
-      : std::format("Could not verify restoring T{} in the spindle. Check the active tool.", tool)});
+  if (verified)
+    impl_->messages.push_back(
+        {false, std::format("T{} restored in the spindle.", tool),
+         MessageKey{"backend.nmlPort.restored", {{"tool", std::to_string(tool)}}}});
+  else
+    impl_->messages.push_back(
+        {true,
+         std::format("Could not verify restoring T{} in the spindle. Check the active tool.", tool),
+         MessageKey{"backend.nmlPort.restoreUnverified", {{"tool", std::to_string(tool)}}}});
 }
 
 auto NmlPort::set_machine_state(MachineState state, const Wanted& wanted) -> ActionResult {
@@ -3224,9 +3246,9 @@ auto NmlPort::start_checked(const PreviewInputs& inputs, const Wanted& current,
     return withdrawn();
   constexpr auto stale = "The program or tool data changed. Review the new program check.";
   if (!current())
-    return failed(stale);
-  if (const auto reason = validate_program_inputs(inputs); !reason.empty())
-    return failed(reason);
+    return failed(stale, MessageKey{"messages.session.programOrToolsChanged"});
+  if (auto reason = validate_program_inputs(inputs); !reason.empty())
+    return {ActionStatus::failed, std::move(reason.text), std::move(reason.localization)};
   EMC_TASK_PLAN_OPEN open;
   if (!inputs.program_file || !put(open.file, execution_path.value_or(*inputs.program_file)))
     return failed("The program path is too long for LinuxCNC.",
@@ -3247,9 +3269,9 @@ auto NmlPort::start_checked(const PreviewInputs& inputs, const Wanted& current,
       !accepted(settled))
     return settled;
   if (!current())
-    return failed(stale);
-  if (const auto reason = validate_program_inputs(inputs); !reason.empty())
-    return failed(reason);
+    return failed(stale, MessageKey{"messages.session.programOrToolsChanged"});
+  if (auto reason = validate_program_inputs(inputs); !reason.empty())
+    return {ActionStatus::failed, std::move(reason.text), std::move(reason.localization)};
   EMC_TASK_PLAN_RUN message;
   message.line = 0;
   return impl_->start(message, from);
@@ -3263,12 +3285,12 @@ auto NmlPort::run_to_breakpoint(const PreviewInputs& inputs, std::string_view pr
   const auto receipt = std::to_string(Clock::now().time_since_epoch().count());
   const auto copy = with_breakpoint(program, line, receipt);
   if (!copy)
-    return failed(copy.error());
+    return failed(copy.error().text, copy.error().localization);
   if (!current())
     return failed("The program or tool data changed. Review the new program check.",
                   MessageKey{"messages.session.programOrToolsChanged"});
-  if (const auto reason = validate_program_inputs(inputs); !reason.empty())
-    return failed(reason);
+  if (auto reason = validate_program_inputs(inputs); !reason.empty())
+    return {ActionStatus::failed, std::move(reason.text), std::move(reason.localization)};
   impl_->breakpoint = std::make_shared<const BreakpointSource>(
       *inputs.program_file, impl_->breakpoint_copy.string(), line, receipt);
   if (!impl_->save_breakpoint() || !write_sidecar(impl_->breakpoint_copy, *copy)) {
@@ -3390,11 +3412,12 @@ auto check_restart_approach(RestartPoint& point, const NmlStatus& status,
 
 } // namespace
 
-auto NmlPort::validate_program_inputs(const PreviewInputs& inputs) -> std::string {
+auto NmlPort::validate_program_inputs(const PreviewInputs& inputs) -> LocalizedReason {
   const auto s = status();
   const auto& start = inputs.start;
   if (s.controller.link == Link::live && s.active_codes != start.active_codes)
-    return "The interpreter modes changed. Review a fresh program check.";
+    return {"The interpreter modes changed. Review a fresh program check.",
+            MessageKey{"backend.nmlPort.modesChanged"}};
   if (start.wcs < 1 || start.wcs > 9 || s.controller.link != Link::live ||
       !restart_idle(s, impl_->config) || s.controller.program_file != inputs.program_file ||
       s.wcs != start.wcs || s.block_delete != inputs.block_delete ||
@@ -3404,11 +3427,13 @@ auto NmlPort::validate_program_inputs(const PreviewInputs& inputs) -> std::strin
       std::abs(s.spindle_rpm - start.spindle_speed) > 1e-6 ||
       std::abs(s.programmed_feed - start.feed) > 1e-6 || !restart_at(s, start.position, impl_->config.motion_tolerances.restart_position_mm) ||
       !restart_near(s.tool_offset, start.tool_offset) || !restart_near(s.g92, inputs.g92))
-    return "The machine state changed. Review a fresh program check.";
+    return {"The machine state changed. Review a fresh program check.",
+            MessageKey{"backend.nmlPort.stateChanged"}};
   const auto& system = inputs.systems.at(static_cast<std::size_t>(start.wcs - 1));
   if (!system.available || !restart_near(s.g5x, system.offset) ||
       std::abs(s.rotation_xy - system.rotation_xy) > 1e-6)
-    return "The work origin changed. Review a fresh program check.";
+    return {"The work origin changed. Review a fresh program check.",
+            MessageKey{"backend.nmlPort.workOriginChanged"}};
   return {};
 }
 
@@ -3445,20 +3470,23 @@ auto NmlPort::prepare_tool_measurement(int tool, std::uint64_t request, int line
   const auto& calibration = impl_->setter_calibration;
   if (tool <= 0 || !limits || tool == limits->reference_tool ||
       tool == config.touch_probe_tool || !length || !calibration)
-    return failed("A cutting tool in the tool table and a fixed setter are required.");
+    return failed("A cutting tool in the tool table and a fixed setter are required.",
+                  MessageKey{"backend.toolChangeMeasurement.requiresToolAndSetter"});
   const auto setter_plane = calibration->plane;
   const double setter_clearance = calibration->clearance_z;
   const bool retract_to_setter_clearance = limits->clearance_mm > 0;
   const auto* raw = impl_->stat();
   if (raw == nullptr)
-    return failed("The controller is unavailable.");
+    return failed("The controller is unavailable.",
+                  MessageKey{"backend.toolChangeMeasurement.controllerUnavailable"});
   const auto before = reading(*raw);
   const auto& state = before.controller;
   if (!safe(*raw, before) || state.mode != TaskMode::automatic || state.interp == InterpState::idle ||
       state.requested_tool != tool || state.tool_request != request || state.tool_change_line != line ||
       point.tool != tool || point.h != tool || !restart_frame(before, point, inputs) ||
       !restart_at(before, restart_machine_position(point), config.motion_tolerances.restart_position_mm))
-    return failed("The program tool change or its stationary position could not be verified.");
+    return failed("The program tool change or its stationary position could not be verified.",
+                  MessageKey{"backend.toolChangeMeasurement.verifyStationaryChange"});
   // Use the table length for the approach estimate while M6 is pending. The measured length
   // and actual position are checked again before the operator is offered a restart.
   auto nominal = point;
@@ -3505,13 +3533,16 @@ auto NmlPort::prepare_tool_measurement(int tool, std::uint64_t request, int line
       !accepted(switched))
     return switched;
   if (impl_->read_tool_table() != table)
-    return failed("The tool table changed before registering the installed tool.");
+    return failed("The tool table changed before registering the installed tool.",
+                  MessageKey{"backend.toolChangeMeasurement.tableChanged"});
   raw = impl_->stat();
   if (raw == nullptr || raw->task.mode != mode.mode || !stationary(*raw))
-    return failed("The mill changed state before registering the installed tool.");
+    return failed("The mill changed state before registering the installed tool.",
+                  MessageKey{"backend.toolChangeMeasurement.millChanged"});
   EMC_TASK_PLAN_EXECUTE register_tool;
   if (!put(register_tool.command, std::format("M61 Q{}", tool)))
-    return failed("Could not register the installed tool.");
+    return failed("Could not register the installed tool.",
+                  MessageKey{"backend.toolChangeMeasurement.registrationFailed"});
   if (auto registered = impl_->run(register_tool, from); !accepted(registered))
     return registered;
   if (impl_->loads)
@@ -4236,10 +4267,11 @@ auto NmlPort::tool_changed(int tool, std::uint64_t request, const Wanted& wanted
   return {};
 }
 
-auto NmlPort::tool_length_in_effect() -> std::expected<ToolLengthInEffect, std::string> {
+auto NmlPort::tool_length_in_effect() -> std::expected<ToolLengthInEffect, LocalizedReason> {
   const auto current = status();
   if (current.controller.link != Link::live)
-    return std::unexpected(std::string("The tool length offset in effect cannot be read."));
+    return std::unexpected(LocalizedReason{"The tool length offset in effect cannot be read.",
+                                           MessageKey{"backend.nmlPort.lengthOffsetUnreadable"}});
   ToolLengthInEffect effect;
   effect.offset = current.tool_offset;
   const int tool = current.controller.tool_in_spindle;
@@ -4260,9 +4292,10 @@ auto NmlPort::set_tool(const Tool& tool, const Wanted& wanted) -> ActionResult {
     return withdrawn();
   const auto table = impl_->read_tool_table();
   if (!table)
-    return failed(table.error());
+    return failed(table.error().text, table.error().localization);
   const auto edited = with_tool(*table, tool, impl_->config.millimetres_per_unit);
-  return edited ? impl_->load_tool_table(*edited) : failed(edited.error());
+  return edited ? impl_->load_tool_table(*edited)
+                : failed(edited.error().text, edited.error().localization);
 }
 
 auto NmlPort::remove_tool(int number, const Wanted& wanted) -> ActionResult {
@@ -4271,13 +4304,16 @@ auto NmlPort::remove_tool(int number, const Wanted& wanted) -> ActionResult {
   if (!impl_->still())
     return withdrawn();
   if (const EMC_STAT* s = impl_->stat(); s != nullptr && s->io.tool.toolInSpindle == number)
-    return failed(std::format("Tool {} is in the spindle.", number));
+    return failed(
+        std::format("Tool {} is in the spindle.", number),
+        MessageKey{"backend.nmlPort.toolInSpindleNumber", {{"tool", std::to_string(number)}}});
   const auto table = impl_->read_tool_table();
   if (!table)
-    return failed(table.error());
+    return failed(table.error().text, table.error().localization);
   const auto edited = without_tool(*table, number);
   if (!edited)
-    return failed(std::format("Tool {} is not in the tool table.", number));
+    return failed(std::format("Tool {} is not in the tool table.", number),
+                  MessageKey{"backend.nmlPort.toolNotInTable", {{"tool", std::to_string(number)}}});
   return impl_->load_tool_table(*edited);
 }
 

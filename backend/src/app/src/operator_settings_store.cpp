@@ -110,7 +110,7 @@ auto OperatorSettingsArchive::apply(const SetOperatorSettings& command) -> ToolM
     return {CommandOutcome::rejected, "This settings change belongs to another machine.", false,
             MessageKey{"backend.operatorSettingsStore.otherMachineChange"}};
   if (auto error = operator_settings_command_error(command, limits_); !error.empty())
-    return {CommandOutcome::rejected, std::move(error), false};
+    return {CommandOutcome::rejected, std::move(error.text), false, std::move(error.localization)};
   if (read() != settings_) {
     const auto file = path(file_name);
     show(unavailable(

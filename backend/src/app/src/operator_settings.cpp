@@ -108,33 +108,48 @@ auto language_name(PanelLanguage value) -> std::string_view {
       return name;
   return "";
 }
+class InvalidSettings : public std::runtime_error {
+public:
+  explicit InvalidSettings(LocalizedReason reason)
+      : std::runtime_error(reason.text), localization_(std::move(reason.localization)) {}
+  auto localization() const -> const std::optional<MessageKey>& { return localization_; }
+
+private:
+  std::optional<MessageKey> localization_;
+};
+
 void exact(const Json& value, std::initializer_list<std::string_view> required,
            std::initializer_list<std::string_view> optional = {}) {
   if (!value.is_object() ||
       !std::ranges::all_of(required, [&](std::string_view name) -> bool {
         return value.contains(name);
       }))
-    throw std::runtime_error("Settings have missing or unknown fields.");
+    throw InvalidSettings({"Settings have missing or unknown fields.",
+                           MessageKey{"backend.operatorSettings.missingFields"}});
   for (auto field = value.begin(); field != value.end(); ++field)
     if (std::ranges::find(required, field.key()) == required.end() &&
         std::ranges::find(optional, field.key()) == optional.end())
-      throw std::runtime_error("Settings have missing or unknown fields.");
+      throw InvalidSettings({"Settings have missing or unknown fields.",
+                             MessageKey{"backend.operatorSettings.missingFields"}});
 }
 auto parse(std::string_view text) -> Json {
   if (text.size() > max_operator_settings_bytes)
-    throw std::runtime_error("Settings exceed 16 KiB.");
+    throw InvalidSettings(
+        {"Settings exceed 16 KiB.", MessageKey{"backend.operatorSettings.tooLarge"}});
   std::vector<std::set<std::string>> keys;
   return Json::parse(
       text.begin(), text.end(), [&](int depth, Json::parse_event_t event, Json& value) -> bool {
         using Event = Json::parse_event_t;
         if ((event == Event::object_start || event == Event::array_start) && depth >= 8)
-          throw std::runtime_error("Settings are nested too deeply.");
+          throw InvalidSettings({"Settings are nested too deeply.",
+                                 MessageKey{"backend.operatorSettings.nestedTooDeeply"}});
         if (event == Event::object_start)
           keys.emplace_back();
         else if (event == Event::object_end)
           keys.pop_back();
         else if (event == Event::key && !keys.back().insert(value.get<std::string>()).second)
-          throw std::runtime_error("Settings contain a duplicate key.");
+          throw InvalidSettings({"Settings contain a duplicate key.",
+                                 MessageKey{"backend.operatorSettings.duplicateKey"}});
         return true;
       });
 }
@@ -142,16 +157,17 @@ auto parse(std::string_view text) -> Json {
 // damaged one is refused, so that it never replaces saved positions or programs with nothing.
 enum class Damaged : std::uint8_t { fall_back, refuse };
 auto read_document(const Json& value, Damaged damaged) -> OperatorPreferences {
-  const auto fall_back = [&](std::string_view refusal) -> void {
+  const auto fall_back = [&](LocalizedReason refusal) -> void {
     if (damaged == Damaged::refuse)
-      throw std::runtime_error(std::string(refusal));
+      throw InvalidSettings(std::move(refusal));
   };
   exact(value, {"version", "startup_units", "enabled_wcs", "default_spindle_rpm",
                 "default_jog_velocity"},
         {"tool_reference_height", "program_layout", "theme", "language", "recent_programs",
          "saved_positions", "go_to_safe_z"});
   if (!value.at("version").is_number() || value.at("version") != 1)
-    throw std::runtime_error("Settings version is not supported.");
+    throw InvalidSettings({"Settings version is not supported.",
+                           MessageKey{"backend.operatorSettings.versionNotSupported"}});
   OperatorPreferences document;
   const auto unit = value.at("startup_units").get<std::string>();
   if (unit == "machine")
@@ -161,25 +177,30 @@ auto read_document(const Json& value, Damaged damaged) -> OperatorPreferences {
   else if (unit == "inch")
     document.startup_units = StartupUnits::inch;
   else
-    throw std::runtime_error("Startup units must be machine, mm or inch.");
+    throw InvalidSettings({"Startup units must be machine, mm or inch.",
+                           MessageKey{"backend.operatorSettings.startupUnitsChoice"}});
   const auto& systems = value.at("enabled_wcs");
   if (!systems.is_array() || systems.empty() || systems.size() > 9)
-    throw std::runtime_error("Choose one to nine work system shortcuts.");
+    throw InvalidSettings({"Choose one to nine work system shortcuts.",
+                           MessageKey{"backend.operatorSettings.chooseShortcuts"}});
   document.enabled_wcs.clear();
   for (const auto& system : systems) {
     if (!system.is_number() || system.get<double>() < 1 || system.get<double>() > 9 ||
         std::trunc(system.get<double>()) != system.get<double>())
-      throw std::runtime_error("Work system shortcuts must be integers from 1 to 9.");
+      throw InvalidSettings({"Work system shortcuts must be integers from 1 to 9.",
+                             MessageKey{"backend.operatorSettings.shortcutIntegers"}});
     document.enabled_wcs.push_back(system.get<int>());
   }
   for (const auto name : {"default_spindle_rpm", "default_jog_velocity"})
     if (!value.at(name).is_number())
-      throw std::runtime_error("Default speeds must be numbers.");
+      throw InvalidSettings({"Default speeds must be numbers.",
+                             MessageKey{"backend.operatorSettings.speedsNumbers"}});
   document.default_spindle_rpm = value.at("default_spindle_rpm").get<double>();
   document.default_jog_velocity = value.at("default_jog_velocity").get<double>();
   if (value.contains("tool_reference_height")) {
     if (!value.at("tool_reference_height").is_number())
-      throw std::runtime_error("Tool reference height must be a number.");
+      throw InvalidSettings({"Tool reference height must be a number.",
+                             MessageKey{"backend.operatorSettings.referenceHeightNumber"}});
     document.tool_reference_height = value.at("tool_reference_height").get<double>();
   }
   // A missing presentation preference falls back independently.
@@ -189,7 +210,8 @@ auto read_document(const Json& value, Damaged damaged) -> OperatorPreferences {
     else if (*layout == "split")
       document.program_layout = ProgramLayout::split;
     else if (*layout != "path")
-      fall_back("Invalid panel presentation.");
+      fall_back({"Invalid panel presentation.",
+                 MessageKey{"backend.operatorSettings.invalidPresentation"}});
   }
   if (const auto theme = value.find("theme"); theme != value.end()) {
     if (*theme == "dark")
@@ -199,7 +221,8 @@ auto read_document(const Json& value, Damaged damaged) -> OperatorPreferences {
     else if (*theme == "harbor")
       document.theme = PanelTheme::harbor;
     else if (*theme != "light")
-      fall_back("Invalid panel presentation.");
+      fall_back({"Invalid panel presentation.",
+                 MessageKey{"backend.operatorSettings.invalidPresentation"}});
   }
   if (const auto language = value.find("language"); language != value.end()) {
     const auto known = std::ranges::find_if(language_names, [&](const auto& entry) -> bool {
@@ -208,7 +231,8 @@ auto read_document(const Json& value, Damaged damaged) -> OperatorPreferences {
     if (known != language_names.end())
       document.language = known->first;
     else
-      fall_back("Invalid panel presentation.");
+      fall_back({"Invalid panel presentation.",
+                 MessageKey{"backend.operatorSettings.invalidPresentation"}});
   }
   // Like the presentation, a damaged list falls back to none without losing the other settings.
   if (const auto recent = value.find("recent_programs"); recent != value.end()) {
@@ -217,13 +241,15 @@ auto read_document(const Json& value, Damaged damaged) -> OperatorPreferences {
       for (const auto& path : *recent)
         document.recent_programs.push_back(path.get<std::string>());
     else
-      fall_back("Recent programs must be at most eight absolute paths.");
+      fall_back({"Recent programs must be at most eight absolute paths.",
+                 MessageKey{"backend.operatorSettings.recentPrograms"}});
   }
   if (const auto positions = value.find("saved_positions"); positions != value.end()) {
     if (auto read = read_positions(*positions))
       document.saved_positions = std::move(*read);
     else
-      fall_back("Saved positions must be at most sixteen named, finite machine positions.");
+      fall_back({"Saved positions must be at most sixteen named, finite machine positions.",
+                 MessageKey{"backend.operatorSettings.savedPositions"}});
   }
   // Null or absent: the default safe height.
   if (const auto safe_z = value.find("go_to_safe_z"); safe_z != value.end() && !safe_z->is_null()) {
@@ -231,10 +257,11 @@ auto read_document(const Json& value, Damaged damaged) -> OperatorPreferences {
         std::abs(safe_z->get<double>()) <= 1e9)
       document.go_to_safe_z = safe_z->get<double>();
     else
-      fall_back("Safe Z for Go to must be a machine Z in mm.");
+      fall_back({"Safe Z for Go to must be a machine Z in mm.",
+                 MessageKey{"backend.operatorSettings.safeZ"}});
   }
-  if (const auto error = operator_preferences_error(document); !error.empty())
-    throw std::runtime_error(error);
+  if (auto error = operator_preferences_error(document); !error.empty())
+    throw InvalidSettings(std::move(error));
   return document;
 }
 // The settings file leaves the language out: 0.1.3 and earlier read only the other fields and
@@ -257,68 +284,89 @@ auto document_json(const OperatorPreferences& document, Language language = Lang
     json["language"] = language_name(document.language);
   return json;
 }
-template <typename Read> auto checked(Read read) -> std::expected<decltype(read()), std::string> {
+template <typename Read>
+auto checked(Read read) -> std::expected<decltype(read()), LocalizedReason> {
   try {
     return read();
+  } catch (const InvalidSettings& error) {
+    return std::unexpected(LocalizedReason{error.what(), error.localization()});
   } catch (const Json::exception&) {
-    return std::unexpected("Invalid settings JSON or field type.");
+    return std::unexpected(LocalizedReason{"Invalid settings JSON or field type.",
+                                           MessageKey{"backend.operatorSettings.invalidJson"}});
   } catch (const std::runtime_error& error) {
-    return std::unexpected(error.what());
+    return std::unexpected(LocalizedReason{error.what()});
   }
+}
+
+template <typename Read>
+auto checked_text(Read read) -> std::expected<decltype(read()), std::string> {
+  return checked(read).transform_error(
+      [](LocalizedReason&& reason) -> std::string { return std::move(reason.text); });
 }
 } // namespace
 
-auto operator_preferences_error(const OperatorPreferences& document) -> std::string {
+auto operator_preferences_error(const OperatorPreferences& document) -> LocalizedReason {
   if (layout_name(document.program_layout).empty() || theme_name(document.theme).empty() ||
       language_name(document.language).empty())
-    return "Invalid panel presentation.";
+    return {"Invalid panel presentation.",
+            MessageKey{"backend.operatorSettings.invalidPresentation"}};
   if (document.recent_programs.size() > max_recent_programs ||
       !std::ranges::all_of(document.recent_programs,
                            [](const std::string& path) -> bool { return recent_path(path); }))
-    return "Recent programs must be at most eight absolute paths.";
+    return {"Recent programs must be at most eight absolute paths.",
+            MessageKey{"backend.operatorSettings.recentPrograms"}};
   if (document.saved_positions.size() > max_saved_positions ||
       !std::ranges::all_of(document.saved_positions, saved_position))
-    return "Saved positions must be at most sixteen named, finite machine positions.";
+    return {"Saved positions must be at most sixteen named, finite machine positions.",
+            MessageKey{"backend.operatorSettings.savedPositions"}};
   if (units(document.startup_units).empty())
-    return "Invalid startup units.";
+    return {"Invalid startup units.", MessageKey{"backend.operatorSettings.invalidStartupUnits"}};
   if (document.enabled_wcs.empty() || document.enabled_wcs.size() > 9 ||
       std::set<int>(document.enabled_wcs.begin(), document.enabled_wcs.end()).size() !=
           document.enabled_wcs.size() ||
       !std::ranges::all_of(document.enabled_wcs,
                            [](int value) -> bool { return value >= 1 && value <= 9; }))
-    return "Choose one to nine unique work system shortcuts.";
+    return {"Choose one to nine unique work system shortcuts.",
+            MessageKey{"backend.operatorSettings.chooseUniqueShortcuts"}};
   if (!std::isfinite(document.default_spindle_rpm) || document.default_spindle_rpm < 0 ||
       document.default_spindle_rpm > 1e9)
-    return "Default spindle speed must be between zero and 1,000,000,000 rpm.";
+    return {"Default spindle speed must be between zero and 1,000,000,000 rpm.",
+            MessageKey{"backend.operatorSettings.spindleSpeedRange"}};
   if (!std::isfinite(document.default_jog_velocity) || document.default_jog_velocity <= 0 ||
       document.default_jog_velocity > 1e9)
-    return "Default jog speed must be above zero and at most 1,000,000,000 mm/min.";
+    return {"Default jog speed must be above zero and at most 1,000,000,000 mm/min.",
+            MessageKey{"backend.operatorSettings.jogSpeedRange"}};
   if (!std::isfinite(document.tool_reference_height) || document.tool_reference_height < 0 ||
       document.tool_reference_height > 1e9)
-    return "Tool reference height must be between zero and 1,000,000,000 mm.";
+    return {"Tool reference height must be between zero and 1,000,000,000 mm.",
+            MessageKey{"backend.operatorSettings.referenceHeightRange"}};
   if (document.go_to_safe_z &&
       (!std::isfinite(*document.go_to_safe_z) || std::abs(*document.go_to_safe_z) > 1e9))
-    return "Safe Z for Go to must be a machine Z in mm.";
+    return {"Safe Z for Go to must be a machine Z in mm.",
+            MessageKey{"backend.operatorSettings.safeZ"}};
   return {};
 }
 auto operator_settings_command_error(const SetOperatorSettings& command, const Limits& limits)
-    -> std::string {
+    -> LocalizedReason {
   if (!valid_machine_id(command.machine_id) || command.base_revision > max_tool_model_revision)
-    return "Invalid settings identity or revision.";
+    return {"Invalid settings identity or revision.",
+            MessageKey{"backend.operatorSettings.invalidIdentity"}};
   if (auto error = operator_preferences_error(command.document); !error.empty())
     return error;
   if (command.document.default_spindle_rpm > limits.max_spindle_rpm)
-    return "Default spindle speed exceeds the configured machine limit.";
+    return {"Default spindle speed exceeds the configured machine limit.",
+            MessageKey{"backend.operatorSettings.spindleSpeedLimit"}};
   if (command.document.default_jog_velocity > limits.max_jog_velocity)
-    return "Default jog speed exceeds the configured machine limit.";
+    return {"Default jog speed exceeds the configured machine limit.",
+            MessageKey{"backend.operatorSettings.jogSpeedLimit"}};
   return {};
 }
 auto decode_operator_preferences(std::string_view text)
-    -> std::expected<OperatorPreferences, std::string> {
+    -> std::expected<OperatorPreferences, LocalizedReason> {
   return checked([&]() -> OperatorPreferences { return read_document(parse(text), Damaged::refuse); });
 }
 auto encode_operator_settings(const OperatorSettings& settings) -> Encoded {
-  return checked([&]() -> std::string {
+  return checked_text([&]() -> std::string {
     const bool available = settings.availability == ToolModelAvailability::available;
     if (settings.revision > max_tool_model_revision ||
         (settings.machine_id && !valid_machine_id(*settings.machine_id)) ||
@@ -327,7 +375,7 @@ auto encode_operator_settings(const OperatorSettings& settings) -> Encoded {
       throw std::runtime_error("Invalid settings snapshot.");
     if (settings.document)
       if (auto error = operator_preferences_error(*settings.document); !error.empty())
-        throw std::runtime_error(error);
+        throw std::runtime_error(error.text);
     Json snapshot{
         {"type", "operator_settings"},
         {"machine_id", settings.machine_id ? Json(*settings.machine_id) : Json(nullptr)},
@@ -344,12 +392,12 @@ auto encode_operator_settings(const OperatorSettings& settings) -> Encoded {
   });
 }
 auto encode_operator_settings_file(const OperatorSettingsFile& file) -> Encoded {
-  return checked([&]() -> std::string {
+  return checked_text([&]() -> std::string {
     if (!valid_machine_id(file.machine_id) || file.revision == 0 ||
         file.revision > max_tool_model_revision)
       throw std::runtime_error("Invalid settings file identity or revision.");
     if (auto error = operator_preferences_error(file.document); !error.empty())
-      throw std::runtime_error(error);
+      throw std::runtime_error(error.text);
     // The reader takes at most 16 KiB: a longer file would leave the settings unavailable.
     auto text = Json{{"machine_id", file.machine_id},
                      {"revision", file.revision},
@@ -362,7 +410,7 @@ auto encode_operator_settings_file(const OperatorSettingsFile& file) -> Encoded 
 }
 auto decode_operator_settings_file(std::string_view text)
     -> std::expected<OperatorSettingsFile, std::string> {
-  return checked([&]() -> OperatorSettingsFile {
+  return checked_text([&]() -> OperatorSettingsFile {
     const auto file = parse(text);
     exact(file, {"machine_id", "revision", "document"});
     const auto machine = file.at("machine_id").get<std::string>();
@@ -373,7 +421,7 @@ auto decode_operator_settings_file(std::string_view text)
   });
 }
 auto encode_panel_language_file(std::string_view machine_id, PanelLanguage language) -> Encoded {
-  return checked([&]() -> std::string {
+  return checked_text([&]() -> std::string {
     if (!valid_machine_id(machine_id) || language_name(language).empty())
       throw std::runtime_error("Invalid panel presentation.");
     return Json{{"machine_id", machine_id}, {"language", language_name(language)}}.dump();
@@ -381,7 +429,7 @@ auto encode_panel_language_file(std::string_view machine_id, PanelLanguage langu
 }
 auto decode_panel_language_file(std::string_view text, std::string_view machine_id)
     -> std::expected<PanelLanguage, std::string> {
-  return checked([&]() -> PanelLanguage {
+  return checked_text([&]() -> PanelLanguage {
     const auto file = parse(text);
     exact(file, {"machine_id", "language"});
     if (file.at("machine_id") != machine_id)

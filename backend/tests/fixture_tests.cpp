@@ -314,13 +314,18 @@ auto encoded_messages() -> std::vector<Encoded> {
 
   messages.emplace_back(
       encode_message(MessageLevel::error, "Joint 0 on limit switch error", 1700000000123ms));
-  messages.emplace_back(encode_message(MessageLevel::info, "Probe tripped", 1700000001000ms));
+  messages.emplace_back(encode_message(MessageLevel::info, "T1 restored in the spindle.",
+                                       1700000001000ms,
+                                       MessageKey{"backend.nmlPort.restored", {{"tool", "1"}}}));
   messages.emplace_back(encode_message(MessageLevel::info, "Jog stopped: probe contact",
                                        1700000001100ms,
                                        MessageKey{"backend.jogStop.probeContact"}));
   messages.emplace_back(encode_result(41, CommandOutcome::accepted, ""));
   messages.emplace_back(
       encode_result(42, CommandOutcome::rejected, "Home all configured axes first."));
+  messages.emplace_back(encode_result(
+      51, CommandOutcome::rejected, "The interpreter modes changed. Review a fresh program check.",
+      {}, {}, RefusalMessage{"backend.nmlPort.modesChanged"}));
   messages.emplace_back(encode_result(
       46, CommandOutcome::rejected, "Jog velocity is above the Z axis limit of 750 mm/min.", {}, {},
       RefusalMessage{"messages.policy.jogVelocityAxisLimit", {{"axis", "Z"}, {"limit", "750"}}}));
@@ -345,6 +350,9 @@ auto encoded_messages() -> std::vector<Encoded> {
   messages.emplace_back(
       encode_result(49, CommandOutcome::rejected, "Missing required field: path.", {}, {},
                     RefusalMessage{"messages.request.missingField", {{"field", "path"}}}));
+  messages.emplace_back(encode_result(
+      52, CommandOutcome::failed, "Tool measured. The updated program check is unavailable.", {},
+      {}, {}, MessageKey{"backend.toolChangeMeasurement.measuredCheckUnavailable"}));
 
   Directory top;
   top.path = "/home/cnc/nc_files";
@@ -405,6 +413,13 @@ auto encoded_messages() -> std::vector<Encoded> {
        {},
        MessageKey{"backend.operatorSettingsStore.fileTooLarge",
                   {{"file", "/home/cnc/operator-settings.json"}}}}));
+
+  messages.emplace_back(encode_result(
+      53, CommandOutcome::rejected, "Default jog speed exceeds the configured machine limit.", {},
+      {}, RefusalMessage{"backend.operatorSettings.jogSpeedLimit"}));
+  messages.emplace_back(
+      encode_result(54, CommandOutcome::rejected, "Invalid panel presentation.", {}, {},
+                    RefusalMessage{"backend.operatorSettings.invalidPresentation"}));
 
   OffsetHistory history{4, true, "", {}};
   const auto change = [](HistoryField field, std::optional<double> before,

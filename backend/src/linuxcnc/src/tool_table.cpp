@@ -100,7 +100,7 @@ auto joined(const std::vector<std::string>& lines) -> std::string {
 } // namespace
 
 auto with_tool(std::string_view table, const Tool& tool, double millimetres_per_unit)
-    -> std::expected<std::string, std::string> {
+    -> std::expected<std::string, LocalizedReason> {
   std::vector<std::string> lines;
   std::optional<std::size_t> replacement;
   for (const auto line : lines_of(table)) {
@@ -117,7 +117,9 @@ auto with_tool(std::string_view table, const Tool& tool, double millimetres_per_
   }
   // LinuxCNC reads the row with fgets. Its buffer includes the newline and terminating NUL.
   if (lines.at(*replacement).size() > CANON_TOOL_ENTRY_LEN - 2)
-    return std::unexpected("The tool table row is too long for LinuxCNC. Shorten the comment.");
+    return std::unexpected(
+        LocalizedReason{"The tool table row is too long for LinuxCNC. Shorten the comment.",
+                        MessageKey{"backend.toolTable.rowTooLong"}});
   return joined(lines);
 }
 

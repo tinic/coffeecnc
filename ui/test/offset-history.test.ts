@@ -121,6 +121,13 @@ describe('offset history dialog', () => {
     expect(view().text()).toContain('No changes recorded yet.')
   })
 
+  it('uses the storage message key when the English fallback uses older wording', () => {
+    panel.offsetHistory = { ...history([]), reason: 'Older backend storage diagnostic.',
+      localization: { key: 'backend.offsetHistory.cannotRead', params: { detail: 'disk unavailable' } } }
+    wrapper = list()
+    expect(view().text()).toContain('The saved offset history cannot be read (disk unavailable). The history starts empty.')
+  })
+
   it('opens from the Tools tab only when the machine keeps a history', async () => {
     panel.offsetHistory = null
     wrapper = tab()

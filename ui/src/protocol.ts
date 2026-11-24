@@ -415,6 +415,7 @@ export interface OffsetHistory {
   storage: 'saved' | 'session_only'
   /** Why the history is not saved, or what went wrong reading or writing it; empty otherwise. */
   reason: string
+  localization?: MessageKey
   entries: HistoryEntry[]
 }
 

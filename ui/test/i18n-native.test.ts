@@ -25,6 +25,7 @@ const adapter = import.meta.glob<string>([
   '../../backend/src/linuxcnc/src/nml_panel_source.cpp',
   '../../backend/src/linuxcnc/src/preview_engine.cpp',
   '../../backend/src/app/src/operator_settings_store.cpp',
+  '../../backend/src/app/src/offset_history.cpp',
   '../../backend/src/app/src/tool_models.cpp',
   '../../backend/src/app/src/tool_model_store.cpp',
   '../../backend/src/app/src/tool_model_json.hpp',

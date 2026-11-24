@@ -1379,7 +1379,8 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   if (move.tool <= 0 || !std::isfinite(move.travel_mm) || move.travel_mm <= 0 ||
       move.travel_mm > max_travel || !std::isfinite(move.feed_mm_min) || move.feed_mm_min <= 0 ||
       move.feed_mm_min > limits->feed_mm_min ||
-      !std::ranges::all_of(move.start, [](double value) { return std::isfinite(value); }))
+      !std::ranges::all_of(move.start, [](double value) { return std::isfinite(value); }) ||
+      (move.heading_deg && (!material || !std::isfinite(*move.heading_deg))))
     return std::unexpected("The confirmed probe move exceeds the fixed setter limits.");
   const double move_seconds = move.travel_mm / move.feed_mm_min * seconds_per_minute;
   if (move_seconds > 180)
@@ -1403,8 +1404,13 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
     return std::isfinite(a) && std::abs(a - b) <= tolerance_mm;
   };
   const auto& c = before.controller;
-  const auto line = probe_line(move.material.value_or(ProbeDirection::z_top), before.rotation_xy);
-  const bool rotated = material && line.axis != 2 && before.rotation_xy != 0;
+  // A heading is a search along any XY direction of the work system: like a rotated one.
+  const auto line =
+      move.heading_deg
+          ? probe_line(ProbeDirection::x_plus, before.rotation_xy + *move.heading_deg)
+          : probe_line(move.material.value_or(ProbeDirection::z_top), before.rotation_xy);
+  const bool rotated =
+      material && line.axis != 2 && (before.rotation_xy != 0 || move.heading_deg.has_value());
   auto search_start = move.approach.value_or(move.start);
   if (rotated && !move.approach) {
     // Hold the commanded transverse position, as the trajectory planner will.
@@ -1791,6 +1797,7 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
         const double average = std::accumulate(latches.begin(), latches.end(), 0.0) /
                                static_cast<double>(latches.size());
         contact->machine = line.advance(contact->machine, average - coordinate(contact->machine));
+        contact->latch_spread_mm = high - low;
       }
       contact->stopping_distance = search_stop;
     }
@@ -1972,6 +1979,8 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
   const bool ball = request.action == SetterAction::ball;
   const bool bore = request.action == SetterAction::bore;
   const bool boss = request.action == SetterAction::boss;
+  const bool bore_arc = request.action == SetterAction::bore_arc;
+  const bool boss_arc = request.action == SetterAction::boss_arc;
   const bool angle = request.action == SetterAction::angle;
   const bool material = is_material_probe(request.action);
   if (material) {
@@ -2166,6 +2175,22 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
   const auto record = [&](ProbeDirection direction, const std::array<double, 3>& contact,
                           double ball_radius) {
     const auto surface = probe_line(direction, before.rotation_xy).advance(contact, ball_radius);
+    probed.push_back({direction,
+                      work_position(surface, before.g5x, before.g92, before.tool_offset,
+                                    before.rotation_xy),
+                      surface});
+  };
+  // A three-point search travels along `travel_deg` from the work +X axis: its surface point is
+  // one ball radius further along it, reported with the nearest work axis direction.
+  const auto record_heading = [&](double travel_deg, const std::array<double, 3>& contact,
+                                  double ball_radius) {
+    const double turn_deg = std::fmod(std::fmod(travel_deg, 360.0) + 360.0, 360.0);
+    const auto direction = turn_deg <= 45 || turn_deg > 315 ? ProbeDirection::x_plus
+                           : turn_deg <= 135                ? ProbeDirection::y_plus
+                           : turn_deg <= 225                ? ProbeDirection::x_minus
+                                                            : ProbeDirection::y_minus;
+    const auto surface = probe_line(ProbeDirection::x_plus, before.rotation_xy + travel_deg)
+                             .advance(contact, ball_radius);
     probed.push_back({direction,
                       work_position(surface, before.g5x, before.g92, before.tool_offset,
                                     before.rotation_xy),
@@ -2377,6 +2402,97 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
     state.height_map = std::move(map);
     return state;
   }
+  // A three-point bore or boss (#247): refused before any motion unless the three directions
+  // spread far enough around the circle for a usable centre.
+  if (bore_arc || boss_arc) {
+    const auto spread = arc_spread(request.angles_deg);
+    if (!(spread.closest_deg >= arc_min_separation_deg) || !(spread.span_deg >= arc_min_span_deg))
+      return std::unexpected(
+          "Enter three probe angles at least 10° apart that cover at least 90° of the circle.");
+  }
+  // Every search of a three-point cycle, checked against the configured travel before the first
+  // move: the search start and endpoint of each direction in machine space, and for a boss the
+  // lift to clearance at each start and the traverse at that height. probe_fixed_setter checks
+  // each move again when it runs.
+  const auto arc_in_travel = [&](const std::array<double, 3>& point) {
+    for (std::size_t i = 0; i < point.size(); ++i) {
+      const auto& travel = impl_->config.travel.at(i);
+      if (!std::isfinite(point.at(i)) || point.at(i) < travel.min || point.at(i) > travel.max)
+        return false;
+    }
+    return true;
+  };
+  const auto arc_searches_in_travel =
+      [&](const std::array<std::optional<std::array<double, 3>>, 3>& approaches,
+          double heading_turn, std::optional<double> clearance) -> std::expected<void, std::string> {
+    auto from = request.start;
+    for (std::size_t i = 0; i < approaches.size(); ++i) {
+      const double heading = request.angles_deg.at(i);
+      const auto search_start = approaches.at(i).value_or(request.start);
+      const auto endpoint =
+          probe_line(ProbeDirection::x_plus, before.rotation_xy + heading + heading_turn)
+              .advance(search_start, limits->material_travel_mm);
+      const bool lift_ok =
+          !clearance || (std::isfinite(*clearance) && *clearance >= from[2] &&
+                         *clearance >= search_start[2] &&
+                         arc_in_travel({from[0], from[1], *clearance}) &&
+                         arc_in_travel({search_start[0], search_start[1], *clearance}));
+      if (!arc_in_travel(search_start) || !arc_in_travel(endpoint) || !lift_ok)
+        return std::unexpected(std::format("Contact {} at {:.1f}°: {}", i + 1, heading,
+                                           "The probe move is outside the configured travel."));
+      // A boss search lifts to clearance on its approach; the next one starts there.
+      if (clearance)
+        from = {search_start[0], search_start[1], *clearance};
+    }
+    return {};
+  };
+  // The circle through three ball-centre contacts, in the frame of the work axes; the surface
+  // is `ball_offset` further out (a bore) or in (a boss). The contacts must cover a real arc of
+  // it, the start must lie inside it, the centre must be certain enough from the latch spread
+  // of each contact, and a boss must be about the diameter entered.
+  const auto arc_origin = [&](const std::array<std::array<double, 2>, 3>& contacts,
+                              const std::array<double, 3>& latch_spreads,
+                              double ball_offset) -> std::expected<SetterState, std::string> {
+    const auto circle = circle_through(contacts);
+    const double span = circle ? measured_span(contacts, circle->centre) : 0;
+    if (!circle || !(span >= arc_min_measured_span_deg))
+      return std::unexpected(std::format(
+          "The three contacts lie almost on a line: they cover {:.1f}° of a circle. Spread the "
+          "angles further, and check that all three touched the same round wall.",
+          span));
+    const double surface = circle->radius + ball_offset;
+    if (!(surface > 0) || !(std::hypot(start_frame[0] - circle->centre[0],
+                                       start_frame[1] - circle->centre[1]) < surface))
+      return std::unexpected(
+          "The circle through the contacts does not enclose the confirmed starting point.");
+    if (boss_arc && !boss_diameter_plausible(2 * surface, request.gauge_width_mm))
+      return std::unexpected(std::format(
+          "The contacts give a boss of Ø {:.3f} mm, which differs from the entered Ø {:.3f} mm "
+          "by more than 0.5 mm or 10 %. Check that all three touched the boss, then probe "
+          "again.",
+          2 * surface, request.gauge_width_mm));
+    std::array<double, 3> sigma{};
+    std::ranges::transform(latch_spreads, sigma.begin(), contact_sigma);
+    const auto uncertainty = arc_centre_uncertainty(contacts, circle->centre, sigma);
+    if (!uncertainty || !(*uncertainty <= arc_max_centre_uncertainty_mm))
+      return std::unexpected(std::format(
+          "The estimated centre uncertainty from latch repeatability is {:.3f} mm, more than "
+          "0.02 mm: the contacts cover {:.1f}° with a latch spread up to {:.4f} mm. Spread the "
+          "angles further and probe again.",
+          uncertainty.value_or(std::numeric_limits<double>::infinity()), span,
+          std::ranges::max(latch_spreads)));
+    SetterState state{calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,
+                      std::move(current_marks), SetterState::Material{frame.wcs, 'X', true}};
+    state.center_diameter = 2 * surface;
+    state.arc_span_deg = span;
+    state.center_uncertainty_mm = uncertainty;
+    const std::array origin{circle->centre[0], circle->centre[1], 0.0};
+    if (request.measure_only)
+      return measured(std::move(state), origin, {true, true, false});
+    if (auto set = set_origin(origin); !set)
+      return std::unexpected(set.error());
+    return state;
+  };
   if (inside_corner || pocket || slot || ridge) {
     if (frame.wcs < 1 || frame.wcs > 9)
       return std::unexpected("The active work coordinate system is unavailable.");
@@ -2626,7 +2742,43 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
       return std::unexpected(set.error());
     return state;
   }
-  if (corner || ball || boss) {
+  if (bore_arc) {
+    // Three walls from the start inside the bore, each outward along its direction and back.
+    if (frame.wcs < 1 || frame.wcs > 9)
+      return std::unexpected("The active work coordinate system is unavailable.");
+    const double radius = tool_diameter(*table, tool).value_or(0) * machine_scale / 2;
+    if (!std::isfinite(radius) || radius <= 0)
+      return std::unexpected("Set the probe ball diameter in the tool table first.");
+    if (auto travel = arc_searches_in_travel({}, 0, std::nullopt); !travel)
+      return std::unexpected(travel.error());
+    std::array<std::array<double, 2>, 3> contacts{};
+    std::array<double, 3> spreads{};
+    for (std::size_t i = 0; i < contacts.size(); ++i) {
+      const auto* s = impl_->stat();
+      if (s == nullptr || impl_->status.link() != Link::live)
+        return std::unexpected("Controller status was lost inside the bore.");
+      const auto reading = to_status(*s, impl_->config, impl_->hal, Link::live);
+      const std::array from{reading.controller.axes[0].machine, reading.controller.axes[1].machine,
+                            reading.controller.axes[2].machine};
+      const double heading = request.angles_deg.at(i);
+      const auto contact = probe_fixed_setter({.tool = tool,
+                                               .start = i == 0 ? request.start : from,
+                                               .travel_mm = limits->material_travel_mm,
+                                               .feed_mm_min = limits->feed_mm_min,
+                                               .material = ProbeDirection::x_plus,
+                                               .heading_deg = heading},
+                                              wanted);
+      if (!contact)
+        return std::unexpected(
+            std::format("Contact {} at {:.1f}°: {}", i + 1, heading, contact.error()));
+      const auto at = to_frame(contact->machine);
+      contacts.at(i) = {at[0], at[1]};
+      spreads.at(i) = contact->latch_spread_mm;
+      record_heading(heading, contact->machine, radius);
+    }
+    return arc_origin(contacts, spreads, radius);
+  }
+  if (corner || ball || boss || boss_arc) {
     // A corner: the X face, then the Y face, each probed from beside the work below its top.
     // A ball calibration: both X faces of a gauge of known width, the same way.
     // The operator jogs the probe over the work within the configured reach of both faces; Z0 of the
@@ -2640,7 +2792,7 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
     const double half_gauge = request.gauge_width_mm / 2;
     if (ball && !(request.gauge_width_mm >= 2 && request.gauge_width_mm <= 200))
       return std::unexpected("Enter the gauge width, 2 to 200 mm.");
-    if (boss && !(request.gauge_width_mm >= 2 && request.gauge_width_mm <= 200))
+    if ((boss || boss_arc) && !(request.gauge_width_mm >= 2 && request.gauge_width_mm <= 200))
       return std::unexpected("Enter the approximate boss diameter, 2 to 200 mm.");
     if (ball && rotated)
       return std::unexpected("Ball calibration needs a work system without rotation.");
@@ -2696,6 +2848,44 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
       // The ball's centre touched: the face is one radius further along the travel.
       return to_frame(contact->machine)[line.axis] + line.sign * radius;
     };
+    if (boss_arc) {
+      // Three faces, each from beyond the entered diameter along its direction, inward.
+      std::array<std::optional<std::array<double, 3>>, 3> approaches{};
+      for (std::size_t i = 0; i < approaches.size(); ++i) {
+        const double turn_to = request.angles_deg.at(i) * std::numbers::pi / 180;
+        approaches.at(i) = to_machine({start_frame[0] + (half_gauge + outside) * std::cos(turn_to),
+                                       start_frame[1] + (half_gauge + outside) * std::sin(turn_to),
+                                       depth});
+      }
+      if (auto travel = arc_searches_in_travel(approaches, 180, clearance); !travel)
+        return std::unexpected(travel.error());
+      std::array<std::array<double, 2>, 3> contacts{};
+      std::array<double, 3> spreads{};
+      for (std::size_t i = 0; i < contacts.size(); ++i) {
+        const auto from = i == 0 ? std::optional{request.start} : here();
+        if (!from)
+          return std::unexpected("Controller status was lost between the boss faces.");
+        const double heading = request.angles_deg.at(i);
+        const auto contact = probe_fixed_setter({.tool = tool,
+                                                 .start = *from,
+                                                 .travel_mm = limits->material_travel_mm,
+                                                 .feed_mm_min = limits->feed_mm_min,
+                                                 .approach = approaches.at(i),
+                                                 .clearance_z = clearance,
+                                                 .material = ProbeDirection::x_plus,
+                                                 .return_to_clearance = true,
+                                                 .heading_deg = heading + 180},
+                                                wanted);
+        if (!contact)
+          return std::unexpected(
+              std::format("Contact {} at {:.1f}°: {}", i + 1, heading, contact.error()));
+        const auto at = to_frame(contact->machine);
+        contacts.at(i) = {at[0], at[1]};
+        spreads.at(i) = contact->latch_spread_mm;
+        record_heading(heading + 180, contact->machine, radius);
+      }
+      return arc_origin(contacts, spreads, -radius);
+    }
     if (boss) {
       // A boss: both X faces from outside, then both Y faces through the centre X. Faces are
       // where the surface is, so their midpoints are the centre and their distance the diameter.

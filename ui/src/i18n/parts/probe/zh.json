@@ -100,6 +100,14 @@
       "rotationEffect": "将 {wcs} 的 XY 轴绕其保存的零点旋转 {degrees}。旋转从 {current} 变为 {rotation}。",
       "shiftStays": "当前的 G52/G92 偏移保持有效。",
       "applyRotation": "应用旋转",
+      "arcFeature": "3 点",
+      "arcBore": "孔",
+      "arcBoss": "凸台",
+      "arcBoreLabel": "3 点测孔",
+      "arcBossLabel": "3 点测凸台",
+      "arcBoreBusy": "正在探测孔的三处壁面…",
+      "arcBossBusy": "正在探测凸台的三处面…",
+      "arcDone": "已根据跨 {span}° 的接触点在圆心设置 {wcs} X0 Y0，Ø {diameter} mm。圆心估计 ±{uncertainty} mm（仅锁存重复性）。",
       "measureOnly": "仅测量",
       "measureOnlyTip": "探测并显示结果，不设置偏置。之后可以从结果中设置。",
       "measuredDone": "已在 {wcs} 中测得 {values}。未设置任何值。",
@@ -111,6 +119,7 @@
       "resultMachine": "机床",
       "resultSize": "尺寸",
       "resultDiameter": "直径",
+      "resultUncertainty": "圆心，估计值（仅锁存重复性）",
       "resultAngle": "角度",
       "resultFaces": "表面点",
       "copy": "复制",
@@ -203,7 +212,15 @@
       "stepLatch": "慢速复测 · 第 {pass} 次，共 3 次",
       "stepRetract": "退回",
       "stepLiftWork": "抬起越过工件",
-      "stepClearance": "退回到安全距离"
+      "stepClearance": "退回到安全距离",
+      "titleBoreArc": "以 3 点探测孔中心",
+      "titleBossArc": "以 3 点探测凸台中心",
+      "setupBoreArc": "将测球移入孔内并低于孔顶。选择三个在搜索行程内有壁面的方向。从起点沿每个方向向外探测。只需圆的一部分即可。",
+      "setupBossArc": "先在凸台顶面设置 Z0。移动到凸台上方，输入其大致直径以及三个有面的方向。只需圆的一部分即可。直径检查只能发现明显错误：设置原点前，请先用仅测量检查报告的直径。",
+      "resultArc": "在通过三个接触点的圆的圆心设置 X0 和 Y0，并显示其直径",
+      "contactAt": "{angle}° 处接触",
+      "aboveContact": "移到 {angle}° 处面的外侧",
+      "inputAngles": "相对 +X 的方向"
     },
     "guideDialog": {
       "previous": "上一个移动",
@@ -232,7 +249,9 @@
       "result": "结果",
       "lengthTolerance": "长度公差",
       "startCheck": "开始检查",
-      "startProbe": "开始探测"
+      "startProbe": "开始探测",
+      "arcDirection": "方向 {n}",
+      "arcRange": "逆时针角度，相互至少间隔 {separation}°，覆盖至少 {span}°。"
     },
     "guideCanvas": {
       "label": "3D 探测动作：拖动以旋转",

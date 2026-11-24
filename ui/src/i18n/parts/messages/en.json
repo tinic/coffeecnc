@@ -164,6 +164,7 @@
       "missingField": "Missing required field: {field}.",
       "unexpectedField": "Unexpected field in request.",
       "expectedString": "Expected a string: {field}.",
+      "expectedAngles": "Expected three probe angles in degrees.",
       "nulInString": "NUL is not allowed in request strings.",
       "expectedNumber": "Expected a number: {field}.",
       "expectedFinite": "Expected a finite number: {field}.",

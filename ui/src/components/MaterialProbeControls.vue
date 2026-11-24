@@ -12,6 +12,7 @@ import SetterStatusBand from './SetterStatusBand.vue'
 import WorkpieceProbeDiagram from './WorkpieceProbeDiagram.vue'
 import ProbeGuideDialog from './ProbeGuideDialog.vue'
 import type { AngleEdge, MaterialGuideTarget } from '../probe-guide'
+import type { Angles } from '../arc'
 import ModalDialog from './ModalDialog.vue'
 import { vTooltip } from '../tooltip'
 import HeightMapDialog from './HeightMapDialog.vue'
@@ -21,7 +22,7 @@ import type { HeightMap } from '../protocol'
 
 const props = defineProps<{ tool: number }>()
 const { t } = useI18n()
-type Request = Extract<CommandBody, { type: 'fixed_setter'; action: 'material' | 'corner' | 'ball' | 'bore' | 'boss' | 'angle' | 'apply_angle' | 'apply_measurement' | 'inside_corner' | 'pocket' | 'slot' | 'ridge' | 'height_map' }>
+type Request = Extract<CommandBody, { type: 'fixed_setter'; action: 'material' | 'corner' | 'ball' | 'bore' | 'boss' | 'bore_arc' | 'boss_arc' | 'angle' | 'apply_angle' | 'apply_measurement' | 'inside_corner' | 'pocket' | 'slot' | 'ridge' | 'height_map' }>
 // The button names the part face. The protocol still specifies the tool's travel.
 const surfaces = [
   { key: 'zTop', label: null, travel: 'z_top', approach: '−Z' },
@@ -61,6 +62,7 @@ const insideCorners = [
   { label: 'X+ Y+', x: 'x_plus', y: 'y_plus' },
 ] as const
 const featureAxes = ['x', 'y'] as const
+const arcKinds = ['bore_arc', 'boss_arc'] as const
 const narrowFeatures = ['slot', 'ridge'] as const
 
 /** A status line whose text is made when it is shown, so it follows a language change. */
@@ -112,10 +114,10 @@ function openGuide(target: MaterialGuideTarget): void {
     guide.value = target
   }
 }
-function startGuide(size: number, angle: AngleEdge): void {
+function startGuide(size: number, angle: AngleEdge, angles: Angles): void {
   const target = guide.value
   guide.value = null
-  if (target !== null) probe(target, size, angle)
+  if (target !== null) probe(target, size, angle, angles)
 }
 /** A Z height map (#247): its grid dialog, and its last result for the card and the 3D view. */
 const choosingMap = shallowRef(false)
@@ -206,7 +208,7 @@ function applyRotation(): void {
   send(request)
 }
 
-function probe(target: MaterialGuideTarget, size: number, angle: AngleEdge): void {
+function probe(target: MaterialGuideTarget, size: number, angle: AngleEdge, angles: Angles): void {
   if (pending.value) return
   cycleFailed.value = false
   edgeRotation.value = null
@@ -228,7 +230,7 @@ function probe(target: MaterialGuideTarget, size: number, angle: AngleEdge): voi
       reason = (): string => t('probe.materialProbe.touchOffZTop', { tool })
     if (target.kind === 'corner')
       reason = (): string => t('probe.materialProbe.touchOffCorner', { tool })
-    if (target.kind === 'boss') reason = (): string => t('probe.materialProbe.touchOffBoss', { tool })
+    if (target.kind === 'boss' || target.kind === 'boss_arc') reason = (): string => t('probe.materialProbe.touchOffBoss', { tool })
     if (target.kind === 'ridge') reason = (): string => t('probe.materialProbe.touchOffRidge', { tool })
     if (target.kind === 'ball') reason = (): string => t('probe.materialProbe.touchOffGauge', { tool })
   }
@@ -266,6 +268,14 @@ function probe(target: MaterialGuideTarget, size: number, angle: AngleEdge): voi
       request = { ...position, action: 'boss', diameter: size }
       busy = (): string => t('probe.materialProbe.bossBusy')
       break
+    case 'bore_arc':
+      request = { ...position, action: 'bore_arc', angles: [...angles] }
+      busy = (): string => t('probe.materialProbe.arcBoreBusy')
+      break
+    case 'boss_arc':
+      request = { ...position, action: 'boss_arc', angles: [...angles], diameter: size }
+      busy = (): string => t('probe.materialProbe.arcBossBusy')
+      break
     case 'bore':
     case 'pocket':
       request = { ...position, action: target.kind }
@@ -287,7 +297,8 @@ function probe(target: MaterialGuideTarget, size: number, angle: AngleEdge): voi
   // Only the actions the controller can run measure-only: a later action writes unless it says so.
   if (measureOnly.value && (request.action === 'material' || request.action === 'corner' ||
       request.action === 'inside_corner' || request.action === 'pocket' || request.action === 'slot' ||
-      request.action === 'ridge' || request.action === 'bore' || request.action === 'boss' || request.action === 'angle'))
+      request.action === 'ridge' || request.action === 'bore' || request.action === 'boss' || request.action === 'bore_arc' ||
+      request.action === 'boss_arc' || request.action === 'angle'))
     request = { ...request, measure_only: true }
   pending.value = request
   line.value = { text: busy, level: 'busy' }
@@ -391,6 +402,18 @@ const removeListener = onResult((command, result) => {
     line.value = request.direction === 'y_plus'
       ? { text: (): string => t('probe.materialProbe.angleFrontDone', values), level: 'done' }
       : { text: (): string => t('probe.materialProbe.angleLeftDone', values), level: 'done' }
+    return
+  }
+  if (request.action === 'bore_arc' || request.action === 'boss_arc') {
+    const measured = result.setter?.center_diameter
+    if (result.outcome !== 'accepted' || measured === undefined || !result.setter?.material) {
+      line.value = failure((): string => t('probe.materialProbe.noOrigin'))
+      return
+    }
+    setterState.value = result.setter
+    const values = { wcs: wcsName(result.setter.material.wcs), diameter: measured.toFixed(3), span: (result.setter.arc_span ?? 0).toFixed(0),
+      uncertainty: (result.setter.center_uncertainty ?? 0).toFixed(3) }
+    line.value = { text: (): string => t('probe.materialProbe.arcDone', values), level: 'done' }
     return
   }
   if (request.action === 'bore' || request.action === 'boss') {
@@ -557,6 +580,18 @@ onBeforeUnmount(() => {
                 :aria-label="t('probe.materialProbe.insideCornerLabel', { corner: corner.label })" @click="openGuide({ kind: 'inside_corner', x: corner.x, y: corner.y })"
               >
                 {{ corner.label }}
+              </button>
+            </div>
+          </div>
+          <div class="feature-row">
+            <span>{{ t('probe.materialProbe.arcFeature') }}</span>
+            <div class="feature-buttons">
+              <button
+                v-for="kind in arcKinds" :key="kind" class="btn" type="button"
+                :aria-label="kind === 'bore_arc' ? t('probe.materialProbe.arcBoreLabel') : t('probe.materialProbe.arcBossLabel')"
+                @click="openGuide({ kind })"
+              >
+                {{ kind === 'bore_arc' ? t('probe.materialProbe.arcBore') : t('probe.materialProbe.arcBoss') }}
               </button>
             </div>
           </div>

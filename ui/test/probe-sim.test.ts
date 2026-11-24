@@ -268,6 +268,76 @@ describe('browser probe scene', () => {
     expect(result(id)?.reason).toBe('Choose a rectangle and a step of 0.5 mm or more for 2 to 150 points.')
   })
 
+  it.each([0, 7.5, -30])('finds the bore and boss from three contacts, also on a partial arc, rotated %s°', (degrees) => {
+    const cases = [
+      ['bore', [155, 108], 19.96, { action: 'bore_arc', angles: [0, 120, 240] }],
+      ['bore', [155, 108], 19.96, { action: 'bore_arc', angles: [-90, -45, 0] }],
+      ['boss', [235, 170], 24.04, { action: 'boss_arc', angles: [90, 180, 270], diameter: 24 }],
+      ['boss', [235, 170], 24.04, { action: 'boss_arc', angles: [190, 240, 290], diameter: 24 }],
+    ] as const
+    for (const [setup, centre, diameter, mode] of cases) {
+      const { sim, cycle } = scene(setup)
+      sim.modal.rotations[0] = degrees
+      const measured = cycle({ ...mode, angles: [...mode.angles] })
+      expect(measured.setter?.material).toEqual({ wcs: 1, axis: 'XY' })
+      expect(measured.setter?.center_diameter).toBeCloseTo(diameter)
+      expect(measured.setter?.arc_span).toBeGreaterThanOrEqual(90)
+      expect(measured.setter?.center_uncertainty).toBeGreaterThan(0)
+      expect(measured.setter?.center_uncertainty).toBeLessThanOrEqual(0.02)
+      expect(sim.status().offsets.g5x[0]).toBeCloseTo(centre[0])
+      expect(sim.status().offsets.g5x[1]).toBeCloseTo(centre[1])
+      expect(sim.status().offsets.rotation_xy).toBe(degrees)
+    }
+  })
+
+  it.each([0, 7.5, -30])('measures a 3-point bore and boss only, then sets them on confirmation, rotated %s°', (degrees) => {
+    const cases = [
+      ['bore', [155, 108], { action: 'bore_arc', angles: [-90, -45, 0], measure_only: true }],
+      ['boss', [235, 170], { action: 'boss_arc', angles: [90, 180, 270], diameter: 24, measure_only: true }],
+    ] as const
+    for (const [setup, centre, mode] of cases) {
+      const { sim, cycle, send, result } = scene(setup)
+      sim.modal.rotations[0] = degrees
+      const before = structuredClone(sim.status().offsets)
+      const measured = cycle({ ...mode, angles: [...mode.angles] })
+      expect(sim.status().offsets).toEqual(before)
+      expect(measured.setter?.material).toBeUndefined()
+      expect(measured.setter?.center_uncertainty).toBeLessThanOrEqual(0.02)
+      const report = measured.setter?.measured
+      expect(report).toMatchObject({ wcs: 1, axes: 'XY' })
+      expect(report?.faces).toHaveLength(3)
+      expect(report?.machine?.[0]).toBeCloseTo(centre[0])
+      expect(report?.machine?.[1]).toBeCloseTo(centre[1])
+      const id = report?.measurement_id
+      if (id === undefined) throw new Error('Missing measurement')
+      expect(result(send({ type: 'fixed_setter', action: 'apply_measurement', tool: 99, measurement_id: id }))?.setter?.material)
+        .toEqual({ wcs: 1, axis: 'XY' })
+      expect(sim.status().offsets.g5x[0]).toBeCloseTo(centre[0])
+      expect(sim.status().offsets.g5x[1]).toBeCloseTo(centre[1])
+      expect(sim.status().offsets.rotation_xy).toBe(degrees)
+    }
+  })
+
+  it('refuses 3-point directions too close together before moving', () => {
+    const { sim, submit, result } = scene('bore')
+    const before = structuredClone(sim.status().offsets)
+    for (const angles of [[0, 5, 90], [0, 12, 24], [350, 365, 10], [-44, 0, 44], [-80, -40, 0]] as const) {
+      const id = submit({ action: 'bore_arc', angles: [...angles] })
+      expect(result(id)?.reason).toBe('Enter three probe angles at least 10° apart that cover at least 90° of the circle.')
+    }
+    expect(sim.status().offsets).toEqual(before)
+  })
+
+  it('refuses a 3-point boss far from the entered diameter, as the controller does', () => {
+    const { sim, submit, result } = scene('boss')
+    const before = structuredClone(sim.status().offsets)
+    const id = submit({ action: 'boss_arc', angles: [90, 180, 270], diameter: 30 })
+    sim.advanceUntil(() => result(id) !== undefined, 30_000)
+    expect(result(id)?.reason).toBe('The contacts give a boss of Ø 24.040 mm, which differs from the entered Ø 30.000 mm by more than 0.5 mm or 10 %. ' +
+      'Check that all three touched the boss, then probe again.')
+    expect(sim.status().offsets).toEqual(before)
+  })
+
   it.each([0, 7.5, -30])('measures the bore and boss only, then sets them on confirmation, rotated %s°', (degrees) => {
     for (const [setup, centre, diameter] of [['bore', [155, 108], 19.96], ['boss', [235, 170], 24.04]] as const) {
       const { sim, cycle, send, result } = scene(setup)

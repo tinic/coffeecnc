@@ -1,4 +1,5 @@
 import { t } from './i18n'
+import type { Angles } from './arc'
 import type { FixedSetterLimits, ProbeAxis, ProbeDirection, Vec3 } from './protocol'
 
 type Edge = Exclude<ProbeDirection, 'z_top'>
@@ -10,7 +11,7 @@ export type MaterialGuideTarget =
   | { kind: 'pocket' }
   | { kind: 'slot'; axis: ProbeAxis }
   | { kind: 'ridge'; axis: ProbeAxis }
-  | { kind: 'bore' | 'boss' | 'angle' | 'ball' }
+  | { kind: 'bore' | 'boss' | 'angle' | 'ball' | 'bore_arc' | 'boss_arc' }
 export type ProbeGuideTarget = MaterialGuideTarget | { kind: 'teach' | 'measure' | 'check' }
 
 export interface ProbeGuideStep {
@@ -47,11 +48,15 @@ const inputs = {
   ball: { label: (): string => t('probe.guide.inputGauge'), initial: '', min: 2, max: 200 },
   angle: { label: (): string => t('probe.guide.inputDistance'), initial: '50', min: 5, max: 300, signed: true },
   ridge: { label: (): string => t('probe.guide.inputRidge'), initial: '', min: 2, max: 200 },
+  boss_arc: { label: (): string => t('probe.guide.inputDiameter'), initial: '', min: 2, max: 200 },
 }
+/** The three directions a 3-point cycle starts with: around the whole circle. */
+export const defaultArcAngles: Angles = [0, 120, 240]
 
 /** The dimension the operator enters for this target, labelled in the panel's language. */
 export function guideInput(target: ProbeGuideTarget): GuideInput | undefined {
-  if (target.kind !== 'boss' && target.kind !== 'ball' && target.kind !== 'angle' && target.kind !== 'ridge') return undefined
+  if (target.kind !== 'boss' && target.kind !== 'ball' && target.kind !== 'angle' && target.kind !== 'ridge' &&
+      target.kind !== 'boss_arc') return undefined
   const { label, ...input } = inputs[target.kind]
   return { ...input, label: label() }
 }
@@ -93,10 +98,13 @@ interface Face {
   contact: Vec3
   surface: Vec3
   axis: 0 | 1 | 2
+  /** A search along an XY direction rather than an axis: its unit vector. */
+  along?: readonly [number, number]
 }
 
 /** Representative workpiece geometry. Directions and move order match the native cycles. */
-export function probeGuide(target: ProbeGuideTarget, limits: FixedSetterLimits | undefined, angle: AngleEdge, distance: number | null): ProbeGuidePlan {
+export function probeGuide(target: ProbeGuideTarget, limits: FixedSetterLimits | undefined, angle: AngleEdge, distance: number | null,
+  arc: Angles = defaultArcAngles): ProbeGuidePlan {
   let title: string
   let setup: string
   let result: string
@@ -216,6 +224,39 @@ export function probeGuide(target: ProbeGuideTarget, limits: FixedSetterLimits |
       faces = [inner(0, 1), inner(0, -1), inner(1, 1), inner(1, -1)]
       break
     }
+    case 'bore_arc':
+    case 'boss_arc': {
+      // Three searches along the chosen directions: outward from inside a bore of radius 13,
+      // inward from outside a boss of radius 14.
+      const inside = target.kind === 'bore_arc'
+      title = inside ? t('probe.guide.titleBoreArc') : t('probe.guide.titleBossArc')
+      setup = inside ? t('probe.guide.setupBoreArc') : t('probe.guide.setupBossArc')
+      result = t('probe.guide.resultArc')
+      example = t('probe.guide.exampleCentre', { diameter: inside ? '26' : '28' })
+      object = inside ? 'bore' : 'boss'
+      clearance = inside ? null : 9
+      start = inside ? [2, -3, -4] : [0, 0, 9]
+      datum = [0, 0, 0]
+      const z = inside ? -4 : -tipRadius - 2
+      faces = arc.map((degrees): Face => {
+        const unit: [number, number] = [Math.cos(degrees * Math.PI / 180), Math.sin(degrees * Math.PI / 180)]
+        const label = t('probe.guide.contactAt', { angle: String(degrees) })
+        const above = t('probe.guide.aboveContact', { angle: String(degrees) })
+        if (inside) {
+          // From the start, outward to the circle the ball centre touches.
+          const [x, y] = [start[0], start[1]]
+          const dot = x * unit[0] + y * unit[1]
+          const reach = -dot + Math.sqrt(dot * dot - (x * x + y * y - (13 - tipRadius) ** 2))
+          const contact: Vec3 = [x + unit[0] * reach, y + unit[1] * reach, z]
+          return { label, above, start, contact, along: unit, axis: Math.abs(unit[0]) >= Math.abs(unit[1]) ? 0 : 1,
+            surface: [contact[0] + unit[0] * tipRadius, contact[1] + unit[1] * tipRadius, z] }
+        }
+        const point = (radius: number): Vec3 => [unit[0] * radius, unit[1] * radius, z]
+        return { label, above, start: point(27), contact: point(14 + tipRadius), surface: point(14),
+          along: [-unit[0], -unit[1]], axis: Math.abs(unit[0]) >= Math.abs(unit[1]) ? 0 : 1 }
+      })
+      break
+    }
     case 'boss':
     case 'ball': {
       const boss = target.kind === 'boss'
@@ -292,12 +333,18 @@ export function probeGuide(target: ProbeGuideTarget, limits: FixedSetterLimits |
     }
     steps.push({ label: t('probe.guide.stepSearch', { face: face.label }), point: face.contact, kind: 'search', contact: face.surface })
     if (latch) {
-      const available = Math.abs(face.start[face.axis] - face.contact[face.axis])
+      const along = face.along
+      const available = along
+        ? Math.hypot(face.start[0] - face.contact[0], face.start[1] - face.contact[1])
+        : Math.abs(face.start[face.axis] - face.contact[face.axis])
       const requested = limits?.latch_backoff_mm ?? 1
       const backoff = object === 'setter' ? requested : Math.min(available, requested)
       const retreat = face.contact[face.axis] + Math.sign(face.start[face.axis] - face.contact[face.axis]) * backoff
+      const back: Vec3 = along
+        ? [face.contact[0] - along[0] * backoff, face.contact[1] - along[1] * backoff, face.contact[2]]
+        : position(face.contact, face.axis, retreat)
       for (let pass = 1; pass <= 3; pass++) {
-        steps.push({ label: t('probe.guide.stepBackOff'), point: position(face.contact, face.axis, retreat), kind: 'move' },
+        steps.push({ label: t('probe.guide.stepBackOff'), point: back, kind: 'move' },
           { label: t('probe.guide.stepLatch', { pass: String(pass) }), point: face.contact, kind: 'contact', contact: face.surface })
       }
     }

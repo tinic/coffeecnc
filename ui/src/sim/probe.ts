@@ -2,6 +2,10 @@ import type { FixedSetter, ProbedPoint, ProbeDirection, SetterMeasured, SetterSt
 import { demoFixture, demoProbe, demoProbeTools, demoSetter, type ProbeBlock } from './probe-fixture'
 import { toWork, type Modal } from './gcode'
 import { heightGrid } from '../height-map'
+import {
+  arcAnglesValid, arcCentreUncertainty, arcMaxCentreUncertainty, arcMinMeasuredSpan, bossDiameterPlausible, circleThrough, contactSigma,
+  measuredSpan,
+} from '../arc'
 
 type XY = [number, number]
 type Lateral = Exclude<ProbeDirection, 'z_top'>
@@ -426,6 +430,47 @@ export class SimProbe {
     if (tableRadius <= 0) return 'Set the probe ball diameter first.'
     // Two frame faces as the machine point where the work system reads X0 Y0.
     const corner = (x: number, y: number): Vec3 => fromFrame([x, y, start[2]])
+    if (command.action === 'bore_arc' || command.action === 'boss_arc') {
+      if (!arcAnglesValid(command.angles))
+        return 'Enter three probe angles at least 10° apart that cover at least 90° of the circle.'
+      const inside = command.action === 'bore_arc'
+      if (inside && (radiusFrom(start, bore) >= boreRadius - rubyRadius ||
+          start[2] + rubyRadius >= gaugeZ || start[2] < gaugeZ - stockHeight)) return 'Jog the ball into the simulated bore below its top.'
+      if (!inside) {
+        if (!(command.diameter >= 2 && command.diameter <= 200)) return 'Enter a size from 2 to 200 mm.'
+        if (!applied || Math.abs(toWork(modal, [start[0], start[1], gaugeZ])[2]) > 0.1 || start[2] <= gaugeZ)
+          return 'Touch off T99, set Z0 on the feature top, and start above it.'
+        if (radiusFrom(start, boss) >= bossRadius) return 'Start above the simulated boss.'
+      }
+      const contacts: [number, number][] = []
+      for (const [index, degrees] of command.angles.entries()) {
+        const heading = turn([1, 0], degrees)
+        const contact = inside
+          ? lateral(path, start, axisOf(heading), rayRound(start, axisOf(heading), bore, boreRadius - rubyRadius, true))
+          : outside(path, gaugeZ, start, axisOf([-heading[0], -heading[1]]), command.diameter / 2 + reach + margin + rubyRadius,
+            at => rayRound(at, axisOf([-heading[0], -heading[1]]), boss, bossRadius + rubyRadius, false))
+        if (!contact) return `Contact ${String(index + 1)} at ${degrees.toFixed(1)}°: ${noContact}`
+        const [u, v] = toFrame(contact)
+        contacts.push([u, v])
+      }
+      const [a, b, c] = contacts as [[number, number], [number, number], [number, number]]
+      const circle = circleThrough([a, b, c])
+      const span = circle ? measuredSpan([a, b, c], circle.centre) : 0
+      if (!circle || span < arcMinMeasuredSpan)
+        return `The three contacts lie almost on a line: they cover ${span.toFixed(1)}° of a circle. Spread the angles further, and check that all three touched the same round wall.`
+      const surface = circle.radius + (inside ? tableRadius : -tableRadius)
+      if (!(surface > 0) || Math.hypot(startFrame[0] - circle.centre[0], startFrame[1] - circle.centre[1]) >= surface)
+        return 'The circle through the contacts does not enclose the confirmed starting point.'
+      if (!inside && !bossDiameterPlausible(2 * surface, command.diameter))
+        return `The contacts give a boss of Ø ${(2 * surface).toFixed(3)} mm, which differs from the entered Ø ${command.diameter.toFixed(3)} mm by more than 0.5 mm or 10 %. Check that all three touched the boss, then probe again.`
+      // The simulated latch repeats exactly: each contact counts with the 1 µm floor.
+      const sigma = contactSigma(0)
+      const uncertainty = arcCentreUncertainty([a, b, c], circle.centre, [sigma, sigma, sigma])
+      if (uncertainty === null || uncertainty > arcMaxCentreUncertainty)
+        return `The estimated centre uncertainty from latch repeatability is ${(uncertainty ?? Infinity).toFixed(3)} mm, more than 0.02 mm: the contacts cover ${span.toFixed(1)}° with a latch spread up to 0.0000 mm. Spread the angles further and probe again.`
+      const offset = origin(corner(circle.centre[0], circle.centre[1]), 'XY')
+      return { ...offset, finish: () => ({ ...offset.finish(), center_diameter: 2 * surface, arc_span: span, center_uncertainty: uncertainty }) }
+    }
     if (command.action === 'bore') {
       if (radiusFrom(start, bore) >= boreRadius - rubyRadius ||
           start[2] + rubyRadius >= gaugeZ || start[2] < gaugeZ - stockHeight) return 'Jog the ball into the simulated bore below its top.'

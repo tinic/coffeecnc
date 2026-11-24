@@ -91,6 +91,17 @@ void command_results() {
   require(partial.at("outcome") == "failed" && stopped.at("partial") == "The height map was stopped." &&
               stopped.at("points").at(0).at("work").at(2) == 0.01 && stopped.at("points").at(1).is_null(),
           "A partial height map fails with the points measured so far and null for the rest");
+  SetterState arc{};
+  arc.material = SetterState::Material{2, 'X', true};
+  arc.center_diameter = 16;
+  arc.arc_span_deg = 120;
+  arc.center_uncertainty_mm = 0.005;
+  const auto arc_json = Json::parse(encode_result(42, CommandOutcome::accepted, "", arc)).at("setter");
+  require(arc_json.at("center_diameter") == 16 && arc_json.at("arc_span") == 120 &&
+              arc_json.at("center_uncertainty") == 0.005 &&
+              arc_json.at("material").at("axis") == "XY",
+          "A three-point result reports the diameter, the arc the contacts covered and the "
+          "centre uncertainty");
   SetterState bore{};
   bore.center_diameter = 16;
   bore.measured = SetterState::Measured{

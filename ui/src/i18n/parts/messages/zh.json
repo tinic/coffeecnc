@@ -164,6 +164,7 @@
       "missingField": "缺少必填字段：{field}。",
       "unexpectedField": "请求中有意外的字段。",
       "expectedString": "应为字符串：{field}。",
+      "expectedAngles": "需要三个以度为单位的探测角度。",
       "nulInString": "请求字符串中不允许出现 NUL。",
       "expectedNumber": "应为数字：{field}。",
       "expectedFinite": "应为有限数字：{field}。",

@@ -70,6 +70,8 @@ A rejected `result` may include `refusal`. Operator `message` records, results w
 
 A message can also include `params_localization` alongside `key` and `params`. Each member names a string already present in `params` and carries a `key` with string `params` for that argument. The panel translates one level of arguments and falls back to the original argument when its metadata is absent or invalid. An ignored request with no usable ID uses this field for the decoder's explanation.
 
+For a list argument, `params_lists` maps a name in `params` to an array of entries with `text` and optional `localization` (a key and string parameters). The panel translates each entry and uses its text as a fallback. The original joined string in `params` serves older panels and invalid lists.
+
 Program Check keeps its English `errors` and `warnings` arrays and may also send `errors_localization` or `warnings_localization`. Entries in these arrays match the corresponding English array by position. A null entry uses its English fallback.
 
 When the decoder has a catalog key and an unambiguous request ID, the rejected result carries the key. Field names are supplied as text parameters. Invalid requests without a usable ID are reported with the `messages.session.requestIgnored` operator message and its detail.

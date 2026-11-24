@@ -175,17 +175,22 @@ public:
   }
   // Removes that file (a missing one is not a failure) and fsyncs its directory.
   [[nodiscard]] virtual auto remove_beneath(const std::string& root, const std::string& relative)
-      -> Done {
+      -> std::expected<void, LocalizedReason> {
     static_cast<void>(relative);
-    return std::unexpected(root + " cannot be written here");
+    return std::unexpected(
+        LocalizedReason{std::format("{} cannot be written here", root),
+                        MessageKey{"backend.machineData.writeHere", {{"path", root}}}});
   }
   // Replaces that file by a symbolic link to `target` (symlinkat beside it, rename, fsync of the
   // directory): what a restore put back where a link was.
   [[nodiscard]] virtual auto link_beneath(const std::string& root, const std::string& relative,
-                                          const std::string& target) -> Done {
+                                          const std::string& target)
+      -> std::expected<void, LocalizedReason> {
     static_cast<void>(relative);
     static_cast<void>(target);
-    return std::unexpected(root + " cannot be written here");
+    return std::unexpected(
+        LocalizedReason{std::format("{} cannot be written here", root),
+                        MessageKey{"backend.machineData.writeHere", {{"path", root}}}});
   }
 
 protected:
@@ -225,9 +230,10 @@ public:
                                      std::string_view bytes, unsigned mode,
                                      std::optional<unsigned> group) -> Replaced override;
   [[nodiscard]] auto remove_beneath(const std::string& root, const std::string& relative)
-      -> Done override;
+      -> std::expected<void, LocalizedReason> override;
   [[nodiscard]] auto link_beneath(const std::string& root, const std::string& relative,
-                                  const std::string& target) -> Done override;
+                                  const std::string& target)
+      -> std::expected<void, LocalizedReason> override;
   [[nodiscard]] auto append(const std::string& path, std::string_view bytes) -> Done override;
 
 private:

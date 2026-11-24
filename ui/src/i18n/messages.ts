@@ -79,6 +79,25 @@ function translateArgument(name: string, value: string): string {
   return nested.has(name) ? translateMessage(value) : value
 }
 
+function translateList(value: unknown): string | undefined {
+  if (!Array.isArray(value) || value.length === 0) return
+  const items: string[] = []
+  for (const entry of value as unknown[]) {
+    if (entry === null || typeof entry !== 'object' || !('text' in entry) || typeof entry.text !== 'string')
+      return
+    const localization = 'localization' in entry ? entry.localization : undefined
+    items.push(translateParameter(localization) ?? entry.text)
+  }
+  return items.join(i18n.global.t('common.detailListSeparator'))
+}
+
+function translateParameter(parameter: unknown): string | undefined {
+  if (parameter === null || typeof parameter !== 'object' || !('key' in parameter) ||
+      typeof parameter.key !== 'string' || !('params' in parameter)) return
+  // Keys for individual arguments carry no nested arguments of their own.
+  return translateKey({ key: parameter.key, params: parameter.params })
+}
+
 function translateKey(message: unknown): string | undefined {
   if (message === null || typeof message !== 'object' ||
     !('key' in message) || typeof message.key !== 'string' || !('params' in message)) return
@@ -89,16 +108,16 @@ function translateKey(message: unknown): string | undefined {
   const keys = typeof localization === 'object' && localization !== null && !Array.isArray(localization)
     ? localization as Record<string, { key: string; params: Record<string, string> } | undefined>
     : undefined
+  const listMetadata = 'params_lists' in message ? message.params_lists : undefined
+  const argumentLists = typeof listMetadata === 'object' && listMetadata !== null && !Array.isArray(listMetadata)
+    ? listMetadata as Record<string, unknown> : undefined
   const params: Params = {}
   for (const name of names) {
     const value = (args as Record<string, unknown>)[name]
     if (!Object.hasOwn(args, name) || typeof value !== 'string') return
     const parameter = keys && Object.hasOwn(keys, name) ? keys[name] : undefined
-    // Only one level of message keys is carried for parameters.
-    const translated = parameter && typeof parameter.key === 'string'
-      ? translateKey({ key: parameter.key, params: parameter.params })
-      : undefined
-    params[name] = translated ?? translateArgument(name, value)
+    const entries = argumentLists && Object.hasOwn(argumentLists, name) ? argumentLists[name] : undefined
+    params[name] = translateList(entries) ?? translateParameter(parameter) ?? translateArgument(name, value)
   }
   return i18n.global.t(message.key as never, params)
 }

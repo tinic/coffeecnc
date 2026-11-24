@@ -151,6 +151,15 @@ void localization_survives_reload() {
   const MessageKey ignored{"messages.session.requestIgnored",
                            {{"detail", "Missing required field: id."}},
                            {{"detail", {"messages.request.missingField", {{"field", "id"}}}}}};
+  const MessageKey restore{
+      "backend.machineData.notPutBack",
+      {{"files", "Removal failed; name from the operating system"}},
+      {},
+      {{"files",
+        {{"Removal failed",
+          MessageParameterKey{"backend.machineData.rollbackRemove",
+                              {{"path", "tools.tbl"}, {"osError", "Permission denied"}}}},
+         {"name from the operating system"}}}}};
   const std::vector messages{
       encode_message(MessageLevel::info, "Jog stopped: probe contact", epoch, contact),
       encode_result(1, CommandOutcome::rejected,
@@ -160,24 +169,68 @@ void localization_survives_reload() {
       std::string{
           R"({"type":"message","level":"error","text":"Keep this text","localization":{"key":"invalid","params":{"x":7}}})"},
       std::string{
-          R"({"type":"message","level":"error","text":"Panel request ignored: Bad packet.","localization":{"key":"messages.session.requestIgnored","params":{"detail":"Bad packet."},"params_localization":{"detail":{"key":"messages.request.missingField","params":{"field":7}}}}})"}};
+          R"({"type":"message","level":"error","text":"Panel request ignored: Bad packet.","localization":{"key":"messages.session.requestIgnored","params":{"detail":"Bad packet."},"params_localization":{"detail":{"key":"messages.request.missingField","params":{"field":7}}}}})"},
+      encode_message(MessageLevel::error, "Restore failed", epoch, restore)};
   f.log->posted(page, messages, epoch);
   f.log->settle();
   f.open();
   const auto view = f.log->view();
-  require(view.entries.size() == 6 && view.skipped == 0, "Both older and localized records reload");
+  require(view.entries.size() == 7 && view.skipped == 0, "Both older and localized records reload");
   require(!view.entries[0].localization && view.entries[1].localization == contact &&
               view.entries[2].localization == refusal && view.entries[3].localization == ignored &&
               !view.entries[4].localization && view.entries[4].text == "Keep this text" &&
               view.entries[5].localization ==
-                  MessageKey{"messages.session.requestIgnored", {{"detail", "Bad packet."}}},
+                  MessageKey{"messages.session.requestIgnored", {{"detail", "Bad packet."}}} &&
+              view.entries[6].localization == restore,
           "Known metadata survives reload and invalid metadata does not discard English text");
   const auto wire = Json::parse(encode_alarm_log(view)).at("entries");
   require(wire[1].at("localization").at("key") == contact.key &&
               wire[2].at("localization").at("params").at("axis") == "Z" &&
               wire[3].at("localization").at("params_localization").at("detail") ==
-                  Json{{"key", "messages.request.missingField"}, {"params", {{"field", "id"}}}},
+                  Json{{"key", "messages.request.missingField"}, {"params", {{"field", "id"}}}} &&
+              wire[6].at("localization").at("params_lists").at("files")[1].at("text") ==
+                  "name from the operating system",
           "The alarm log provides keys and arguments to the next page");
+}
+
+void oversized_warning_lists_keep_the_alarm_key() {
+  Fixture f;
+  const std::string error = "Permission denied";
+  MessageKey restore{"backend.machineData.notPutBack",
+                     {{"detail", "Replacement failed"}, {"files", ""}, {"path", "/backup"}},
+                     {{"detail",
+                       {"backend.machineData.configNotReplaced",
+                        {{"path", "/config/tool.tbl"}, {"detail", error}}}}}};
+  auto& list = restore.params_lists["files"];
+  for (int i = 0; i < 6; ++i) {
+    const auto path = std::format("/config/{}/{}.hal", std::string(100, 'p'), i);
+    const auto reason = std::format("{} cannot be removed: {}", path, error);
+    if (i != 0)
+      restore.params["files"] += "; ";
+    restore.params["files"] += reason;
+    list.push_back({reason, MessageParameterKey{"backend.machineData.rollbackRemove",
+                                                {{"path", path}, {"osError", error}}}});
+  }
+  const auto fallback = "Restore incomplete: " + restore.params.at("files");
+  const auto input = encode_message(MessageLevel::error, fallback, epoch, restore);
+  const auto metadata = Json::parse(input).at("localization");
+  require(metadata.dump().size() > AlarmLog::max_text_bytes,
+          "Six warnings exceed the per-alarm localization allowance");
+  auto base = restore;
+  base.params_lists.clear();
+  auto too_large = restore;
+  too_large.params["files"] = std::string(AlarmLog::max_text_bytes, 'f');
+  const std::vector messages{
+      input, encode_message(MessageLevel::error, "Fallback only", epoch, too_large)};
+  f.log->posted(page, messages, epoch);
+  f.log->settle();
+  f.open();
+  const auto view = f.log->view();
+  require(view.entries.size() == 2 && view.entries[0].text == fallback &&
+              view.entries[0].localization == base,
+          "The alarm retains its key, original warning strings and nested cause after reload");
+  require(view.entries[1].text == "Fallback only" && !view.entries[1].localization,
+          "An oversized base reason keeps its fallback without exceeding the original limit");
 }
 
 void snapshot_has_what_came_before() {
@@ -602,6 +655,7 @@ auto main(int argc, char** argv) -> int {
   try {
     records_messages_and_refusals();
     localization_survives_reload();
+    oversized_warning_lists_keep_the_alarm_key();
     snapshot_has_what_came_before();
     ordering_across_restarts();
     corruption_tolerance();

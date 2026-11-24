@@ -14,7 +14,6 @@
 #include <cstddef>
 #include <format>
 #include <iostream>
-#include <map>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -473,15 +472,12 @@ auto Session::submit(PageToken page, std::string_view json, Instant now,
     return outcome;
   if (const auto* error = std::get_if<DecodeError>(&decoded)) {
     if (!error->id) {
-      std::map<std::string, MessageParameterKey> parameters;
-      if (const auto& detail = error->localization)
-        parameters.emplace("detail", MessageParameterKey{detail->key, detail->params});
       outcome.messages.push_back(
           encode_message(MessageLevel::error,
                          std::format("Panel request ignored: {}", error->reason), now.unix_time,
                          MessageKey{"messages.session.requestIgnored",
                                     {{"detail", error->reason}},
-                                    std::move(parameters)}));
+                                    parameter_localization("detail", error->localization)}));
     } else if (in_order(*error->id))
       outcome.messages.push_back(
           encode_result(*error->id, CommandOutcome::rejected, error->reason, {}, {},
@@ -2423,9 +2419,11 @@ auto Session::list_directory(const ListDirectory& request, Stage& step) -> Reply
   auto message = encode_directory(*directory);
   if (!message)
     return {CommandOutcome::rejected,
-            std::format("Directory cannot be sent: {}", message.error()),
+            std::format("Directory cannot be sent: {}", message.error().text),
             {},
-            MessageKey{"messages.session.directoryNotSent", {{"detail", message.error()}}}};
+            MessageKey{"messages.session.directoryNotSent",
+                       {{"detail", message.error().text}},
+                       parameter_localization("detail", message.error().localization)}};
   step.produced.push_back(std::move(*message)); // `truncated` in it tells of a cut listing.
   return {};
 }

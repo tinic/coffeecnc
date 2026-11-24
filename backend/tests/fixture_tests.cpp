@@ -325,6 +325,14 @@ auto encoded_messages() -> std::vector<Encoded> {
       MessageKey{"messages.session.requestIgnored",
                  {{"detail", "Missing required field: id."}},
                  {{"detail", {"messages.request.missingField", {{"field", "id"}}}}}}));
+  messages.emplace_back(encode_message(
+      MessageLevel::error,
+      "The machine status cannot be shown: status: motion.velocity is not a finite number.",
+      1700000001300ms,
+      MessageKey{
+          "messages.panelFeed.statusCannotShow",
+          {{"detail", "status: motion.velocity is not a finite number."}},
+          {{"detail", {"messages.wire.notFinite", {{"field", "status: motion.velocity"}}}}}}));
   messages.emplace_back(encode_result(41, CommandOutcome::accepted, ""));
   messages.emplace_back(
       encode_result(42, CommandOutcome::rejected, "Home all configured axes first."));
@@ -382,14 +390,10 @@ auto encoded_messages() -> std::vector<Encoded> {
   ToolModelAssignment end_mill{{3, 3, 6, "End mill 6 mm"}, ToolFamily::end_mill, {}};
   end_mill.overrides.stickout = 30;
   saved.document = ToolModelDocument{factory_tool_defaults(), {end_mill}};
-  const auto tool_model_message = [](const ToolModels& models) -> Encoded {
-    return encode_tool_models(models).transform_error(
-        [](LocalizedReason reason) -> std::string { return std::move(reason.text); });
-  };
-  messages.push_back(tool_model_message(saved));
+  messages.push_back(encode_tool_models(saved));
   ToolModels session_only;
   session_only.reason = "No machine identity configured";
-  messages.push_back(tool_model_message(session_only));
+  messages.push_back(encode_tool_models(session_only));
   ToolModels in_use;
   in_use.machine_id = "G0759";
   in_use.availability = ToolModelAvailability::unavailable;
@@ -397,11 +401,11 @@ auto encoded_messages() -> std::vector<Encoded> {
                   "Tool models are not saved.";
   in_use.reason_localization =
       MessageKey{"backend.toolModelStore.inUse", {{"path", "/data/G0759"}}};
-  messages.push_back(tool_model_message(in_use));
+  messages.push_back(encode_tool_models(in_use));
   if (auto localized = encode_tool_models_reason(in_use))
     messages.emplace_back(std::move(*localized));
   else
-    messages.emplace_back(std::unexpected("Missing tool-model reason"));
+    messages.emplace_back(std::unexpected(LocalizedReason{"Missing tool-model reason"}));
   messages.push_back(
       encode_operator_settings({"G0759", 2, ToolModelAvailability::available, "",
                                 OperatorPreferences{StartupUnits::inch, {1, 2, 3}, 1800, 600, 6.35,
@@ -839,7 +843,7 @@ void every_machine_message_encodes() {
     const auto& fixture = fixtures.at(i);
     const auto label = "Message " + std::to_string(i) + " (" + fixture.value("type", "?") + ")";
     const auto& message = messages.at(i);
-    require(message.has_value(), label + " encodes: " + message.error_or(""));
+    require(message.has_value(), label + " encodes: " + message.error_or(LocalizedReason{}).text);
     if (!message)
       continue;
     require(Json::parse(*message) == fixture, label + " is what the encoder sends: " + *message);

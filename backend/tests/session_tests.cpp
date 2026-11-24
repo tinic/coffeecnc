@@ -1191,6 +1191,16 @@ void directory_listing() {
           "A directory error carries the original detail and its catalog key");
   rig.acted({}, "A refused listing is not a controller action either");
 
+  rig.files.file("/home/cnc/nc_files/invalid-time/part.ngc", "", 9007199254740992);
+  const auto encoded = rig.result(R"("type":"list_directory","path":"invalid-time")");
+  require(encoded.at("outcome") == "rejected" &&
+              encoded.at("reason") ==
+                  "Directory cannot be sent: entries.modified is outside ±(2^53 - 1)." &&
+              encoded.at("localization").at("params_localization").at("detail") ==
+                  Json{{"key", "messages.wire.outsideSigned"},
+                       {"params", {{"field", "entries.modified"}}}},
+          "The listing's encoding failure carries the field and reason key");
+
   // The listing does not need the machine.
   rig.port.state.link = Link::down;
   rig.port.state.machine = MachineState::estop;

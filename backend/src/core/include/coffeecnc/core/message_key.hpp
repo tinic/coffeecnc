@@ -4,6 +4,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <string_view>
 
 namespace coffeecnc {
 
@@ -21,6 +22,14 @@ struct MessageKey {
   std::map<std::string, MessageParameterKey> params_localization{};
   friend auto operator==(const MessageKey&, const MessageKey&) -> bool = default;
 };
+
+[[nodiscard]] inline auto parameter_localization(std::string_view name,
+                                                 const std::optional<MessageKey>& key)
+    -> std::map<std::string, MessageParameterKey> {
+  if (!key)
+    return {};
+  return {{std::string(name), {key->key, key->params}}};
+}
 
 // A reason produced by the backend. Adapters may have only an opaque fallback string.
 struct LocalizedReason {

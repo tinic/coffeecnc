@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <format>
 #include <iterator>
 #include <string_view>
 #include <type_traits>
@@ -134,19 +135,56 @@ auto name(PreviewState state) -> std::string_view {
   return "unavailable";
 }
 
+enum class FieldProblem : std::uint8_t {
+  not_finite,
+  above_safe,
+  no_axis,
+  not_positive,
+  negative,
+  outside_signed,
+  outside_unsigned
+};
+
+auto field_error(std::string_view field, FieldProblem problem) -> LocalizedReason {
+  switch (problem) {
+  case FieldProblem::not_finite:
+    return {std::format("{} is not a finite number.", field),
+            MessageKey{"messages.wire.notFinite", {{"field", std::string(field)}}}};
+  case FieldProblem::above_safe:
+    return {std::format("{} is above 2^53 - 1.", field),
+            MessageKey{"messages.wire.aboveSafe", {{"field", std::string(field)}}}};
+  case FieldProblem::no_axis:
+    return {std::format("{} lacks a configured axis.", field),
+            MessageKey{"messages.wire.noAxis", {{"field", std::string(field)}}}};
+  case FieldProblem::not_positive:
+    return {std::format("{} is not positive.", field),
+            MessageKey{"messages.wire.notPositive", {{"field", std::string(field)}}}};
+  case FieldProblem::negative:
+    return {std::format("{} is negative.", field),
+            MessageKey{"messages.wire.negative", {{"field", std::string(field)}}}};
+  case FieldProblem::outside_signed:
+    return {std::format("{} is outside ±(2^53 - 1).", field),
+            MessageKey{"messages.wire.outsideSigned", {{"field", std::string(field)}}}};
+  case FieldProblem::outside_unsigned:
+    return {std::format("{} is outside 0 to 2^53 - 1.", field),
+            MessageKey{"messages.wire.outsideUnsigned", {{"field", std::string(field)}}}};
+  }
+  return {};
+}
+
 // Builds the values of one message and keeps the first field that cannot go on the wire.
 class Fields {
 public:
   auto real(double value, std::string_view field) -> Json {
     if (!std::isfinite(value)) {
-      fail(field, "is not a finite number");
+      fail(field, FieldProblem::not_finite);
       return 0;
     }
     return value;
   }
   auto count(std::uint64_t value, std::string_view field) -> Json {
     if (value > max_safe_integer) {
-      fail(field, "is above 2^53 - 1");
+      fail(field, FieldProblem::above_safe);
       return 0;
     }
     return value;
@@ -154,9 +192,9 @@ public:
   auto vec(const Vec3& value, std::string_view field) -> Json {
     return Json::array({real(value[0], field), real(value[1], field), real(value[2], field)});
   }
-  void fail(std::string_view field, std::string_view problem) {
+  void fail(std::string_view field, FieldProblem problem) {
     if (error_.empty())
-      error_ = std::string(field) + ' ' + std::string(problem) + '.';
+      error_ = field_error(field, problem);
   }
   auto finish(const Json& message) -> Encoded {
     if (!error_.empty())
@@ -166,7 +204,7 @@ public:
   }
 
 private:
-  std::string error_;
+  LocalizedReason error_;
 };
 
 template <typename T> auto nullable(const std::optional<T>& value) -> Json {
@@ -214,12 +252,12 @@ auto encode_hello(const Hello& hello) -> Encoded {
     const auto index = axis_index(axis);
     const auto velocity = index ? hello.axis_max_jog_velocity.at(*index) : std::nullopt;
     if (!velocity) {
-      fields.fail("axis_max_jog_velocity", "lacks a configured axis");
+      fields.fail("axis_max_jog_velocity", FieldProblem::no_axis);
       continue;
     }
     // The panel disables jogging an axis whose ceiling is not positive.
     if (*velocity <= 0)
-      fields.fail("axis_max_jog_velocity", "is not positive");
+      fields.fail("axis_max_jog_velocity", FieldProblem::not_positive);
     axis_velocity[std::string(name(axis))] = fields.real(*velocity, "axis_max_jog_velocity");
   }
   auto increments = Json::array();
@@ -246,7 +284,7 @@ auto encode_hello(const Hello& hello) -> Encoded {
       {"quit_supported", true}};
   if (hello.max_spindle_rpm) {
     if (*hello.max_spindle_rpm <= 0)
-      fields.fail("max_spindle_rpm", "is not positive");
+      fields.fail("max_spindle_rpm", FieldProblem::not_positive);
     message["max_spindle_rpm"] = fields.real(*hello.max_spindle_rpm, "max_spindle_rpm");
   }
   if (hello.rigid_tap)
@@ -333,7 +371,7 @@ auto encode_status(const Status& status, std::uint64_t seq) -> Encoded {
   if (spindle.actual_rpm) {
     actual_rpm = fields.real(*spindle.actual_rpm, "spindle.actual_rpm");
     if (*spindle.actual_rpm < 0)
-      fields.fail("spindle.actual_rpm", "is negative");
+      fields.fail("spindle.actual_rpm", FieldProblem::negative);
   }
   const auto& motion = status.motion;
   const auto& program = status.program;
@@ -566,7 +604,7 @@ auto encode_directory(const Directory& directory) -> Encoded {
   for (const auto& entry : directory.entries) {
     if (entry.modified > static_cast<std::int64_t>(max_safe_integer) ||
         entry.modified < -static_cast<std::int64_t>(max_safe_integer))
-      fields.fail("entries.modified", "is outside ±(2^53 - 1)");
+      fields.fail("entries.modified", FieldProblem::outside_signed);
     entries.push_back({{"name", entry.name},
                        {"kind", entry.kind == EntryKind::directory ? "directory" : "file"},
                        {"bytes", fields.count(entry.bytes, "entries.bytes")},
@@ -650,7 +688,7 @@ auto encode_offset_history(const OffsetHistory& history) -> Encoded {
   auto entries = Json::array();
   for (const auto& entry : history.entries) {
     if (entry.time > static_cast<std::int64_t>(max_safe_integer) || entry.time < 0)
-      fields.fail("entries.time", "is outside 0 to 2^53 - 1");
+      fields.fail("entries.time", FieldProblem::outside_unsigned);
     auto changes = Json::array();
     std::ranges::transform(entry.changes, std::back_inserter(changes), [&](const auto& change) -> Json {
       return {{"field", history_name(change.field)},

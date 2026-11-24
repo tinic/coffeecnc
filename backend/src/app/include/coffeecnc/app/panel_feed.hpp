@@ -102,7 +102,7 @@ public:
   [[nodiscard]] auto compose(const PanelReading& reading, PageToken page, bool ready_again,
                              std::chrono::milliseconds unix_time,
                              std::vector<PanelRecord>* records = nullptr)
-      -> std::expected<std::vector<std::string>, std::string>;
+      -> std::expected<std::vector<std::string>, LocalizedReason>;
   // A reading while no page is ready.
   void observe(const PanelReading& reading);
 

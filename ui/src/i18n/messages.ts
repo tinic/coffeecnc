@@ -84,11 +84,20 @@ function translateKey(message: MessageKey | undefined): string | undefined {
   const names = argumentsByKey.get(message.key)
   const args: unknown = message.params
   if (!names || typeof args !== 'object' || args === null || Array.isArray(args)) return
+  const localization: unknown = 'params_localization' in message ? message.params_localization : undefined
+  const keys = typeof localization === 'object' && localization !== null && !Array.isArray(localization)
+    ? localization as Record<string, { key: string; params: Record<string, string> } | undefined>
+    : undefined
   const params: Params = {}
   for (const name of names) {
     const value = (args as Record<string, unknown>)[name]
     if (!Object.hasOwn(args, name) || typeof value !== 'string') return
-    params[name] = translateArgument(name, value)
+    const parameter = keys && Object.hasOwn(keys, name) ? keys[name] : undefined
+    // Only one level of message keys is carried for parameters.
+    const translated = parameter && typeof parameter.key === 'string'
+      ? translateKey({ key: parameter.key, params: parameter.params })
+      : undefined
+    params[name] = translated ?? translateArgument(name, value)
   }
   return i18n.global.t(message.key as never, params)
 }

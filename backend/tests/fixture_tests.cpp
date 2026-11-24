@@ -320,6 +320,11 @@ auto encoded_messages() -> std::vector<Encoded> {
   messages.emplace_back(encode_message(MessageLevel::info, "Jog stopped: probe contact",
                                        1700000001100ms,
                                        MessageKey{"backend.jogStop.probeContact"}));
+  messages.emplace_back(encode_message(
+      MessageLevel::error, "Panel request ignored: Missing required field: id.", 1700000001200ms,
+      MessageKey{"messages.session.requestIgnored",
+                 {{"detail", "Missing required field: id."}},
+                 {{"detail", {"messages.request.missingField", {{"field", "id"}}}}}}));
   messages.emplace_back(encode_result(41, CommandOutcome::accepted, ""));
   messages.emplace_back(
       encode_result(42, CommandOutcome::rejected, "Home all configured axes first."));

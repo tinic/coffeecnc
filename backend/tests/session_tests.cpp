@@ -943,6 +943,14 @@ void decode_errors() {
                         message.at("localization").at("params").at("detail").get<std::string>(),
             "It is an operator error stamped with the wall clock");
   }
+  const auto missing_id = rig.handle(rig.page, R"({"type":"abort"})", at(250ms));
+  const auto warning = Json::parse(missing_id.messages.at(0));
+  require(warning.at("text") == "Panel request ignored: Missing required field: id." &&
+              warning.at("localization").at("params").at("detail") ==
+                  "Missing required field: id." &&
+              warning.at("localization").at("params_localization").at("detail") ==
+                  Json{{"key", "messages.request.missingField"}, {"params", {{"field", "id"}}}},
+          "An ignored request retains the missing-ID decoder key and its English fallback");
   require(rig.port.calls.empty(), "A request without an ID is not executed");
   rig.accepted(R"("type":"abort")");
 

@@ -1,5 +1,7 @@
 #include <coffeecnc/app/alarm_log.hpp>
 
+#include "message_key_json.hpp"
+
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
@@ -36,23 +38,39 @@ auto bounded(std::string text, std::size_t limit) -> std::string {
   return text;
 }
 
+auto parameter_key(const Json& metadata) -> std::optional<MessageParameterKey> {
+  if (!metadata.is_object())
+    return std::nullopt;
+  const auto key = metadata.find("key");
+  const auto params = metadata.find("params");
+  if (key == metadata.end() || !key->is_string() || key->get<std::string_view>().empty() ||
+      params == metadata.end() || !params->is_object())
+    return std::nullopt;
+  MessageParameterKey message{key->get<std::string>()};
+  for (const auto& [name, arg] : params->items()) {
+    if (!arg.is_string())
+      return std::nullopt;
+    message.params.emplace(name, arg.get<std::string>());
+  }
+  return message;
+}
+
 // Ignore invalid optional metadata so an older or edited record keeps its English text.
 auto localization_of(const Json& value, std::string_view field) -> std::optional<MessageKey> {
   const auto metadata = value.find(field);
   if (metadata == value.end() || !metadata->is_object() ||
       dump(*metadata).size() > AlarmLog::max_text_bytes)
     return std::nullopt;
-  const auto key = metadata->find("key");
-  const auto params = metadata->find("params");
-  if (key == metadata->end() || !key->is_string() || key->get<std::string_view>().empty() ||
-      params == metadata->end() || !params->is_object())
+  auto parsed = parameter_key(*metadata);
+  if (!parsed)
     return std::nullopt;
-  MessageKey message{key->get<std::string>()};
-  for (const auto& [name, arg] : params->items()) {
-    if (!arg.is_string())
-      return std::nullopt;
-    message.params.emplace(name, arg.get<std::string>());
-  }
+  MessageKey message{std::move(parsed->key), std::move(parsed->params)};
+  const auto keys = metadata->find("params_localization");
+  if (keys != metadata->end() && keys->is_object())
+    for (const auto& [name, key] : keys->items())
+      if (message.params.contains(name))
+        if (auto parameter = parameter_key(key))
+          message.params_localization.emplace(name, std::move(*parameter));
   return message;
 }
 
@@ -64,8 +82,7 @@ auto record_json(const AlarmRecord& record) -> Json {
              {"outcome", record.outcome.empty() ? Json(nullptr) : Json(record.outcome)},
              {"command", nullptr}};
   if (record.localization)
-    value["localization"] = {{"key", record.localization->key},
-                             {"params", record.localization->params}};
+    value["localization"] = message_key_json(*record.localization);
   if (!record.command.empty()) {
     auto command = Json::parse(record.command, nullptr, false);
     if (command.is_object())
@@ -155,7 +172,7 @@ auto encode_alarm_log(const AlarmLogView& view) -> std::string {
                {"reason", view.reason},   {"session", view.session},
                {"skipped", view.skipped}, {"entries", std::move(entries)}};
   if (const auto& key = view.localization)
-    message["localization"] = {{"key", key->key}, {"params", key->params}};
+    message["localization"] = message_key_json(*key);
   return dump(message);
 }
 

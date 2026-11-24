@@ -14,6 +14,7 @@
 #include <cstddef>
 #include <format>
 #include <iostream>
+#include <map>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -471,12 +472,17 @@ auto Session::submit(PageToken page, std::string_view json, Instant now,
   if (!page_open_ || page != PageToken{pages_})
     return outcome;
   if (const auto* error = std::get_if<DecodeError>(&decoded)) {
-    if (!error->id)
-      outcome.messages.push_back(encode_message(
-          MessageLevel::error, std::format("Panel request ignored: {}", error->reason),
-          now.unix_time,
-          MessageKey{"messages.session.requestIgnored", {{"detail", error->reason}}}));
-    else if (in_order(*error->id))
+    if (!error->id) {
+      std::map<std::string, MessageParameterKey> parameters;
+      if (const auto& detail = error->localization)
+        parameters.emplace("detail", MessageParameterKey{detail->key, detail->params});
+      outcome.messages.push_back(
+          encode_message(MessageLevel::error,
+                         std::format("Panel request ignored: {}", error->reason), now.unix_time,
+                         MessageKey{"messages.session.requestIgnored",
+                                    {{"detail", error->reason}},
+                                    std::move(parameters)}));
+    } else if (in_order(*error->id))
       outcome.messages.push_back(
           encode_result(*error->id, CommandOutcome::rejected, error->reason, {}, {},
                         error->localization));

@@ -352,6 +352,19 @@ describe('native and store sentences', () => {
 })
 
 describe('translateMessage', () => {
+  it('translates a keyed argument and falls back to its text for invalid metadata', async () => {
+    await setLanguage('de')
+    const fallback = 'Panel request ignored: Bad packet.'
+    const localization = { key: 'messages.session.requestIgnored', params: { detail: 'Bad packet.' } }
+    const detail = { key: 'messages.request.missingField', params: { field: 'id' } }
+    expect(translateMessage(fallback, {
+      ...localization, params_localization: { detail },
+    })).toBe('Anfrage der Bedienoberfläche ignoriert: Pflichtfeld fehlt: id.')
+    expect(translateMessage(fallback, {
+      ...localization, params_localization: { detail: { ...detail, params: {} } },
+    })).toBe('Anfrage der Bedienoberfläche ignoriert: Bad packet.')
+  })
+
   it('uses a structured key for a timeout without matching its English reason', async () => {
     await setLanguage('de')
     expect(translateResult({ type: 'result', id: 8, outcome: 'timed_out', reason: 'Older fallback.',

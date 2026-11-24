@@ -549,6 +549,7 @@ export interface OperatorMessage {
 export interface MessageKey {
   key: string
   params: Record<string, string>
+  params_localization?: Record<string, Pick<MessageKey, 'key' | 'params'>>
 }
 
 export type RefusalMessage = MessageKey

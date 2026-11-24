@@ -3227,8 +3227,11 @@ auto NmlPort::validate_restart(RestartPoint& point, const PreviewInputs& inputs)
     static constexpr std::array names{"G54", "G55", "G56", "G57", "G58",
                                       "G59", "G59.1", "G59.2", "G59.3"};
     const auto* name = names.at(static_cast<std::size_t>(point.wcs - 1));
-    return {std::format("This line runs in {}. Select {}, then choose the line again.", name, name),
-            MessageKey{"backend.nmlPort.restartSelectWcs", {{"wcs", name}}}};
+    return {
+        std::format(
+            "This line runs in {}. Select that work coordinate system, then choose the line again.",
+            name),
+        MessageKey{"backend.nmlPort.restartSelectRequiredWcs", {{"wcs", name}}}};
   }
   if (!restart_frame(s, point, inputs))
     return {"Machine power, the program or the work coordinate system changed.",

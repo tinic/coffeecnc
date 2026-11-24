@@ -465,6 +465,7 @@
       "workOriginChanged": "ワーク原点が変わりました。新しいプログラムチェックを確認してください。",
       "restartContextChanged": "機械電源、プログラムまたはワーク座標系が変わりました。",
       "restartSelectWcs": "この行は{wcs}で実行されます。{wcs}を選択してから、行をもう一度選んでください。",
+      "restartSelectRequiredWcs": "この行は{wcs}で実行されます。そのワーク座標系を選択してから、行をもう一度選んでください。",
       "remainStopped": "機械はプレビューに表示された位置で停止したままにしてください。",
       "removeProbe": "指定行からプログラムを実行する前に、タッチプローブを取り外してください。",
       "restartSpindleLimit": "再開時の主軸回転数が機械の上限を超えています。",

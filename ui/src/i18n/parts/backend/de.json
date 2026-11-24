@@ -465,6 +465,7 @@
       "workOriginChanged": "Der Werkstücknullpunkt hat sich geändert. Prüfen Sie eine neue Programmprüfung.",
       "restartContextChanged": "Maschine ein/aus, Programm oder Werkstückkoordinatensystem haben sich geändert.",
       "restartSelectWcs": "Diese Zeile läuft in {wcs}. Wählen Sie {wcs} und dann die Zeile erneut.",
+      "restartSelectRequiredWcs": "Diese Zeile läuft in {wcs}. Wählen Sie dieses Werkstückkoordinatensystem und dann die Zeile erneut.",
       "remainStopped": "Die Maschine muss an der in der Vorschau gezeigten Position stehen bleiben.",
       "removeProbe": "Entfernen Sie den Messtaster, bevor Sie ein Programm ab einer Zeile starten.",
       "restartSpindleLimit": "Die Spindeldrehzahl für den Wiederanlauf überschreitet die Maschinengrenze.",

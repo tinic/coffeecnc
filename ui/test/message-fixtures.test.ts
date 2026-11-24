@@ -1112,6 +1112,16 @@ const examples = [
   },
   {
     "type": "result",
+    "id": 57,
+    "outcome": "rejected",
+    "reason": "This line runs in G55. Select that work coordinate system, then choose the line again.",
+    "refusal": {
+      "key": "backend.nmlPort.restartSelectRequiredWcs",
+      "params": { "wcs": "G55" }
+    }
+  },
+  {
+    "type": "result",
     "id": 45,
     "outcome": "accepted",
     "reason": "",

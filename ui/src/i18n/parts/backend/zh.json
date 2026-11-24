@@ -465,6 +465,7 @@
       "workOriginChanged": "工件零点已改变。请查看新的程序检查结果。",
       "restartContextChanged": "机床电源、程序或工件坐标系已改变。",
       "restartSelectWcs": "此行在{wcs}中运行。请选择{wcs}，然后重新选择该行。",
+      "restartSelectRequiredWcs": "此行在{wcs}中运行。请选择该工件坐标系，然后重新选择该行。",
       "remainStopped": "机床必须保持停止在预览所示的位置。",
       "removeProbe": "从指定行运行程序前请先取下接触式探针。",
       "restartSpindleLimit": "重启主轴转速超过机床限值。",

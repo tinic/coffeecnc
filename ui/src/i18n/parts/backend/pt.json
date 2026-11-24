@@ -465,6 +465,7 @@
       "workOriginChanged": "A origem da peça mudou. Reveja uma nova verificação do programa.",
       "restartContextChanged": "A alimentação da máquina, o programa ou o sistema de coordenadas da peça mudou.",
       "restartSelectWcs": "Esta linha é executada em {wcs}. Selecione {wcs} e escolha a linha novamente.",
+      "restartSelectRequiredWcs": "Esta linha é executada em {wcs}. Selecione esse sistema de coordenadas de trabalho e escolha a linha novamente.",
       "remainStopped": "A máquina tem de permanecer parada na posição mostrada na pré-visualização.",
       "removeProbe": "Retire o apalpador antes de executar um programa a partir de uma linha.",
       "restartSpindleLimit": "A velocidade da árvore no reinício excede o limite da máquina.",

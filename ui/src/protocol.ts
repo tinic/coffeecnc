@@ -413,7 +413,7 @@ export interface BackupWritten {
   files: number
   bytes: number
   /** HAL files the INI names that are not in the archive: LinuxCNC's own, or outside the configuration folder. */
-  not_included: { path: string; reason: string }[]
+  not_included: { path: string; reason: string; localization?: MessageKey }[]
 }
 
 export type BackupRole = 'ini' | 'hal' | 'tool_table' | 'parameters' | 'data'

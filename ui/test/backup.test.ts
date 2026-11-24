@@ -3,7 +3,8 @@ import { mount, type VueWrapper } from '@vue/test-utils'
 import { defineComponent, nextTick } from 'vue'
 
 import BackupDialog from '../src/components/BackupDialog.vue'
-import { panel, send } from '../src/machine'
+import FileBrowser from '../src/components/FileBrowser.vue'
+import { onResult, panel, send } from '../src/machine'
 import type { BackupWritten, CommandResult, FromMachine, RestoreSummary, ToMachine } from '../src/protocol'
 import { SimMachine } from '../src/sim/machine'
 import { describeCommand } from '../src/store'
@@ -12,7 +13,7 @@ vi.mock('../src/machine', async () => {
   const { reactive, computed } = await import('vue')
   const panel = reactive({ hello: null, status: null, link: 'live', simulated: false, backupWritten: null, restoreSummary: null,
     directory: null, preferences: { recent_programs: [] } }) as unknown as typeof import('../src/machine').panel
-  return { panel, live: computed(() => true), send: vi.fn(), onResult: (): (() => void) => () => undefined }
+  return { panel, live: computed(() => true), send: vi.fn(), onResult: vi.fn((): (() => void) => () => undefined) }
 })
 
 function rig(): { machine: SimMachine; run: (command: ToMachine) => FromMachine[] } {
@@ -79,7 +80,10 @@ describe('the simulator', () => {
 
 describe('the backup dialog', () => {
   let wrapper: VueWrapper | null = null
-  afterEach(() => { wrapper?.unmount(); wrapper = null; document.body.replaceChildren(); vi.mocked(send).mockClear() })
+  afterEach(() => {
+    wrapper?.unmount(); wrapper = null; document.body.replaceChildren()
+    vi.mocked(send).mockClear(); vi.mocked(onResult).mockClear(); panel.backupWritten = null
+  })
   const fixture = defineComponent({ components: { BackupDialog }, template: '<div><BackupDialog /><div id="dialogs"></div></div>' })
   const button = (text: string): HTMLButtonElement | undefined =>
     [...document.querySelectorAll('button')].find((item) => item.textContent.includes(text))
@@ -93,4 +97,42 @@ describe('the backup dialog', () => {
     expect(button('Choose backup')?.disabled).toBe(true)
     expect(button('Choose folder and back up')?.disabled).toBe(false)
   })
+
+  it('uses the keys on an omitted HAL file and a failed backup result', async () => {
+    const folder = '/media/cnc/STICK'
+    wrapper = mount(fixture, { attachTo: document.body, global: { stubs: { FileBrowser: true } } })
+    await nextTick()
+    const onReply = vi.mocked(onResult).mock.lastCall?.[0]
+    if (!onReply) throw new Error('Missing backup result listener')
+
+    async function chooseFolder(): Promise<Parameters<typeof send>[0]> {
+      button('Choose folder and back up')?.click()
+      await nextTick()
+      wrapper?.getComponent(FileBrowser).vm.$emit('pick', folder)
+      const command = vi.mocked(send).mock.lastCall?.[0]
+      if (!command || command.type !== 'backup') throw new Error('Missing backup request')
+      expect(command.directory).toBe(folder)
+      return command
+    }
+
+    const backup = await chooseFolder()
+    panel.backupWritten = { type: 'backup_written', path: `${folder}/backup.tar.gz`, files: 4, bytes: 1024,
+      not_included: [
+        { path: 'LIB:basic_sim.tcl', reason: 'Opaque legacy explanation',
+          localization: { key: 'backend.machineData.libHal', params: {} } },
+        { path: 'other.hal', reason: 'Legacy fallback from an older server' },
+      ] }
+    onReply(backup, { type: 'result', id: 1, outcome: 'accepted', reason: '' })
+    await nextTick()
+    expect(document.body.textContent).toContain("a HAL file of LinuxCNC's own library")
+    expect(document.body.textContent).toContain('Legacy fallback from an older server')
+    expect(document.body.textContent).not.toContain('Opaque legacy explanation')
+
+    const second = await chooseFolder()
+    onReply(second, { type: 'result', id: 2, outcome: 'failed', reason: 'Opaque result',
+      localization: { key: 'backend.machineData.notWritten', params: { detail: 'Disk full' } } })
+    await nextTick()
+    expect(document.querySelector('[role=alert]')?.textContent).toContain('The backup was not written: Disk full')
+  })
+
 })

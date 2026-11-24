@@ -149,6 +149,14 @@ void fixed_setter_homing() {
   require(!homing.evaluate(FixedSetterRequest{.action = SetterAction::boss,
                                               .tool = 99, .gauge_width_mm = nan}, s).allowed,
           "a probe gauge width is finite");
+  require(homing.evaluate(FixedSetterRequest{.action = SetterAction::bore, .tool = 99,
+                                             .measure_only = true}, s).allowed,
+          "a feature probe can run as a measurement only");
+  for (const auto action : {SetterAction::ball, SetterAction::touch_off, SetterAction::check,
+                            SetterAction::apply_angle, SetterAction::apply_measurement})
+    require(homing.evaluate(FixedSetterRequest{.action = action, .tool = 99, .measure_only = true}, s)
+                    .reason == "This probe action always writes its result.",
+            "the ball calibration, the tool setter and the apply actions cannot measure only");
   s.axes[1].on_hard_limit = true;
   require(!homing.evaluate(FixedSetterRequest{.action = SetterAction::material, .tool = 99}, s).allowed,
           "a hard limit blocks a probe cycle");

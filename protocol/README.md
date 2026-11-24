@@ -21,9 +21,9 @@ The optional `hello.fixed_setter` advertises `reference_tool`, `travel_mm`, `fee
 | `ball` | `tool`, machine start `x`, `y`, `z`, and `gauge_width` |
 | `angle` | `tool`, machine start `x`, `y`, `z`, `direction`, and `spacing` |
 | `apply_angle` | `tool` and the `measurement_id` of an `angle` result |
-| `ball` | `tool`, machine start `x`, `y`, `z`, and `gauge_width` |
-| `angle` | `tool`, machine start `x`, `y`, `z`, `direction`, and `spacing` |
-| `apply_angle` | `tool` and `measurement_id` |
+| `apply_measurement` | `tool` and the `measurement_id` of a `measure_only` result |
+
+Every action from `material` to `angle` except `ball` takes an optional `measure_only: true`. The probe then moves as usual but writes no offset. The result has no `setter.material` and has `setter.measured`: `wcs`, `axes` (`X`, `Y`, `Z`, `XY`; empty for an angle), `work` (the measured point, only its measured axes, in the work system at the time of the probe), `machine` (the same point in machine XYZ: an axis not measured at the start, Z of an XY feature at the probing depth), `faces` (each probed surface point: `direction`, `work` and `machine` XYZ; the ball-centre contact moved one ball radius along the travel) and, except for an angle, `measurement_id`. `apply_measurement` sets those axes as the original action would have. The controller accepts the ID once, in the same operator session, work frame and tool, and forgets it when another probe action begins.
 
 All wire lengths are in millimetres. The reference tool teaches the setter. Another tool positions at the taught XY, probes and saves the offset in one command. A successful result includes `setter.calibration` (machine setter X, Y and effective trigger-plane Z, or null) and `setter.measurement` (null or the result of the completed cycle with `calibration` as a boolean, `tool`, `contact` XYZ, `value`, `previous_length` and `stopping_distance`). Stopping distance is the downward travel from first contact to settled machine Z. Use `abort` to interrupt an active cycle. See the [workflow and HAL requirements](../docs/design/tool-length-probing.md).
 
@@ -54,6 +54,8 @@ An optional `hello.rigid_tap` object exposes `max_rpm` (programmed rpm), `revers
 A hello with a different protocol version puts the panel in an incompatible connection state. It clears controller snapshots and ignores subsequent messages until a compatible hello arrives; fresh status is then required to show a live connection again. New commands are rejected locally with a result and an operator message.
 
 A rejected `result` may include `refusal`. Operator `message` records, results with an operator message, `alarm_log.entries`, `preview.error`, and `operator_settings` may include `localization` with the same shape. Each carries a catalog `key` and `params`, an object of named string arguments. Static messages use an empty object. English `reason` and `text` continue to be sent. The panel translates by key when it recognizes the key and its expected arguments. It uses the fallback text for older peers, unknown keys, and invalid arguments. The alarm log retains the optional metadata across reloads with the same version 1 format.
+
+Program Check keeps its English `errors` and `warnings` arrays and may also send `errors_localization` or `warnings_localization`. Entries in these arrays match the corresponding English array by position. A null entry uses its English fallback.
 
 Reconnect (`ready`), abort, jog-stop-all, held-jog release and software E-stop requests remain available as attempts. Their outcomes are not trusted while the protocol is incompatible, and unanswered attempts retain the normal timeout reporting. `set_machine: off` is not exempt: it can reset an E-stop, so it cannot be treated as an unconditional stop request here. Compatible protocol v1 behavior is unchanged.
 

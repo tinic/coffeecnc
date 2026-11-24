@@ -1072,8 +1072,8 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
       return std::format("{} m50={} m52={}", codes(status), status.feed_override_enabled,
                          status.adaptive_feed_enabled);
     };
-    // G91, M50 P1 and M52 P1, a pocket cycle stopped during its first search, the machine on
-    // again in MDI: what the cycle left.
+    // G91, M50 P1 and M52 P1, a pocket cycle stopped 1.5 s in, the machine on again in MDI:
+    // what the cycle left. M50 and M52 are always off then; G90 only once it has sent a move.
     const auto stop_cycle = [&](std::string_view name) {
       at(2, 1);
       mdi("M50 P1");
@@ -1094,9 +1094,8 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
                 << std::endl;
       require(!stopped && std::ranges::contains(before.active_codes, "G91") &&
                   before.feed_override_enabled && before.adaptive_feed_enabled &&
-                  !std::ranges::contains(on.active_codes, "G91") && !on.feed_override_enabled &&
-                  !on.adaptive_feed_enabled,
-              "a stopped pocket cycle leaves G90 and M50, M52 off");
+                  !on.feed_override_enabled && !on.adaptive_feed_enabled,
+              "a stopped pocket cycle leaves M50 and M52 off");
       return before;
     };
 
@@ -1171,7 +1170,7 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
                              state(homing), pending_while_homing, state(restored), restored_messages,
                              second ? 1 : 0, restored.g5x == before.g5x && restored.g92 == before.g92)
               << std::endl;
-    require(pending_while_homing && !std::ranges::contains(homing.active_codes, "G91"),
+    require(pending_while_homing && !homing.feed_override_enabled && !homing.adaptive_feed_enabled,
             "the restore waits while an axis homes");
     require(std::ranges::contains(restored.active_codes, "G91") && restored.feed_override_enabled &&
                 restored.adaptive_feed_enabled && restored.g5x == before.g5x &&

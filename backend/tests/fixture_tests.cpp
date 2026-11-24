@@ -363,7 +363,10 @@ auto encoded_messages() -> std::vector<Encoded> {
   in_use.reason_localization =
       MessageKey{"backend.toolModelStore.inUse", {{"path", "/data/G0759"}}};
   messages.push_back(tool_model_message(in_use));
-  messages.emplace_back(encode_tool_models_reason(in_use).value());
+  if (auto localized = encode_tool_models_reason(in_use))
+    messages.emplace_back(std::move(*localized));
+  else
+    messages.emplace_back(std::unexpected("Missing tool-model reason"));
   messages.push_back(
       encode_operator_settings({"G0759", 2, ToolModelAvailability::available, "",
                                 OperatorPreferences{StartupUnits::inch, {1, 2, 3}, 1800, 600, 6.35,

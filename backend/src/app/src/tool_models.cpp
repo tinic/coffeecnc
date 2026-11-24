@@ -51,8 +51,8 @@ auto index(ToolFamily family) -> std::size_t { return static_cast<std::size_t>(f
 
 class Invalid : public std::runtime_error {
 public:
-  Invalid(std::string reason, std::optional<MessageKey> localization)
-      : std::runtime_error(std::move(reason)), localization_(std::move(localization)) {}
+  Invalid(const std::string& reason, std::optional<MessageKey> localization)
+      : std::runtime_error(reason), localization_(std::move(localization)) {}
   [[nodiscard]] auto localization() const -> const std::optional<MessageKey>& {
     return localization_;
   }

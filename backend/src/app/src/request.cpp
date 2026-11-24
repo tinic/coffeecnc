@@ -24,7 +24,7 @@ class InvalidRequest : public std::runtime_error {
 public:
   using std::runtime_error::runtime_error;
   explicit InvalidRequest(LocalizedReason reason)
-      : std::runtime_error(std::move(reason.text)), localization(std::move(reason.localization)) {}
+      : std::runtime_error(reason.text), localization(std::move(reason.localization)) {}
   std::optional<MessageKey> localization{};
 };
 

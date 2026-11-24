@@ -30,8 +30,8 @@ describe('LAN upload', () => {
       { reason: 'A program named Plate 2.ngc exists already.', localization: { key: 'backend.programEdit.exists', params: { name: 2 } } }],
   ])('localizes %s', async (_name, payload) => {
     await setLanguage('de')
-    vi.stubGlobal('fetch', vi.fn(async (): Promise<Response> =>
-      Response.json(payload, { status: 409 })))
+    vi.stubGlobal('fetch', vi.fn((): Promise<Response> =>
+      Promise.resolve(Response.json(payload, { status: 409 }))))
     wrapper = mount(RemoteProgramUpload, { global: { stubs: { teleport: true } } })
     const input = wrapper.get('input[type="file"]')
     const file = new File(['G21\nM2\n'], 'Plate 2.ngc')

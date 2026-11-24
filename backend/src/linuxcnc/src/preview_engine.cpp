@@ -569,7 +569,7 @@ auto run_helper(const PreviewSettings& settings, const fs::path& directory,
   const std::string home = "HOME=" + directory.string();
   const std::string ini = "INI_FILE_NAME=" + (directory / "preview.ini").string();
   const auto restart_refusals = std::format("{}=1", preview_restart_refusals_env);
-  const auto stop_codes = std::format("{}=1", preview_stop_codes_env);
+  const auto stop_codes = std::format("{}={}", preview_stop_codes_env, preview_stop_codes_version);
   std::array<char*, 4> arguments{const_cast<char*>("coffeecnc-preview"), // NOLINT: execve's type
                                  const_cast<char*>(request_file.c_str()), // NOLINT
                                  const_cast<char*>("3"), nullptr};        // NOLINT

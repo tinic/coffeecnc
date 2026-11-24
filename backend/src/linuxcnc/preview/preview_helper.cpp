@@ -206,12 +206,12 @@ void halt(Halt how, const std::string& text) {
                   canon.line, canon.elsewhere, clean));
 }
 
-void halt(KnownPreviewStop reason) {
+void halt(KnownPreviewStop reason, std::optional<int> argument = {}) {
   if (!begin_halt(Halt::stop))
     return;
   const char* codes = std::getenv(coffeecnc::preview_stop_codes_env);
-  put(coffeecnc::write_preview_stop(canon.line, reason, canon.elsewhere,
-                                    codes && std::string_view(codes) == "1"));
+  put(coffeecnc::write_preview_stop(canon.line, reason, canon.elsewhere, codes ? codes : "",
+                                    argument));
 }
 
 // Whether the line may still have an effect. Ends the trusted path first when the line read a
@@ -331,11 +331,7 @@ auto may_move() -> bool {
   if (!known) {
     if (canon.recording)
       static_cast<void>(used_frame());
-    static constexpr std::array names{"G54", "G55", "G56", "G57", "G58", "G59",
-                                      "G59.1", "G59.2", "G59.3"};
-    halt(Halt::stop, std::format("moves in {}, whose offsets are not in the machine's parameter "
-                                 "file",
-                                 index < names.size() ? names.at(index) : "another work system"));
+    halt(KnownPreviewStop::unknown_work_system, index < 9 ? canon.g5x_index : 0);
     return false;
   }
   return true;
@@ -411,9 +407,7 @@ void load_spindle(int index) {
 void user_m_code(int number, double /*p*/, double /*q*/) {
   if (!gate())
     return;
-  halt(Halt::stop, std::format("M{} runs a program of the machine's own: what it does is not "
-                               "known to the preview",
-                               100 + number));
+  halt(KnownPreviewStop::machine_m_code, 100 + number);
 }
 
 } // namespace

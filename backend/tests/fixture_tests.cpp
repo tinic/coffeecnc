@@ -312,6 +312,20 @@ auto encoded_messages() -> std::vector<EncodedMessage> {
           {{"detail", {"backend.previewEngine.stopProbe"}}}}};
   messages.push_back(encode_preview(stopped));
 
+  Preview machine_stop;
+  machine_stop.context = 4821343;
+  machine_stop.state = PreviewState::failed;
+  machine_stop.error = PreviewError{
+      3,
+      "The preview ends at line 3: M199 runs a program of the machine's own: what it does is "
+      "not known to the preview.",
+      MessageKey{"backend.previewEngine.endsAtLine",
+                 {{"line", "3"},
+                  {"detail", "M199 runs a program of the machine's own: what it does is "
+                             "not known to the preview"}},
+                 {{"detail", {"backend.previewEngine.stopMachineMCode", {{"code", "199"}}}}}}};
+  messages.push_back(encode_preview(machine_stop));
+
   const PreviewSegment approach{4, MoveKind::rapid, 3, {{0, 0, 10}, {0, 0, 2}}};
   const PreviewSegment cut{
       5, MoveKind::feed, 3, {{0, 0, 2}, {0, 0, -1.5}, {30, 0, -1.5}, {30, 20.5, -1.5}}, 450};

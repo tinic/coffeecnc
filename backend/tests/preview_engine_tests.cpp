@@ -634,13 +634,17 @@ void parameters_and_saved_positions() {
   stops("G55 G1 X1", "moves in G55, whose offsets are not in the machine's parameter file");
   {
     const auto unknown = rig.preview(head + "G55 G1 X1\nM2\n");
-    require(unknown.check &&
-                std::ranges::contains(
-                    unknown.check->errors,
-                    ProgramCheckIssue{
-                        "The G55 work origin could not be verified.",
-                        MessageKey{"backend.previewEngine.originUnverified", {{"wcs", "G55"}}}}),
-            "A work system the parameter file does not hold is an error of the program check");
+    require(
+        unknown.error && unknown.error->localization &&
+            unknown.error->localization->params_localization.at("detail") ==
+                MessageParameterKey{"backend.previewEngine.stopUnknownSystem", {{"wcs", "G55"}}} &&
+            unknown.check &&
+            std::ranges::contains(
+                unknown.check->errors,
+                ProgramCheckIssue{
+                    "The G55 work origin could not be verified.",
+                    MessageKey{"backend.previewEngine.originUnverified", {{"wcs", "G55"}}}}),
+        "A work system the parameter file does not hold is an error of the program check");
   }
   stops("G92.3", "G92.3");
   stops("G1 X#<_task>", "reads the _task parameter");
@@ -658,7 +662,11 @@ void parameters_and_saved_positions() {
           "The helper supplies the probe stop key");
   stops("M66 P0 L0", "M66");
   stops("M101", "M101");
-  stops("M199 P1", "M199");
+  const auto m199 = stops("M199 P1", "M199");
+  require(m199.error->localization &&
+              m199.error->localization->params_localization.at("detail") ==
+                  MessageParameterKey{"backend.previewEngine.stopMachineMCode", {{"code", "199"}}},
+          "The interpreter preserves the machine-specific M-code number");
 
   // The machine's parameter file: G28 at (5, 6, 7), G30 at (-1, -2, -3), G55 at X100.
   rig.settings.parameter_file = (rig.root / "config" / "mill.var").string();

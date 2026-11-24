@@ -373,6 +373,16 @@ describe('translateMessage', () => {
     })).toBe('Anfrage der Bedienoberfläche ignoriert: Bad packet.')
   })
 
+  it('translates a numbered machine-specific M-code stop', async () => {
+    await setLanguage('fr')
+    const detail = "M199 runs a program of the machine's own: what it does is not known to the preview"
+    expect(translateMessage(`The preview ends at line 3: ${detail}.`, {
+      key: 'backend.previewEngine.endsAtLine',
+      params: { line: '3', detail },
+      params_localization: { detail: { key: 'backend.previewEngine.stopMachineMCode', params: { code: '199' } } },
+    })).toBe('L’aperçu s’arrête à la ligne 3 : M199 exécute un programme propre à la machine dont l’effet est inconnu de l’aperçu.')
+  })
+
   it('translates the precise probe stop reason and retains the line', async () => {
     await setLanguage('fr')
     const detail = 'a probe move (G38): where it ends depends on the machine'

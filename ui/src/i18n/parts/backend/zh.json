@@ -615,6 +615,8 @@
       "rotary": "旋转轴配置下不支持程序预览和从指定行重启。",
       "iniUnreadable": "无法读取机床的 INI 文件以生成预览。",
       "stopUnknownSystem": "在{wcs}中移动，而其偏置不在机床的参数文件中",
+      "stopOtherSystem": "在另一个工件坐标系中移动，但机床参数文件没有该坐标系的偏置",
+      "stopMachineMCode": "M{code} 运行机床专用程序，预览无法确定其效果",
       "stopG30ToolChange": "移动到 G30 位置（[EMCIO] TOOL_CHANGE_AT_G30）的换刀，而该位置不在机床的参数文件中",
       "stopUndefinedParameter": "读取程序未设置的{name}：预览不知道其来自先前程序或 MDI 程序段的值",
       "stopRemapped": "{code} 在此机床上已重映射（[RS274NGC] REMAP）：预览不知道它的作用",

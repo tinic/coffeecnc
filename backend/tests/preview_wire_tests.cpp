@@ -89,20 +89,45 @@ void wire_formats() {
 void preview_stop_codes() {
   const auto probe = KnownPreviewStop::probe_move;
   const std::string fallback = "a probe move (G38): where it ends depends on the machine";
-  require(write_preview_stop(3, probe, "", true) == "stop_known 3 2\n",
+  require(write_preview_stop(3, probe, "", "1") == "stop_known 3 2\n",
           "A caller can opt into the stable probe stop code");
   const auto known = parse_output("stop_known 3 2\nend stop\n");
   require(known.end == HelperEnd::stop &&
               known.problem ==
                   PreviewError{3, fallback, MessageKey{"backend.previewEngine.stopProbe"}},
           "The coded stop has the same fallback and a localization key");
-  const auto old = write_preview_stop(3, probe, "", false);
+  const auto old = write_preview_stop(3, probe, "", "");
   require(old == "stop 3 " + fallback + '\n' &&
               parse_output(old + "end stop\n").problem == PreviewError{3, fallback},
           "The unnegotiated helper keeps the original format");
-  const auto source = write_preview_stop(3, probe, "edge.ngc line 5: ", true);
+  const auto source = write_preview_stop(3, probe, "edge.ngc line 5: ", "2");
   require(source == "stop 3 edge.ngc line 5: " + fallback + '\n',
           "A stop in a subroutine still includes the exact source location");
+  const auto wcs = KnownPreviewStop::unknown_work_system;
+  const std::string wcs_text =
+      "moves in G59.3, whose offsets are not in the machine's parameter file";
+  require(write_preview_stop(4, wcs, "", "2", 9) == "stop_known 4 8 9\n" &&
+              parse_output("stop_known 4 8 9\nend stop\n").problem ==
+                  PreviewError{
+                      4, wcs_text,
+                      MessageKey{"backend.previewEngine.stopUnknownSystem", {{"wcs", "G59.3"}}}},
+          "The WCS index selects the corresponding G-code");
+  require(
+      write_preview_stop(4, wcs, "", "1", 9) == "stop 4 " + wcs_text + '\n' &&
+          write_preview_stop(4, wcs, "", "3", 9) == "stop 4 " + wcs_text + '\n' &&
+          write_preview_stop(3, probe, "", "2") == "stop_known 3 2\n",
+      "Older or unknown versions get text for the numbered stop, and version 2 keeps fixed codes");
+  const auto machine = parse_output("stop_known 3 9 199\nend stop\n");
+  require(machine.problem ==
+              PreviewError{3,
+                           "M199 runs a program of the machine's own: what it does is not known "
+                           "to the preview",
+                           MessageKey{"backend.previewEngine.stopMachineMCode", {{"code", "199"}}}},
+          "A machine-specific M-code stop retains the number");
+  require(!parse_output("stop_known 3 8 10\nend stop\n").defect.empty() &&
+              !parse_output("stop_known 3 9 99\nend stop\n").defect.empty() &&
+              !parse_output("stop_known 3 8\nend stop\n").defect.empty(),
+          "Codes that require a number reject missing or out-of-range values");
   const std::string kept = "seg 2 r 0 0 0 0 1 2 3\n";
   const auto unknown = parse_output(kept + "stop_known 3 99\nend stop\n");
   require(unknown.defect.localization == MessageKey{"backend.previewWire.invalidStopCode"} &&

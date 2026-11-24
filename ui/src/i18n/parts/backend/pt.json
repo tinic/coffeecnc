@@ -615,6 +615,8 @@
       "rotary": "A pré-visualização do programa e o reinício na linha não estão disponíveis em configurações rotativas.",
       "iniUnreadable": "Não é possível ler o ficheiro INI da máquina para a pré-visualização.",
       "stopUnknownSystem": "move-se em {wcs}, cujos desvios não estão no ficheiro de parâmetros da máquina",
+      "stopOtherSystem": "move-se em outro sistema de coordenadas de trabalho cujos deslocamentos não estão no arquivo de parâmetros da máquina",
+      "stopMachineMCode": "M{code} executa um programa próprio da máquina cujo efeito a prévia desconhece",
       "stopG30ToolChange": "uma troca de ferramenta que vai para a posição G30 ([EMCIO] TOOL_CHANGE_AT_G30), que não está no ficheiro de parâmetros da máquina",
       "stopUndefinedParameter": "lê {name}, que o programa não define: a pré-visualização não conhece o seu valor de um programa ou bloco MDI anterior",
       "stopRemapped": "{code} está remapeado nesta máquina ([RS274NGC] REMAP): a pré-visualização não sabe o que faz",

@@ -25,6 +25,7 @@
 #include <vector>
 
 namespace coffeecnc {
+class MachineDataService;
 class OffsetHistoryStore;
 class ProgramWriter;
 
@@ -254,7 +255,7 @@ public:
           ToolModelService* tool_models = nullptr, PreviewWorker* preview = nullptr,
           PreviewEngine* restart_engine = nullptr, ProgramWriter* program_writer = nullptr,
           OffsetHistoryStore* history = nullptr, DiagnosticsService* diagnostics = nullptr,
-          bool asynchronous_copies = false);
+          bool asynchronous_copies = false, MachineDataService* machine_data = nullptr);
 
   // Call on every page load. A stop decision; forgets the previous page's ready and ID state and
   // its waiting requests. Messages carrying an earlier token are dropped from here on.
@@ -310,6 +311,7 @@ private:
   struct Reply {
     CommandOutcome outcome{CommandOutcome::accepted};
     std::string reason;
+    std::optional<RefusalMessage> refusal{};
   };
   struct HeldJog {
     int direction{};
@@ -385,6 +387,7 @@ private:
 
   [[nodiscard]] static auto reply(ActionResult result) -> Reply;
   [[nodiscard]] static auto answer(Reply reply) -> Stage;
+  [[nodiscard]] static auto refuse(std::string reason, RefusalMessage message) -> Stage;
   [[nodiscard]] static auto cancelled(std::string partial = {}) -> Stage;
   [[nodiscard]] auto in_order(RequestId id) -> bool;
   [[nodiscard]] auto status(JogLease::Time now) const -> ControllerState;
@@ -449,6 +452,7 @@ private:
   ProgramWriter* program_writer_;
   OffsetHistoryStore* history_;
   DiagnosticsService* diagnostics_;
+  MachineDataService* machine_data_; // backup and restore, on the worker thread
   std::optional<PreparedRestart> restart_; // worker-owned
   std::uint64_t restart_id_{};
   // Worker-owned. A paused run is eligible only after CoffeeCNC checked its initial start.

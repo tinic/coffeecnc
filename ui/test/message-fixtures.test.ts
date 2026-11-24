@@ -998,6 +998,16 @@ const examples = [
   },
   {
     "type": "result",
+    "id": 46,
+    "outcome": "rejected",
+    "reason": "Jog velocity is above the Z axis limit of 750 mm/min.",
+    "refusal": {
+      "key": "messages.policy.jogVelocityAxisLimit",
+      "params": { "axis": "Z", "limit": "750" }
+    }
+  },
+  {
+    "type": "result",
     "id": 43,
     "outcome": "failed",
     "reason": "LinuxCNC reported an error."
@@ -1371,6 +1381,10 @@ const examples = [
     "skipped": 0,
     "entries": []
   },
+  {"type": "backup_written", "path": "/media/cnc/STICK/coffeecnc-G0759-20261123-140200.tar.gz", "files": 8, "bytes": 5321, "not_included": [{"path": "LIB:basic_sim.tcl", "reason": "a HAL file of LinuxCNC's own library"}]},
+  {"type": "backup_written", "path": "/home/cnc/coffeecnc-machine-20261123-140200.tar.gz", "files": 3, "bytes": 1024, "not_included": []},
+  {"type": "restore_summary", "path": "/media/cnc/STICK/coffeecnc-G0759-20261123-140200.tar.gz", "token": "3f1c8e0a9b2d4c75", "machine_id": "G0759", "created": 1795960920000, "files": [{"role": "ini", "name": "config/g0759.ini", "target": "/home/cnc/linuxcnc/configs/g0759/g0759.ini", "change": "same", "bytes": 4012, "symlink": false}, {"role": "hal", "name": "config/g0759.hal", "target": "/home/cnc/linuxcnc/configs/g0759/g0759.hal", "change": "changed", "bytes": 2210, "symlink": true}, {"role": "tool_table", "name": "tool-table/tool.tbl", "target": "/home/cnc/linuxcnc/configs/g0759/tool.tbl", "change": "changed", "bytes": 310, "symlink": false}, {"role": "parameters", "name": "parameters/g0759.var", "target": "/home/cnc/linuxcnc/configs/g0759/g0759.var", "change": "at_exit", "bytes": 1882, "symlink": false}, {"role": "data", "name": "data/tool-models.json", "target": "/home/cnc/.local/share/coffeecnc/G0759/tool-models.json", "change": "new", "bytes": 512, "symlink": false}]},
+  {"type": "restore_summary", "path": "/home/cnc/old.tar.gz", "token": "0000000000000001", "machine_id": null, "created": 0, "files": [{"role": "ini", "name": "config/mill.ini", "target": "/home/cnc/linuxcnc/configs/mill/mill.ini", "change": "same", "bytes": 10, "symlink": false}]},
   {
     "type": "diagnostics",
     "inputs": [
@@ -1394,7 +1408,8 @@ const examples = [
 // A new FromMachine message requires coverage here, even if its fields are all optional.
 const messageTypes: Record<FromMachine['type'], true> = {
   hello: true, status: true, tool_table: true, tool_models: true, operator_settings: true, work_offsets: true, program: true,
-  preview: true, message: true, result: true, directory: true, offset_history: true, alarm_log: true, diagnostics: true,
+  preview: true, message: true, result: true, directory: true, offset_history: true, alarm_log: true, backup_written: true,
+  restore_summary: true, diagnostics: true,
 }
 
 describe('protocol/fixtures/messages.json', () => {

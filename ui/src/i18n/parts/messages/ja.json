@@ -84,7 +84,11 @@
       "invalidToolRow": "工具テーブルの行が無効です。",
       "invalidToolNumber": "工具番号が無効です。",
       "noToolChangePending": "確認待ちの手動工具交換はありません。",
-      "unsupportedCommand": "サポートされていないコマンドです。"
+      "unsupportedCommand": "サポートされていないコマンドです。",
+      "backupFolder": "バックアップ先のフォルダーを選択してください。",
+      "backupFile": "バックアップファイルを選択してください。",
+      "restoreMachineOn": "復元の前に機械電源をオフにするか、非常停止を押してください。",
+      "restoreProgram": "復元の前にプログラムを停止してください。"
     },
     "session": {
       "busy": "LinuxCNC を待っている要求が多すぎます。",
@@ -149,6 +153,7 @@
       "directoryNotSent": "ディレクトリを送信できません：{detail}",
       "mdiTooLong": "MDI には 254 バイト以下のブロックが 1 つ必要です。",
       "jogStopFailed": "{axis} のジョグ停止に失敗しました：{detail}",
+      "noBackup": "この CoffeeCNC ではバックアップも復元もできません。",
       "noDiagnostics": "HAL 診断はこのセッションにはありません。"
     },
     "request": {
@@ -278,6 +283,9 @@
         "saveSettings": "設定を保存",
         "toolModels": "工具モデル",
         "settings": "設定",
+        "backup": "機械データのバックアップ",
+        "checkBackup": "バックアップを確認",
+        "restoreBackup": "バックアップを復元",
         "openDiagnostics": "診断を開く",
         "closeDiagnostics": "診断を閉じる",
         "startHalTool": "{tool} を起動"
@@ -382,6 +390,8 @@
       "bossStart": "シミュレーションのボスの上から開始してください。",
       "setLoadedLength": "確認する前に装着工具の長さを設定してください。",
       "browserSimulator": "ブラウザーシミュレーター",
+      "simRestored": "シミュレーションの復元：工具テーブルとワーク座標オフセットはバックアップの内容です。このブラウザーは開いたままです。",
+      "simNoFile": "{path} は存在しません。",
       "noHalTools": "ブラウザーシミュレーターには HAL ツールがありません。LinuxCNC なしで動作します。"
     },
     "bridge": {

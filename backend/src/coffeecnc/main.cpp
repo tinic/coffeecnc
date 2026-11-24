@@ -14,6 +14,8 @@ auto main(int argc, char** argv) -> int {
   try {
     // Without the program name.
     const std::vector<std::string_view> arguments(argv + std::min(argc, 1), argv + argc);
+    if (!arguments.empty() && arguments.front() == "--apply-restore")
+      return coffeecnc::apply_restore(arguments);
     const auto options = coffeecnc::parse_options(arguments);
     if (!options) {
       std::cerr << "coffeecnc: " << options.error() << "\n\n" << coffeecnc::usage();

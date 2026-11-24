@@ -14,15 +14,16 @@ import type { Tab } from '../store'
 import AppIcon from './AppIcon.vue'
 
 const { t } = useI18n()
-const emit = defineEmits<{ log: []; open: []; create: []; edit: []; quit: []; settings: []; diagnostics: [] }>()
+const emit = defineEmits<{ log: []; open: []; create: []; edit: []; quit: []; settings: []; backup: []; diagnostics: [] }>()
 const status = reported
 const menu = useTemplateRef<HTMLDetailsElement>('menu')
-function openAppDialog(dialog: 'quit' | 'settings' | 'diagnostics'): void {
+function openAppDialog(dialog: 'quit' | 'settings' | 'backup' | 'diagnostics'): void {
   if (menu.value) {
     menu.value.open = false
     menu.value.querySelector('summary')?.focus({ preventScroll: true })
   }
   if (dialog === 'quit') emit('quit')
+  else if (dialog === 'backup') emit('backup')
   else if (dialog === 'diagnostics') emit('diagnostics')
   else emit('settings')
 }
@@ -93,7 +94,7 @@ const machineMessage = computed(() => {
   if (inFooter && (reason === pausedText || reason === t('status.machineBlock.programRunning'))) return null
   return reason
 })
-const notice = computed(() => panel.notice && translateMessage(panel.notice.text) === machineMessage.value ? null : panel.notice)
+const notice = computed(() => panel.notice && translateMessage(panel.notice.text, panel.notice.refusal) === machineMessage.value ? null : panel.notice)
 const messageTone = computed(() => {
   if (notice.value?.level === 'error' || (live.value && status.value?.machine === 'estop')) return 'error'
   return notice.value?.level ?? (liftedAfterStop.value ? 'lift-warning' : machineMessage.value ? 'machine-message' : 'empty')
@@ -155,6 +156,7 @@ const waitingLabels = { on: 'status.statusBar.waitingOn', off: 'status.statusBar
           <p v-if="pendingPower" class="notice" role="status">{{ t(waitingLabels[pendingPower.command.state]) }}</p>
           <div class="application-actions">
             <button class="btn settings" type="button" @click="openAppDialog('settings')"><AppIcon name="settings" />{{ t('status.statusBar.settings') }}</button>
+            <button class="btn settings" type="button" @click="openAppDialog('backup')"><AppIcon name="folder" />{{ t('status.statusBar.backup') }}</button>
             <button v-if="panel.hello?.diagnostics === true" class="btn diagnostics" type="button" @click="openAppDialog('diagnostics')"><AppIcon name="pulse" />{{ t('status.statusBar.diagnostics') }}</button>
             <button class="btn quit" type="button" @click="openAppDialog('quit')"><AppIcon name="power" />{{ t('status.statusBar.quit') }}</button>
           </div>
@@ -167,8 +169,8 @@ const waitingLabels = { on: 'status.statusBar.waitingOn', off: 'status.statusBar
       <span v-if="machineMessage || notice" class="message-label" aria-hidden="true">{{ messageTone === 'error' || messageTone === 'lift-warning' ? '!' : 'i' }}</span>
       <div class="message-copy" :class="{ paired: machineMessage && notice }">
         <p v-if="machineMessage" class="machine-state" role="status">{{ machineMessage }}</p>
-        <p role="alert" aria-atomic="true"><template v-if="notice?.level === 'error'"><strong v-if="notice.context">{{ translateMessage(notice.context) }} · </strong>{{ translateMessage(notice.text) }}<span v-if="notice.count > 1"> (×{{ notice.count }})</span></template></p>
-        <p role="status" aria-atomic="true"><template v-if="notice?.level === 'info'">{{ translateMessage(notice.text) }}</template></p>
+        <p role="alert" aria-atomic="true"><template v-if="notice?.level === 'error'"><strong v-if="notice.context">{{ translateMessage(notice.context) }} · </strong>{{ translateMessage(notice.text, notice.refusal) }}<span v-if="notice.count > 1"> (×{{ notice.count }})</span></template></p>
+        <p role="status" aria-atomic="true"><template v-if="notice?.level === 'info'">{{ translateMessage(notice.text, notice.refusal) }}</template></p>
       </div>
       <button class="btn message-log" type="button" @click="emit('log')">{{ t('status.statusBar.messageLog') }} · <span class="log-count mono">{{ panel.log.length }}</span></button>
       <button v-if="notice" v-tooltip="t('status.statusBar.dismissTip')" class="btn dismiss" type="button" @click="dismissNotice">{{ t('status.statusBar.dismiss') }}</button>

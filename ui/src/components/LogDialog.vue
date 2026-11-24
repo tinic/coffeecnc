@@ -49,7 +49,7 @@ const faults = computed(() => [
         <AppIcon :name="entry.level === 'error' ? 'warning' : 'info'" />
         <span class="when mono">{{ formatTime(entry.time) }}</span>
         <span class="text">
-          {{ translateMessage(entry.text) }}<template v-if="entry.count > 1"> (×{{ entry.count }})</template>
+          {{ translateMessage(entry.text, entry.refusal) }}<template v-if="entry.count > 1"> (×{{ entry.count }})</template>
           <span v-if="entry.context" class="context">{{ t('status.log.answerTo', { context: translateMessage(entry.context) }) }}</span>
         </span>
       </li>

@@ -1,4 +1,4 @@
-import { reactive, watch } from 'vue'
+import { reactive, shallowRef, watch } from 'vue'
 import { t } from './i18n'
 import { translateMessage } from './i18n/messages'
 import type { CommandBody, Hello, Tool } from './protocol'
@@ -19,7 +19,7 @@ export interface ToolModelState {
   assignments: Map<number, ToolModelAssignment>
   storage: ModelStorage
   storageReason: string
-  storageError: string
+  readonly storageError: string
   revision: number | null
   saving: boolean
   saved: string
@@ -42,17 +42,21 @@ export function createToolModelState(panel: PanelState, connection: Pick<Panel, 
   if (panel.simulated) {
     try { defaults = decodeToolDefaults(browserStorage().getItem(storageKey)) } catch { /* Session defaults. */ }
   }
+  const storageError = shallowRef<(() => string) | null>(null)
   const state = reactive<ToolModelState>({ defaults, assignments: new Map(), storage: panel.simulated ? 'browser' : 'loading',
-    storageReason: '', storageError: '', revision: null, saving: false, saved: '', uncertain: false })
+    storageReason: '', revision: null, saving: false, saved: '', uncertain: false,
+    get storageError() { return storageError.value?.() ?? '' },
+  })
   let pending: { command: SaveCommand; context: ModelEditContext; resolve: (result: ModelSaveResult) => void } | null = null
   const stops: (() => void)[] = []
   const fixtureModels = new Set<number>()
   let waitingForFixtureTools = false
 
-  function fail(reason: string): ModelSaveResult {
-    state.storageError = reason
+  function fail(reason: string | (() => string)): ModelSaveResult {
+    const text = typeof reason === 'function' ? reason : (): string => reason
+    storageError.value = text
     state.saved = ''
-    return { saved: false, reason }
+    return { saved: false, get reason(): string { return text() } }
   }
   function finish(result: ModelSaveResult): void {
     const request = pending
@@ -71,7 +75,7 @@ export function createToolModelState(panel: PanelState, connection: Pick<Panel, 
     state.assignments.clear()
     fixtureModels.clear()
     waitingForFixtureTools = hasDemoProbeFixture(panel.simulated, hello)
-    state.storageError = ''; state.saved = ''; state.uncertain = false; state.revision = null
+    storageError.value = null; state.saved = ''; state.uncertain = false; state.revision = null
     if (panel.simulated) return
     state.defaults = factoryToolDefaults()
     state.storageReason = ''
@@ -128,16 +132,16 @@ export function createToolModelState(panel: PanelState, connection: Pick<Panel, 
     if (command !== pending?.command) return
     if (result.outcome !== 'accepted') {
       state.uncertain = result.outcome === 'timed_out'
-      const reason = result.outcome === 'timed_out'
+      const reason = (): string => result.outcome === 'timed_out'
         ? t('tools.modelState.noConfirmation')
-        : result.reason || t('tools.modelState.couldNotSave')
+        : translateMessage(result.reason, result.refusal) || t('tools.modelState.couldNotSave')
       finish(fail(reason))
     } else if (panel.hello !== pending.context.hello || state.storage !== 'available' ||
       state.revision === null || state.revision <= pending.command.base_revision) {
       state.uncertain = true
       finish(fail(t('tools.modelState.noUpdatedSettings')))
     } else {
-      state.storageError = ''
+      storageError.value = null
       state.saved = t('tools.modelState.savedFor', { machine: pending.command.machine_id })
       finish({ saved: true, reason: '' })
     }
@@ -147,7 +151,7 @@ export function createToolModelState(panel: PanelState, connection: Pick<Panel, 
   function block(edit: ModelEditContext): string | null {
     if (panel.hello !== edit.hello) return t('tools.modelState.connectionChanged')
     if (state.saving) return t('tools.modelState.inProgress')
-    if (state.uncertain) return translateMessage(state.storageError)
+    if (state.uncertain) return state.storageError
     if (state.storage === 'loading') return t('tools.modelState.waiting')
     if (state.storage === 'unavailable') return translateMessage(state.storageReason) || t('tools.modelState.unavailable')
     if (state.storage === 'available' && state.revision !== edit.revision) {
@@ -156,7 +160,7 @@ export function createToolModelState(panel: PanelState, connection: Pick<Panel, 
     return null
   }
   function write(command: SaveCommand, edit: ModelEditContext): Promise<ModelSaveResult> {
-    state.saving = true; state.storageError = ''; state.saved = ''
+    state.saving = true; storageError.value = null; state.saved = ''
     return new Promise((resolve) => {
       // Install before send: a local bridge refusal may deliver its result synchronously.
       pending = { command, context: edit, resolve }
@@ -174,7 +178,7 @@ export function createToolModelState(panel: PanelState, connection: Pick<Panel, 
         base_revision: panel.toolModels.revision, defaults: document.defaults }, edit)
     }
     state.defaults = document.defaults
-    state.storageError = ''
+    storageError.value = null
     if (state.storage === 'browser') {
       try { browserStorage().setItem(storageKey, JSON.stringify({ version: 1, defaults: document.defaults })) }
       catch { return Promise.resolve(fail(t('tools.modelState.browserStorageUnavailable'))) }
@@ -210,7 +214,7 @@ export function createToolModelState(panel: PanelState, connection: Pick<Panel, 
     fixtureModels.delete(tool.number)
     if (family === null) state.assignments.delete(tool.number)
     else state.assignments.set(tool.number, { identity: toolIdentity(tool), family, overrides: { ...overrides }, ...holderField })
-    state.storageError = ''
+    storageError.value = null
     state.saved = t('tools.modelState.applied')
     return Promise.resolve({ saved: true, reason: '' })
   }

@@ -4,7 +4,7 @@
 // sentence fails here until it is catalogued in parts/messages (or parts/backend).
 import { describe, expect, it } from 'vitest'
 
-import { setLanguage } from '../src/i18n'
+import { i18n, setLanguage } from '../src/i18n'
 import { matchMessage, translateMessage } from '../src/i18n/messages'
 
 const native = import.meta.glob<string>([
@@ -56,7 +56,21 @@ const english = new Set<string>([
   'Invalid machine command limits',
 ])
 
-interface Literal { text: string; before: string }
+interface Literal { text: string; before: string; after: string }
+
+const literalRefusal = /^(?:\s*,\s*\{\})*\s*,\s*RefusalMessage\{\s*"([^"]+)"/
+const formattedRefusal = /^[^;]*?\),\s*RefusalMessage\{\s*"([^"]+)"\s*,\s*\{([\s\S]*?)\}\s*\}\);/
+const namedRefusal = /\b(\w+_reason)(?:\s*,\s*\{\})*\s*,\s*RefusalMessage\{\s*"([^"]+)"/g
+
+function keyedRefusal({ before, after }: Literal): { key: string; names: string[] } | null {
+  const key = literalRefusal.exec(after)?.[1]
+  if (key !== undefined) return { key, names: [] }
+  if (!before.trimEnd().endsWith('std::format(')) return null
+  const match = formattedRefusal.exec(after)
+  if (match?.[1] === undefined || match[2] === undefined) return null
+  const names = [...match[2].matchAll(/\{\s*"(\w+)"\s*,/g)].map((field) => field[1] ?? '')
+  return { key: match[1], names }
+}
 
 /** The string literals of C++ source, adjacent ones joined, comments skipped. */
 function cppLiterals(source: string): Literal[] {
@@ -77,8 +91,11 @@ function cppLiterals(source: string): Literal[] {
       end += 1
     }
     const last = literals.at(-1)
-    if (last !== undefined && source.slice(previousEnd, index).trim() === '') last.text += text
-    else literals.push({ text, before: source.slice(Math.max(0, index - 300), index) })
+    const after = source.slice(end + 1, end + 400)
+    if (last !== undefined && source.slice(previousEnd, index).trim() === '') {
+      last.text += text
+      last.after = after
+    } else literals.push({ text, before: source.slice(Math.max(0, index - 300), index), after })
     previousEnd = end + 1
     index = end + 1
   }
@@ -88,7 +105,10 @@ function cppLiterals(source: string): Literal[] {
 /** The operator sentences of one C++ file. */
 function nativeSentences(path: string, source: string): string[] {
   const sentences: string[] = []
-  for (const { text, before } of cppLiterals(source)) {
+  for (const literal of cppLiterals(source)) {
+    const { text, before } = literal
+    // A keyed refusal carries separate English fallback text for older panels.
+    if (keyedRefusal(literal) !== null) continue
     // Compile-time diagnostics.
     if (/static_assert\([^;"]*$/.test(before)) continue
     // Operator text starts with a capital and has words; G-code, field names and wire values do not.
@@ -162,6 +182,38 @@ describe('native and store sentences', () => {
     expect(sentences.filter((sentence) => matchMessage(sentence) === null)).toEqual([])
   })
 
+  it('keeps the native refusal keys, English fallbacks and argument names in sync', () => {
+    for (const [path, source] of files) {
+      const keys = [...source.matchAll(/RefusalMessage\{\s*"([^"]+)"/g)].map((match) => match[1])
+      const found: string[] = []
+      const literals = cppLiterals(source)
+      function check(key: string, names: string[], text: string): void {
+        found.push(key)
+        expect(i18n.global.te(key, 'en'), key).toBe(true)
+        const markers = names.map((name) => `{${name}}`)
+        const params = Object.fromEntries(names.map((name, index) => [name, markers[index]]))
+        const english = i18n.global.t(key as never, params, { locale: 'en' })
+        let index = 0
+        expect(english, key).toBe(text.replaceAll('{}', () => markers[index++] ?? '{}'))
+        expect(index, key).toBe(names.length)
+      }
+      const reasons = new Map<string, string>()
+      for (const literal of literals) {
+        const name = /\bconstexpr auto (\w+_reason)\s*=\s*$/.exec(literal.before)?.[1]
+        if (name !== undefined) reasons.set(name, literal.text)
+        const refusal = keyedRefusal(literal)
+        if (refusal !== null) check(refusal.key, refusal.names, literal.text)
+      }
+      for (const [, name, key] of source.matchAll(namedRefusal)) {
+        if (name === undefined || key === undefined) continue
+        const text = reasons.get(name)
+        expect(text, name).toBeDefined()
+        check(key, [], text ?? '')
+      }
+      expect(found.sort(), path).toEqual(keys.sort())
+    }
+  })
+
   it('keeps the allowlist to literals that exist', () => {
     const all = Object.values(native).join('\n')
     for (const text of english) expect(all).toContain(`"${text}"`)
@@ -174,6 +226,17 @@ describe('translateMessage', () => {
     expect(translateMessage('Load a program first.')).toBe('Laden Sie zuerst ein Programm.')
     await setLanguage('ja')
     expect(translateMessage('Load a program first.')).toBe('先にプログラムを読み込んでください。')
+  })
+
+  it('uses a refusal key first and falls back when metadata is unknown or incomplete', async () => {
+    await setLanguage('de')
+    const fallback = 'The older panel can show this as-is.'
+    expect(translateMessage(fallback, { key: 'messages.policy.jogVelocityAxisLimit', params: { axis: 'Z', limit: '750' } }))
+      .toBe('Die Tippgeschwindigkeit liegt über der Grenze der Z-Achse von 750 mm/min.')
+    expect(translateMessage(fallback, { key: 'messages.policy.jogVelocityAxisLimit', params: { axis: 'Z' } }))
+      .toBe(fallback)
+    expect(translateMessage('Load a program first.', { key: 'messages.future.newKey', params: {} }))
+      .toBe('Laden Sie zuerst ein Programm.')
   })
 
   it('keeps the numbers of a parameterised refusal', async () => {

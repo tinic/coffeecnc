@@ -84,7 +84,11 @@
       "invalidToolRow": "Linha da tabela de ferramentas inválida.",
       "invalidToolNumber": "Número de ferramenta inválido.",
       "noToolChangePending": "Nenhuma troca manual de ferramenta aguarda confirmação.",
-      "unsupportedCommand": "Comando não suportado."
+      "unsupportedCommand": "Comando não suportado.",
+      "backupFolder": "Escolha uma pasta para a cópia de segurança.",
+      "backupFile": "Escolha um ficheiro de cópia de segurança.",
+      "restoreMachineOn": "Desligue a máquina ou prima a paragem de emergência antes de restaurar.",
+      "restoreProgram": "Pare o programa antes de restaurar."
     },
     "session": {
       "busy": "Demasiados pedidos aguardam o LinuxCNC.",
@@ -149,6 +153,7 @@
       "directoryNotSent": "Não é possível enviar a pasta: {detail}",
       "mdiTooLong": "O MDI exige um único bloco com 254 bytes no máximo.",
       "jogStopFailed": "A paragem de jog falhou em {axis}: {detail}",
+      "noBackup": "Este CoffeeCNC não pode fazer cópias de segurança nem restaurar.",
       "noDiagnostics": "O diagnóstico HAL não faz parte desta sessão."
     },
     "request": {
@@ -278,6 +283,9 @@
         "saveSettings": "Guardar definições",
         "toolModels": "Modelos de ferramenta",
         "settings": "Definições",
+        "backup": "Copiar dados da máquina",
+        "checkBackup": "Verificar cópia de segurança",
+        "restoreBackup": "Restaurar cópia de segurança",
         "openDiagnostics": "Abrir o diagnóstico",
         "closeDiagnostics": "Fechar o diagnóstico",
         "startHalTool": "Iniciar {tool}"
@@ -382,6 +390,8 @@
       "bossStart": "Comece por cima do ressalto simulado.",
       "setLoadedLength": "Defina o comprimento da ferramenta carregada antes de o verificar.",
       "browserSimulator": "simulador no navegador",
+      "simRestored": "Restauro simulado: a tabela de ferramentas e os deslocamentos da origem da peça são os da cópia. Este navegador continua aberto.",
+      "simNoFile": "{path} não existe.",
       "noHalTools": "O simulador do navegador não tem ferramentas HAL: funciona sem o LinuxCNC."
     },
     "bridge": {

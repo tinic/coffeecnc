@@ -198,6 +198,18 @@ auto command(const Json& object) -> Command {
       return ListDirectory{std::nullopt};
     return ListDirectory{string(object, "path")};
   }
+  if (type == "backup") {
+    fields(object, {"id", "type", "directory"});
+    return Backup{string(object, "directory")};
+  }
+  if (type == "check_restore") {
+    fields(object, {"id", "type", "path"});
+    return CheckRestore{string(object, "path")};
+  }
+  if (type == "restore") {
+    fields(object, {"id", "type", "path", "token"});
+    return RestoreBackup{string(object, "path"), string(object, "token")};
+  }
   if (type == "manage_program_file") {
     fields(object, {"id", "type", "operation", "path"}, {"name"});
     const auto operation = choice<ProgramFileOperation>(

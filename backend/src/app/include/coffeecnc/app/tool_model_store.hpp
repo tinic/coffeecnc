@@ -64,10 +64,10 @@ inline constexpr std::string_view tool_model_lock_name = "lock";
 // a reason in words for the operator.
 class ToolModelFiles {
 public:
-  using Done = std::expected<void, std::string>;
+  using Done = std::expected<void, LocalizedReason>;
   struct LockError {
     bool in_use{}; // another process holds the lock
-    std::string reason;
+    LocalizedReason reason;
   };
   struct Content {
     std::string bytes; // at most the limit asked for
@@ -84,7 +84,7 @@ public:
   // Makes this one directory with mode 0700 exactly, whatever the umask, when it is missing;
   // one that exists is left as it is. Fails when the path is not a directory.
   [[nodiscard]] virtual auto make_directory(const std::string& path)
-      -> std::expected<Directory, std::string> = 0;
+      -> std::expected<Directory, LocalizedReason> = 0;
   // Opens `<directory>/lock` (made with mode 0600) and takes an exclusive flock on it without
   // waiting. The lock is held until unlock or destruction.
   [[nodiscard]] virtual auto lock(const std::string& directory)
@@ -92,7 +92,7 @@ public:
   virtual void unlock() = 0;
   // The first `limit` bytes of a regular file. No value: there is no such file.
   [[nodiscard]] virtual auto read(const std::string& path, std::size_t limit)
-      -> std::expected<std::optional<Content>, std::string> = 0;
+      -> std::expected<std::optional<Content>, LocalizedReason> = 0;
   // A new, empty file with mode 0600, replacing what a crashed write left there.
   [[nodiscard]] virtual auto open_temporary(const std::string& path) -> Done = 0;
   // Appends to the open temporary file.
@@ -111,7 +111,9 @@ public:
   // failure can leave part of the bytes in the file. The temporary file is not touched.
   [[nodiscard]] virtual auto append(const std::string& path, std::string_view bytes) -> Done {
     static_cast<void>(bytes);
-    return std::unexpected(path + " cannot be appended to here");
+    return std::unexpected(
+        LocalizedReason{std::format("{} cannot be appended to here", path),
+                        MessageKey{"backend.toolModelStore.appendUnsupported", {{"path", path}}}});
   }
 
   // A file of a machine's configuration: `relative` beneath the directory `root`. Every
@@ -177,7 +179,9 @@ public:
   [[nodiscard]] virtual auto remove_beneath(const std::string& root, const std::string& relative)
       -> Done {
     static_cast<void>(relative);
-    return std::unexpected(root + " cannot be written here");
+    return std::unexpected(
+        LocalizedReason{std::format("{} cannot be written here", root),
+                        MessageKey{"backend.machineData.writeHere", {{"path", root}}}});
   }
   // Replaces that file by a symbolic link to `target` (symlinkat beside it, rename, fsync of the
   // directory): what a restore put back where a link was.
@@ -185,7 +189,9 @@ public:
                                           const std::string& target) -> Done {
     static_cast<void>(relative);
     static_cast<void>(target);
-    return std::unexpected(root + " cannot be written here");
+    return std::unexpected(
+        LocalizedReason{std::format("{} cannot be written here", root),
+                        MessageKey{"backend.machineData.writeHere", {{"path", root}}}});
   }
 
 protected:
@@ -204,11 +210,11 @@ public:
   auto operator=(const LocalToolModelFiles&) -> LocalToolModelFiles& = delete;
 
   [[nodiscard]] auto make_directory(const std::string& path)
-      -> std::expected<Directory, std::string> override;
+      -> std::expected<Directory, LocalizedReason> override;
   [[nodiscard]] auto lock(const std::string& directory) -> std::expected<void, LockError> override;
   void unlock() override;
   [[nodiscard]] auto read(const std::string& path, std::size_t limit)
-      -> std::expected<std::optional<Content>, std::string> override;
+      -> std::expected<std::optional<Content>, LocalizedReason> override;
   [[nodiscard]] auto open_temporary(const std::string& path) -> Done override;
   [[nodiscard]] auto write(std::string_view bytes) -> Done override;
   [[nodiscard]] auto sync() -> Done override;
@@ -236,7 +242,7 @@ private:
 };
 
 [[nodiscard]] auto prepare_data_directory(ToolModelFiles& files, const std::string& directory)
-    -> std::expected<ToolModelFiles::Directory, std::string>;
+    -> std::expected<ToolModelFiles::Directory, LocalizedReason>;
 
 // What a command came to: the messages for its page, in the order they are sent.
 struct ToolModelReply {
@@ -299,7 +305,7 @@ public:
 
 private:
   [[nodiscard]] auto read() const -> ToolModels;
-  [[nodiscard]] auto prepare() -> std::expected<void, std::string>;
+  [[nodiscard]] auto prepare() -> ToolModelFiles::Done;
   void show(ToolModels models);
   [[nodiscard]] auto unavailable(LocalizedReason reason) const -> ToolModels;
   [[nodiscard]] auto path(std::string_view name) const -> std::string;
@@ -388,9 +394,9 @@ public:
   // The snapshot for a page that has just been sent its `hello`. Several calls before the
   // writer gets to them are one snapshot, for the page of the last.
   void send_snapshot(PageToken page);
-  // Waits until the writer has opened the archive. `available` with the directory: this process
-  // holds the data directory's lock, until the store is destroyed. Otherwise why it does not.
-  [[nodiscard]] auto held_location() -> ToolModelLocation;
+  // Waits for archive startup and reports why the shared data-directory lock could not be held.
+  // No reason means the store holds the lock until destruction.
+  [[nodiscard]] auto shared_lock_failure() -> std::optional<LocalizedReason>;
   // Stops the writer as the destructor does, but the lock is held until destruction: what
   // others write in the data directory at the end of the run is still under it.
   void stop();

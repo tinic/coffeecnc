@@ -151,6 +151,24 @@ void localization_survives_reload() {
   const MessageKey ignored{"messages.session.requestIgnored",
                            {{"detail", "Missing required field: id."}},
                            {{"detail", {"messages.request.missingField", {{"field", "id"}}}}}};
+  const MessageKey io{"backend.toolModelStore.fileNotRead", {{"osError", "Input/output error"}}};
+  const MessageKey read{
+      "backend.alarmLog.cannotRead",
+      {{"file", "alarm.jsonl"}, {"detail", "it cannot be read: Input/output error"}},
+      parameter_localization("detail", io)};
+  const MessageKey storage{
+      "backend.alarmLog.keptForRun",
+      {{"directory", "/var/cnc"}, {"detail", "The alarm log could not be read"}},
+      parameter_localization("detail", read)};
+  const MessageKey restore{
+      "backend.machineData.notPutBack",
+      {{"files", "Removal failed; name from the operating system"}},
+      {},
+      {{"files",
+        {{"Removal failed",
+          MessageParameterKey{"backend.machineData.rollbackRemove",
+                              {{"path", "tools.tbl"}, {"osError", "Permission denied"}}}},
+         {"name from the operating system"}}}}};
   const std::vector messages{
       encode_message(MessageLevel::info, "Jog stopped: probe contact", epoch, contact),
       encode_result(1, CommandOutcome::rejected,
@@ -160,24 +178,69 @@ void localization_survives_reload() {
       std::string{
           R"({"type":"message","level":"error","text":"Keep this text","localization":{"key":"invalid","params":{"x":7}}})"},
       std::string{
-          R"({"type":"message","level":"error","text":"Panel request ignored: Bad packet.","localization":{"key":"messages.session.requestIgnored","params":{"detail":"Bad packet."},"params_localization":{"detail":{"key":"messages.request.missingField","params":{"field":7}}}}})"}};
+          R"({"type":"message","level":"error","text":"Panel request ignored: Bad packet.","localization":{"key":"messages.session.requestIgnored","params":{"detail":"Bad packet."},"params_localization":{"detail":{"key":"messages.request.missingField","params":{"field":7}}}}})"},
+      encode_message(MessageLevel::error, "The alarm log could not be read", epoch, storage),
+      encode_message(MessageLevel::error, "Restore failed", epoch, restore)};
   f.log->posted(page, messages, epoch);
   f.log->settle();
   f.open();
   const auto view = f.log->view();
-  require(view.entries.size() == 6 && view.skipped == 0, "Both older and localized records reload");
+  require(view.entries.size() == 8 && view.skipped == 0, "Both older and localized records reload");
   require(!view.entries[0].localization && view.entries[1].localization == contact &&
               view.entries[2].localization == refusal && view.entries[3].localization == ignored &&
               !view.entries[4].localization && view.entries[4].text == "Keep this text" &&
               view.entries[5].localization ==
-                  MessageKey{"messages.session.requestIgnored", {{"detail", "Bad packet."}}},
+                  MessageKey{"messages.session.requestIgnored", {{"detail", "Bad packet."}}} &&
+              view.entries[6].localization == storage && view.entries[7].localization == restore,
           "Known metadata survives reload and invalid metadata does not discard English text");
   const auto wire = Json::parse(encode_alarm_log(view)).at("entries");
   require(wire[1].at("localization").at("key") == contact.key &&
               wire[2].at("localization").at("params").at("axis") == "Z" &&
               wire[3].at("localization").at("params_localization").at("detail") ==
-                  Json{{"key", "messages.request.missingField"}, {"params", {{"field", "id"}}}},
+                  Json{{"key", "messages.request.missingField"}, {"params", {{"field", "id"}}}} &&
+              wire[7].at("localization").at("params_lists").at("files")[1].at("text") ==
+                  "name from the operating system",
           "The alarm log provides keys and arguments to the next page");
+}
+
+void oversized_warning_lists_keep_the_alarm_key() {
+  Fixture f;
+  const std::string error = "Permission denied";
+  MessageKey restore{"backend.machineData.notPutBack",
+                     {{"detail", "Replacement failed"}, {"files", ""}, {"path", "/backup"}},
+                     {{"detail",
+                       {"backend.machineData.configNotReplaced",
+                        {{"path", "/config/tool.tbl"}, {"detail", error}}}}}};
+  auto& list = restore.params_lists["files"];
+  for (int i = 0; i < 6; ++i) {
+    const auto path = std::format("/config/{}/{}.hal", std::string(100, 'p'), i);
+    const auto reason = std::format("{} cannot be removed: {}", path, error);
+    if (i != 0)
+      restore.params["files"] += "; ";
+    restore.params["files"] += reason;
+    list.push_back({reason, MessageParameterKey{"backend.machineData.rollbackRemove",
+                                                {{"path", path}, {"osError", error}}}});
+  }
+  const auto fallback = "Restore incomplete: " + restore.params.at("files");
+  const auto input = encode_message(MessageLevel::error, fallback, epoch, restore);
+  const auto metadata = Json::parse(input).at("localization");
+  require(metadata.dump().size() > AlarmLog::max_text_bytes,
+          "Six warnings exceed the per-alarm localization allowance");
+  auto base = restore;
+  base.params_lists.clear();
+  auto too_large = restore;
+  too_large.params["files"] = std::string(AlarmLog::max_text_bytes, 'f');
+  const std::vector messages{
+      input, encode_message(MessageLevel::error, "Fallback only", epoch, too_large)};
+  f.log->posted(page, messages, epoch);
+  f.log->settle();
+  f.open();
+  const auto view = f.log->view();
+  require(view.entries.size() == 2 && view.entries[0].text == fallback &&
+              view.entries[0].localization == base,
+          "The alarm retains its key, original warning strings and nested cause after reload");
+  require(view.entries[1].text == "Fallback only" && !view.entries[1].localization,
+          "An oversized base reason keeps its fallback without exceeding the original limit");
 }
 
 void snapshot_has_what_came_before() {
@@ -509,26 +572,42 @@ void writes_only_under_the_lock() {
     log.posted(page, std::vector{encode_message(MessageLevel::error, "not saved", epoch)}, epoch);
     log.settle();
     const auto view = log.view();
-    require(!view.saved && view.reason.find("in use by another CoffeeCNC") != std::string::npos &&
-                view.localization ==
-                    MessageKey{"backend.alarmLog.keptForRun",
-                               {{"directory", directory},
-                                {"detail", "it is in use by another CoffeeCNC."}}} &&
-                view.entries.size() == 1,
-            "Without the lock the log is kept for this run only, and says why: " + view.reason);
+    require(
+        !view.saved && view.reason.find("in use by another CoffeeCNC") != std::string::npos &&
+            view.localization ==
+                MessageKey{
+                    "backend.alarmLog.keptForRun",
+                    {{"directory", directory}, {"detail", "it is in use by another CoffeeCNC."}},
+                    parameter_localization("detail", MessageKey{"backend.alarmLog.inUse"})} &&
+            view.entries.size() == 1,
+        "Without the lock the log is kept for this run only, and says why: " + view.reason);
   }
   require(writes(files) == 0 && !disk.files.contains(file),
           "Nothing is written in a directory another CoffeeCNC holds");
-  other.unlock();
   {
-    AlarmLog log{files, directory, {}, noop, [] {
-                   return std::optional<std::string>{"the tool models could not lock it"};
-                 }};
+    FakeToolModelFiles blocked_files{disk};
+    ToolModelStore blocked{
+        blocked_files, ToolModelLocation{"G0759", ToolModelAvailability::available, "", directory},
+        noop};
+    const LocalizedReason refused{
+        std::format("Tool model settings in {} are already in use by another CoffeeCNC. Tool "
+                    "models are not saved.",
+                    directory),
+        MessageKey{"backend.toolModelStore.inUse", {{"path", directory}}}};
+    AlarmLog log{files, directory, {}, noop, [&blocked] { return blocked.shared_lock_failure(); }};
     log.posted(page, std::vector{encode_message(MessageLevel::error, "not saved", epoch)}, epoch);
     log.settle();
-    require(!log.view().saved && writes(files) == 0 && files.count("lock") == 1,
+    const auto view = log.view();
+    require(!view.saved && writes(files) == 0 && files.count("lock") == 1,
             "A lock that the caller does not hold is not taken over, and nothing is written");
+    require(view.reason.ends_with(refused.text) &&
+                view.localization ==
+                    MessageKey{"backend.alarmLog.keptForRun",
+                               {{"directory", directory}, {"detail", refused.text}},
+                               parameter_localization("detail", refused.localization)},
+            "The alarm log retains the shared lock refusal key and fallback");
   }
+  other.unlock();
   // The application's case: the tool models hold the lock for the alarm log.
   FakeToolModelFiles store_files{disk};
   bool appended_unlocked = false;
@@ -540,12 +619,7 @@ void writes_only_under_the_lock() {
     ToolModelStore store{
         store_files, ToolModelLocation{"G0759", ToolModelAvailability::available, "", directory},
         [](PageToken, const std::vector<std::string>&) {}};
-    AlarmLog log{files, directory, {}, noop, [&store]() -> std::optional<std::string> {
-                   const auto held = store.held_location();
-                   if (held.availability == ToolModelAvailability::available)
-                     return std::nullopt;
-                   return held.reason;
-                 }};
+    AlarmLog log{files, directory, {}, noop, [&store] { return store.shared_lock_failure(); }};
     log.posted(page, std::vector{encode_message(MessageLevel::error, "saved", epoch)}, epoch);
     log.settle();
     require(log.view().saved && saved_text(disk, "saved"), "Under the lock it is saved");
@@ -564,7 +638,7 @@ void real_enospc() {
 #ifdef __linux__
   LocalToolModelFiles files;
   const auto done = files.append("/dev/full", "a line\n");
-  require(!done && done.error().find("No space left on device") != std::string::npos,
+  require(!done && done.error().text.find("No space left on device") != std::string::npos,
           "An append on a full device fails with ENOSPC");
 #endif
 }
@@ -602,6 +676,7 @@ auto main(int argc, char** argv) -> int {
   try {
     records_messages_and_refusals();
     localization_survives_reload();
+    oversized_warning_lists_keep_the_alarm_key();
     snapshot_has_what_came_before();
     ordering_across_restarts();
     corruption_tolerance();

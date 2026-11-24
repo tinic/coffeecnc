@@ -164,18 +164,22 @@ auto unconfigured_tapping(const PreviewSettings& settings, std::string_view byte
     return SnapshotFailure{true, {}};
   if (!line)
     return {};
-  const std::string reason = "G33.1 rigid tapping is not configured on this machine.";
+  const LocalizedReason reason{"G33.1 rigid tapping is not configured on this machine.",
+                               MessageKey{"backend.previewEngine.rigidTapUnavailable"}};
+  auto detail = parameter_localization("detail", reason.localization);
   return SnapshotFailure{
       false,
       subroutine.empty()
-          ? PreviewError{*line, std::format("Line {}: {}", *line, reason),
+          ? PreviewError{*line, std::format("Line {}: {}", *line, reason.text),
                          MessageKey{"backend.previewEngine.lineError",
-                                    {{"line", std::to_string(*line)}, {"detail", reason}}}}
-          : PreviewError{0, std::format("{}.ngc line {}: {}", subroutine, *line, reason),
+                                    {{"line", std::to_string(*line)}, {"detail", reason.text}},
+                                    std::move(detail)}}
+          : PreviewError{0, std::format("{}.ngc line {}: {}", subroutine, *line, reason.text),
                          MessageKey{"backend.previewEngine.subroutineError",
                                     {{"name", std::string(subroutine)},
                                      {"line", std::to_string(*line)},
-                                     {"detail", reason}}}},
+                                     {"detail", reason.text}},
+                                    std::move(detail)}},
       true};
 }
 

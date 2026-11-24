@@ -40,7 +40,8 @@ auto rename_file(const std::string& from, const std::string& to) -> ToolModelFil
   const int result = ::renameat2(AT_FDCWD, from.c_str(), AT_FDCWD, to.c_str(), RENAME_NOREPLACE);
 #endif
   if (result != 0)
-    return std::unexpected(std::error_code(errno, std::generic_category()).message());
+    return std::unexpected(
+        LocalizedReason{std::error_code(errno, std::generic_category()).message()});
   return {};
 }
 
@@ -140,7 +141,7 @@ auto ProgramWriter::replace_line(std::string_view path, int line, std::string_vi
                                            MessageKey{"backend.programEdit.oneWord"}});
   const auto content = files_.read(*resolved, ProgramStore::max_program_bytes);
   if (!content)
-    return std::unexpected(LocalizedReason{content.error()});
+    return std::unexpected(content.error());
   const auto& file = *content;
   if (!file)
     return std::unexpected(LocalizedReason{"The program no longer exists.",
@@ -200,7 +201,7 @@ auto ProgramWriter::write_over(const std::string& resolved, std::string_view byt
     const auto current = files_.read(resolved, previous->size() + 1);
     if (!current) {
       files_.discard(temporary);
-      return std::unexpected(LocalizedReason{current.error()});
+      return std::unexpected(current.error());
     }
     const auto& file = *current;
     if (!file || file->more || file->bytes != *previous) {
@@ -212,15 +213,19 @@ auto ProgramWriter::write_over(const std::string& resolved, std::string_view byt
     step = files_.rename(temporary, resolved);
   if (!step) {
     files_.discard(temporary);
-    return std::unexpected(LocalizedReason{
-        std::format("The program could not be saved. {}", step.error()),
-        MessageKey{"backend.programEdit.notSavedDetail", {{"detail", step.error()}}}});
+    return std::unexpected(
+        LocalizedReason{std::format("The program could not be saved. {}", step.error().text),
+                        MessageKey{"backend.programEdit.notSavedDetail",
+                                   {{"detail", step.error().text}},
+                                   parameter_localization("detail", step.error().localization)}});
   }
   if (auto durable = files_.sync_directory(directory.empty() ? "/" : directory); !durable)
     return std::unexpected(LocalizedReason{
         std::format("The program was replaced, but its directory could not be synchronized. {}",
-                    durable.error()),
-        MessageKey{"backend.programEdit.notSynchronized", {{"detail", durable.error()}}}});
+                    durable.error().text),
+        MessageKey{"backend.programEdit.notSynchronized",
+                   {{"detail", durable.error().text}},
+                   parameter_localization("detail", durable.error().localization)}});
   return {};
 }
 
@@ -236,7 +241,7 @@ auto ProgramWriter::replace(std::string_view path, std::string_view text, std::s
   // As read_program reads it, so that the stamps compare the same bytes.
   const auto content = files_.read(*resolved, ProgramStore::max_program_bytes + 1);
   if (!content)
-    return std::unexpected(LocalizedReason{content.error()});
+    return std::unexpected(content.error());
   const auto& file = *content;
   if (!file)
     return std::unexpected(LocalizedReason{"The program no longer exists.",
@@ -316,15 +321,16 @@ auto ProgramWriter::write_new(ProgramStore::NewProgram target, std::string_view 
     step = files_.write(bytes);
   if (step)
     step = files_.sync();
-  const auto unkeyed = [](std::string error) { return LocalizedReason{std::move(error)}; };
-  auto written = std::move(step).transform_error(unkeyed);
+  auto written = std::move(step);
   if (written)
-    written = publish ? publish(target.path, commit) : commit().transform_error(unkeyed);
+    written = publish ? publish(target.path, commit) : commit();
   if (!written && !committed) {
     files_.discard(temporary);
     return std::unexpected(LocalizedReason{
         std::format("The program could not be saved: {}", written.error().text),
-        MessageKey{"backend.programEdit.notSaved", {{"detail", written.error().text}}}});
+        MessageKey{"backend.programEdit.notSaved",
+                   {{"detail", written.error().text}},
+                   parameter_localization("detail", written.error().localization)}});
   }
   if (!replace)
     files_.discard(temporary);
@@ -333,8 +339,10 @@ auto ProgramWriter::write_new(ProgramStore::NewProgram target, std::string_view 
     return std::unexpected(std::move(written.error()));
   if (!synced)
     return std::unexpected(LocalizedReason{
-        std::format("Saved on disk. Directory synchronization failed. {}", synced.error()),
-        MessageKey{"backend.programFiles.directorySync", {{"detail", synced.error()}}}});
+        std::format("Saved on disk. Directory synchronization failed. {}", synced.error().text),
+        MessageKey{"backend.programFiles.directorySync",
+                   {{"detail", synced.error().text}},
+                   parameter_localization("detail", synced.error().localization)}});
   return std::move(target.path);
 }
 
@@ -353,7 +361,7 @@ auto ProgramWriter::manage(const ManageProgramFile& command, std::string_view lo
       return std::unexpected(target.error());
     const auto content = files_.read(*source, max_copy_bytes);
     if (!content)
-      return std::unexpected(LocalizedReason{content.error()});
+      return std::unexpected(content.error());
     const auto& file = *content;
     if (!file)
       return std::unexpected(LocalizedReason{"The file or folder no longer exists.",
@@ -375,12 +383,11 @@ auto ProgramWriter::manage(const ManageProgramFile& command, std::string_view lo
   if (command.operation == ProgramFileOperation::create_folder) {
     const auto folder = files_.make_directory(entry->path);
     if (!folder)
-      return std::unexpected(LocalizedReason{folder.error()});
+      return std::unexpected(folder.error());
     if (!folder->created)
       return std::unexpected(LocalizedReason{"A file or folder already has that name.",
                                              MessageKey{"backend.programFiles.nameTaken"}});
-    return files_.sync_directory(directory).transform_error(
-        [](std::string reason) { return LocalizedReason{std::move(reason)}; });
+    return files_.sync_directory(directory);
   }
   if (!entry->exists)
     return std::unexpected(LocalizedReason{"The file or folder no longer exists.",
@@ -404,10 +411,9 @@ auto ProgramWriter::manage(const ManageProgramFile& command, std::string_view lo
     if (!target)
       return std::unexpected(target.error());
     if (auto moved = rename_file(entry->path, target->path); !moved)
-      return std::unexpected(LocalizedReason{moved.error()});
+      return std::unexpected(moved.error());
   }
-  return files_.sync_directory(directory).transform_error(
-      [](std::string reason) { return LocalizedReason{std::move(reason)}; });
+  return files_.sync_directory(directory);
 }
 
 } // namespace coffeecnc

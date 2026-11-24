@@ -329,14 +329,22 @@ auto LocalToolModelFiles::remove_beneath(const std::string& root, const std::str
   if (!parent) {
     if (parent.error().missing)
       return {};
-    return std::unexpected(std::move(parent.error().reason.text));
+    return std::unexpected(std::move(parent.error().reason));
   }
   const auto shown = root + '/' + relative;
-  if (::unlinkat(parent->directory.get(), parent->name.c_str(), 0) != 0 && errno != ENOENT)
-    return std::unexpected(std::format("{} cannot be removed: {}", shown, said(errno)));
-  if (::fsync(parent->directory.get()) != 0)
-    return std::unexpected(std::format("{} was removed, but its folder cannot be synchronised: {}",
-                                       shown, said(errno)));
+  if (::unlinkat(parent->directory.get(), parent->name.c_str(), 0) != 0 && errno != ENOENT) {
+    const auto error = said(errno);
+    return std::unexpected(LocalizedReason{
+        std::format("{} cannot be removed: {}", shown, error),
+        MessageKey{"backend.machineData.rollbackRemove", {{"path", shown}, {"osError", error}}}});
+  }
+  if (::fsync(parent->directory.get()) != 0) {
+    const auto error = said(errno);
+    return std::unexpected(LocalizedReason{
+        std::format("{} was removed, but its folder cannot be synchronised: {}", shown, error),
+        MessageKey{"backend.machineData.rollbackRemoveSync",
+                   {{"path", shown}, {"osError", error}}}});
+  }
   return {};
 }
 
@@ -355,21 +363,31 @@ auto LocalToolModelFiles::link_beneath(const std::string& root, const std::strin
                                        const std::string& target) -> Done {
   auto parent = parent_beneath(root, relative);
   if (!parent)
-    return std::unexpected(std::move(parent.error().reason.text));
+    return std::unexpected(std::move(parent.error().reason));
   const auto shown = root + '/' + relative;
   const int directory = parent->directory.get();
   const auto temporary = parent->name + std::string(temporary_suffix);
+  const auto link_failure = [&](int number) {
+    const auto error = said(number);
+    return std::unexpected(LocalizedReason{
+        std::format("{} cannot be made a link again: {}", shown, error),
+        MessageKey{"backend.machineData.rollbackRelink", {{"path", shown}, {"osError", error}}}});
+  };
   static_cast<void>(::unlinkat(directory, temporary.c_str(), 0));
   if (::symlinkat(target.c_str(), directory, temporary.c_str()) != 0)
-    return std::unexpected(std::format("{} cannot be made a link again: {}", shown, said(errno)));
+    return link_failure(errno);
   if (::renameat(directory, temporary.c_str(), directory, parent->name.c_str()) != 0) {
-    const auto reason = std::format("{} cannot be made a link again: {}", shown, said(errno));
+    auto reason = link_failure(errno);
     static_cast<void>(::unlinkat(directory, temporary.c_str(), 0));
-    return std::unexpected(reason);
+    return reason;
   }
-  if (::fsync(directory) != 0)
-    return std::unexpected(std::format(
-        "{} is a link again, but its folder cannot be synchronised: {}", shown, said(errno)));
+  if (::fsync(directory) != 0) {
+    const auto error = said(errno);
+    return std::unexpected(LocalizedReason{
+        std::format("{} is a link again, but its folder cannot be synchronised: {}", shown, error),
+        MessageKey{"backend.machineData.rollbackRelinkSync",
+                   {{"path", shown}, {"osError", error}}}});
+  }
   return {};
 }
 

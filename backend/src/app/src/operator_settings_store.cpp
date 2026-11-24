@@ -26,9 +26,11 @@ auto OperatorSettingsArchive::unavailable(std::string reason, MessageKey localiz
 void OperatorSettingsArchive::show(OperatorSettings settings) {
   auto encoded = encode_operator_settings(settings);
   if (!encoded) {
-    settings = unavailable(
-        std::format("Operator settings cannot be shown: {}", encoded.error()),
-        MessageKey{"backend.operatorSettingsStore.cannotShow", {{"detail", encoded.error()}}});
+    const auto& reason = encoded.error();
+    settings = unavailable(std::format("Operator settings cannot be shown: {}", reason.text),
+                           MessageKey{"backend.operatorSettingsStore.cannotShow",
+                                      {{"detail", reason.text}},
+                                      parameter_localization("detail", reason.localization)});
     encoded = encode_operator_settings(settings);
   }
   settings_ = std::move(settings);
@@ -37,7 +39,12 @@ void OperatorSettingsArchive::show(OperatorSettings settings) {
 void OperatorSettingsArchive::open(ToolModelLocation location) {
   location_ = std::move(location);
   if (location_.availability != ToolModelAvailability::available) {
-    show({location_.machine_id, 0, location_.availability, location_.reason, {}});
+    show({location_.machine_id,
+          0,
+          location_.availability,
+          location_.reason,
+          {},
+          location_.localization});
     return;
   }
   show(read());
@@ -77,14 +84,16 @@ auto OperatorSettingsArchive::read_settings() const -> OperatorSettings {
   const auto file = path(file_name);
   const auto result = files_.read(file, max_operator_settings_bytes);
   if (!result)
-    return unavailable(std::format("{} cannot be read: {}", file, result.error()),
+    return unavailable(std::format("{} cannot be read: {}", file, result.error().text),
                        MessageKey{"backend.operatorSettingsStore.cannotRead",
-                                  {{"file", file}, {"detail", result.error()}}});
+                                  {{"file", file}, {"detail", result.error().text}},
+                                  parameter_localization("detail", result.error().localization)});
   const auto& content = *result;
   if (!content) {
     OperatorPreferences defaults;
     defaults.default_jog_velocity = std::min(600.0, limits_.max_jog_velocity);
-    return {location_.machine_id, 0, ToolModelAvailability::available, location_.reason, defaults};
+    return {location_.machine_id, 0,        ToolModelAvailability::available,
+            location_.reason,     defaults, location_.localization};
   }
   if (content->more)
     return unavailable(std::format("{} exceeds 16 KiB. The file was left alone.", file),
@@ -92,16 +101,17 @@ auto OperatorSettingsArchive::read_settings() const -> OperatorSettings {
   const auto saved = decode_operator_settings_file(content->bytes);
   if (!saved)
     return unavailable(
-        std::format("{} is not usable: {} The file was left alone.", file, saved.error()),
+        std::format("{} is not usable: {} The file was left alone.", file, saved.error().text),
         MessageKey{"backend.operatorSettingsStore.notUsable",
-                   {{"file", file}, {"detail", saved.error()}}});
+                   {{"file", file}, {"detail", saved.error().text}},
+                   parameter_localization("detail", saved.error().localization)});
   if (saved->machine_id != location_.machine_id)
     return unavailable(
         std::format("{} belongs to another machine. The file was left alone.", file),
         MessageKey{"backend.operatorSettingsStore.otherMachineFile", {{"file", file}}});
   // Retain the saved document if INI limits shrink. The UI clamps effective startup values.
-  return {location_.machine_id, saved->revision, ToolModelAvailability::available, location_.reason,
-          saved->document};
+  return {location_.machine_id, saved->revision, ToolModelAvailability::available,
+          location_.reason,     saved->document, location_.localization};
 }
 auto OperatorSettingsArchive::apply(const SetOperatorSettings& command) -> ToolModelReply {
   if (settings_.availability != ToolModelAvailability::available)
@@ -126,27 +136,34 @@ auto OperatorSettingsArchive::apply(const SetOperatorSettings& command) -> ToolM
   if (settings_.revision >= max_tool_model_revision)
     return {CommandOutcome::rejected, "Settings reached their last revision. Nothing was saved.",
             false, MessageKey{"backend.operatorSettingsStore.lastRevision"}};
-  OperatorSettings next{location_.machine_id, settings_.revision + 1,
-                        ToolModelAvailability::available, location_.reason, command.document};
+  OperatorSettings next{
+      location_.machine_id, settings_.revision + 1, ToolModelAvailability::available,
+      location_.reason,     command.document,       location_.localization};
   std::ranges::sort(next.document->enabled_wcs);
   const auto text =
       encode_operator_settings_file({command.machine_id, next.revision, *next.document});
   if (!text)
-    return {CommandOutcome::rejected, text.error(), false};
+    return {CommandOutcome::rejected, text.error().text, false, text.error().localization};
   const bool language_changed =
       settings_.document && settings_.document->language != command.document.language;
   if (const auto step = replace(file_name, temporary_name, *text); !step)
-    return {CommandOutcome::failed,
-            std::format("Settings were not saved: {}. The saved file is unchanged.", step.error()),
-            false,
-            MessageKey{"backend.operatorSettingsStore.notSaved", {{"detail", step.error()}}}};
-  const auto uncertain = [&](const std::string& detail) -> ToolModelReply {
+    return {
+        CommandOutcome::failed,
+        std::format("Settings were not saved: {}. The saved file is unchanged.", step.error().text),
+        false,
+        MessageKey{"backend.operatorSettingsStore.notSaved",
+                   {{"detail", step.error().text}},
+                   parameter_localization("detail", step.error().localization)}};
+  const auto uncertain = [&](const LocalizedReason& detail) -> ToolModelReply {
     show(read());
     return {CommandOutcome::failed,
             std::format(
                 "The save outcome is uncertain: {}. Displayed settings were read back from disk.",
-                detail),
-            true, MessageKey{"backend.operatorSettingsStore.uncertain", {{"detail", detail}}}};
+                detail.text),
+            true,
+            MessageKey{"backend.operatorSettingsStore.uncertain",
+                       {{"detail", detail.text}},
+                       parameter_localization("detail", detail.localization)}};
   };
   // Only a change of language writes the language file, after the settings file.
   if (language_changed) {

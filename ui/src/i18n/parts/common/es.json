@@ -16,6 +16,7 @@
     "no": "No",
     "off": "Apagado",
     "saving": "Guardando…",
+    "detailListSeparator": "; ",
     "listSeparator": ", "
   }
 }

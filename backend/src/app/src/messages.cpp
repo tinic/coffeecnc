@@ -714,7 +714,7 @@ auto encode_offset_history(const OffsetHistory& history) -> EncodedMessage {
                {"reason", history.reason},
                {"entries", std::move(entries)}};
   if (const auto& key = history.localization)
-    message["localization"] = {{"key", key->key}, {"params", key->params}};
+    message["localization"] = message_key_json(*key);
   return fields.finish(message);
 }
 

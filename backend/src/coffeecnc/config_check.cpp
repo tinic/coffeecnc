@@ -317,14 +317,14 @@ auto repair_ini(const MachineIniInspection& plan, const std::vector<IniAddition>
   static_cast<void>(::close(reserved));
   StagedIni stage{files, temporary};
   if (auto step = files.open_temporary(stage.path); !step)
-    return std::unexpected(step.error());
+    return std::unexpected(step.error().text);
   if (::chown(stage.path.c_str(), original.st_uid, original.st_gid) != 0 ||
       ::chmod(stage.path.c_str(), original.st_mode & 0777) != 0)
     return std::unexpected("Cannot preserve the INI ownership and permissions.");
   if (auto step = files.write(replacement); !step)
-    return std::unexpected(step.error());
+    return std::unexpected(step.error().text);
   if (auto step = files.sync(); !step)
-    return std::unexpected(step.error());
+    return std::unexpected(step.error().text);
 
   // Check with the same parser and units/feature validation used at startup.
   const auto staged = load_machine_config(stage.path);
@@ -360,10 +360,10 @@ auto repair_ini(const MachineIniInspection& plan, const std::vector<IniAddition>
   }
   const auto directory = fs::path(path).parent_path().string();
   if (auto step = files.sync_directory(directory); !step)
-    return std::unexpected(std::format("Could not save backup {}: {}.", backup, step.error()));
+    return std::unexpected(std::format("Could not save backup {}: {}.", backup, step.error().text));
   if (auto step = files.rename(stage.path, path); !step)
     return std::unexpected(
-        std::format("Could not replace the INI: {}. Backup: {}.", step.error(), backup));
+        std::format("Could not replace the INI: {}. Backup: {}.", step.error().text, backup));
   stage.path.clear();
   if (auto step = files.sync_directory(directory); !step)
     return std::unexpected(

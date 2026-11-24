@@ -79,7 +79,22 @@ function translateArgument(name: string, value: string): string {
   return nested.has(name) ? translateMessage(value) : value
 }
 
-function translateKey(message: unknown): string | undefined {
+const maxMessageParameterDepth = 4
+
+function translateList(value: unknown, depth: number): string | undefined {
+  if (!Array.isArray(value) || value.length === 0) return
+  const items: string[] = []
+  for (const entry of value as unknown[]) {
+    if (entry === null || typeof entry !== 'object' || !('text' in entry) || typeof entry.text !== 'string')
+      return
+    const localization = 'localization' in entry ? entry.localization : undefined
+    const translated = depth < maxMessageParameterDepth ? translateKey(localization, depth + 1) : undefined
+    items.push(translated ?? entry.text)
+  }
+  return items.join(i18n.global.t('common.detailListSeparator'))
+}
+
+function translateKey(message: unknown, depth = 0): string | undefined {
   if (message === null || typeof message !== 'object' ||
     !('key' in message) || typeof message.key !== 'string' || !('params' in message)) return
   const names = argumentsByKey.get(message.key)
@@ -87,18 +102,20 @@ function translateKey(message: unknown): string | undefined {
   if (!names || typeof args !== 'object' || args === null || Array.isArray(args)) return
   const localization: unknown = 'params_localization' in message ? message.params_localization : undefined
   const keys = typeof localization === 'object' && localization !== null && !Array.isArray(localization)
-    ? localization as Record<string, { key: string; params: Record<string, string> } | undefined>
+    ? localization as Record<string, unknown>
     : undefined
+  const listMetadata = 'params_lists' in message ? message.params_lists : undefined
+  const argumentLists = typeof listMetadata === 'object' && listMetadata !== null && !Array.isArray(listMetadata)
+    ? listMetadata as Record<string, unknown> : undefined
   const params: Params = {}
   for (const name of names) {
     const value = (args as Record<string, unknown>)[name]
     if (!Object.hasOwn(args, name) || typeof value !== 'string') return
     const parameter = keys && Object.hasOwn(keys, name) ? keys[name] : undefined
-    // Only one level of message keys is carried for parameters.
-    const translated = parameter && typeof parameter.key === 'string'
-      ? translateKey({ key: parameter.key, params: parameter.params })
-      : undefined
-    params[name] = translated ?? translateArgument(name, value)
+    const entries = argumentLists && Object.hasOwn(argumentLists, name) ? argumentLists[name] : undefined
+    const translated = depth < maxMessageParameterDepth ? translateKey(parameter, depth + 1) : undefined
+    params[name] = translateList(entries, depth) ?? translated ?? (depth >= maxMessageParameterDepth && parameter !== undefined
+      ? value : translateArgument(name, value))
   }
   return i18n.global.t(message.key as never, params)
 }

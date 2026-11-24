@@ -360,6 +360,27 @@ describe('native and store sentences', () => {
 })
 
 describe('translateMessage', () => {
+  it('keeps nested storage explanations keyed and leaves operating-system text literal', async () => {
+    await setLanguage('fr')
+    const file = '/config/Tool models; first run.json'
+    const osError = 'The file cannot be read.'
+    const detail = {
+      key: 'backend.toolModelStore.cannotRead',
+      params: { file, detail: 'legacy read failure' },
+      params_localization: {
+        detail: { key: 'backend.toolModelStore.fileNotRead', params: { osError } },
+      },
+    }
+    const translated = translateMessage('Legacy warning', {
+      key: 'backend.toolModelStore.changedOutsideReason',
+      params: { file, detail: 'legacy storage warning' },
+      params_localization: { detail },
+    })
+    expect(translated).toContain(file)
+    expect(translated).toContain(`impossible de le lire\u202f: ${osError}`)
+    expect(translated).not.toContain('legacy')
+  })
+
   it('translates a keyed argument and falls back to its text for invalid metadata', async () => {
     await setLanguage('de')
     const fallback = 'Panel request ignored: Bad packet.'
@@ -411,6 +432,22 @@ describe('translateMessage', () => {
       params: { file: 'inner.ngc', sourceLine: '3', detail },
       params_localization: { detail: { key: 'backend.previewEngine.helperUvwArc', params: {} } },
     })).toBe('inner.ngc ligne 3 : un arc dans un plan UVW ne peut pas être affiché')
+  })
+
+  it('translates the unconfigured tapping reason with its program or subroutine location', async () => {
+    await setLanguage('fr')
+    const detail = 'G33.1 rigid tapping is not configured on this machine.'
+    const params_localization = { detail: { key: 'backend.previewEngine.rigidTapUnavailable', params: {} } }
+    expect(translateMessage(`Line 5: ${detail}`, {
+      key: 'backend.previewEngine.lineError',
+      params: { line: '5', detail },
+      params_localization,
+    })).toBe('Ligne 5 : Le taraudage rigide G33.1 n’est pas configuré sur cette machine.')
+    expect(translateMessage(`tap.ngc line 2: ${detail}`, {
+      key: 'backend.previewEngine.subroutineError',
+      params: { name: 'tap', line: '2', detail },
+      params_localization,
+    })).toBe('tap.ngc ligne 2 : Le taraudage rigide G33.1 n’est pas configuré sur cette machine.')
   })
 
   it('translates a remap stop and retains the code', async () => {
@@ -574,6 +611,26 @@ describe('translateMessage', () => {
     expect(translateResult({ type: 'result', id: 50, outcome: 'rejected', reason,
       refusal: { key: 'backend.halDiagnostics.notStartedBecause', params: { name: 'halscope', system_error: systemError } } })).toBe(expected)
     expect(translateMessage(reason)).toBe(expected)
+  })
+
+  it('translates each rollback warning while retaining literal paths and opaque text', async () => {
+    await setLanguage('fr')
+    const path = '/config/tools; main.tbl'
+    const opaque = 'The file cannot be read.'
+    expect(translateMessage(opaque)).not.toBe(opaque)
+    const raw = `${path} cannot be made a link again: ${opaque}`
+    const args = {
+      key: 'backend.machineData.notPutBack',
+      params: { detail: 'Device fault', files: `${raw}; adapter warning`, path: '/copy.tar.gz' },
+    }
+    expect(translateMessage('Fallback', {
+      ...args,
+      params_lists: { files: [
+        { text: raw, localization: { key: 'backend.machineData.rollbackRelink', params: { path, osError: opaque } } },
+        { text: 'adapter warning' },
+      ] },
+    })).toContain(`Impossible de recréer le lien ${path} : ${opaque}; adapter warning`)
+    expect(translateMessage('Fallback', { ...args, params_lists: { files: [null] } })).toContain(args.params.files)
   })
 
   it('translates a nested reason', async () => {

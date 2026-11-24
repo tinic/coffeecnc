@@ -375,9 +375,10 @@ auto tool_defaults_error(const ToolDefaults& defaults) -> LocalizedReason {
   for (const auto family : tool_families)
     if (auto error = tool_dimension_error(family, defaults.at(index(family))); !error.empty())
       return {std::format("{}: {}", family_names.at(index(family)), error.text),
-              MessageKey{"backend.toolModels.familyProblem",
-                         {{"family", std::string(family_names.at(index(family)))},
-                          {"detail", error.text}}}};
+              MessageKey{
+                  "backend.toolModels.familyProblem",
+                  {{"family", std::string(family_names.at(index(family)))}, {"detail", error.text}},
+                  parameter_localization("detail", error.localization)}};
   return {};
 }
 
@@ -432,10 +433,10 @@ auto tool_document_error(const ToolModelDocument& document) -> LocalizedReason {
     if (error.empty() && !numbers.insert(assignment.tool.number).second)
       error = {"It is assigned more than once.", MessageKey{"backend.toolModels.assignedTwice"}};
     if (!error.empty())
-      return {
-          std::format("Tool {}: {}", assignment.tool.number, error.text),
-          MessageKey{"backend.toolModels.toolProblem",
-                     {{"tool", std::to_string(assignment.tool.number)}, {"detail", error.text}}}};
+      return {std::format("Tool {}: {}", assignment.tool.number, error.text),
+              MessageKey{"backend.toolModels.toolProblem",
+                         {{"tool", std::to_string(assignment.tool.number)}, {"detail", error.text}},
+                         parameter_localization("detail", error.localization)}};
   }
   return {};
 }

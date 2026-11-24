@@ -28,8 +28,17 @@ auto absolute(const std::optional<std::string>& path) -> const std::string* {
   return path && path->starts_with('/') ? &*path : nullptr;
 }
 
-auto failure(std::string_view what) -> std::unexpected<std::string> {
-  return std::unexpected(std::format("{}: {}", what, std::generic_category().message(errno)));
+auto io_reason(std::string_view key, std::string_view what, int number) -> LocalizedReason {
+  const auto error = std::generic_category().message(number);
+  return {std::format("{}: {}", what, error), MessageKey{std::string(key), {{"osError", error}}}};
+}
+
+auto directory_reason(std::string_view key, std::format_string<const std::string&> what,
+                      const std::string& path, int number) -> std::unexpected<LocalizedReason> {
+  const auto error = std::generic_category().message(number);
+  return std::unexpected(
+      LocalizedReason{std::format("{}: {}", std::format(what, path), error),
+                      MessageKey{std::string(key), {{"path", path}, {"osError", error}}}});
 }
 
 auto close_descriptor(int& descriptor) -> bool {
@@ -122,44 +131,48 @@ LocalToolModelFiles::~LocalToolModelFiles() {
 }
 
 auto LocalToolModelFiles::make_directory(const std::string& path)
-    -> std::expected<Directory, std::string> {
+    -> std::expected<Directory, LocalizedReason> {
   constexpr unsigned permission_bits = 07777;
   bool created = ::mkdir(path.c_str(), directory_mode) == 0;
   if (!created && errno != EEXIST)
-    return failure(std::format("the directory {} cannot be made", path));
+    return directory_reason("backend.toolModelStore.directoryNotMade",
+                            "the directory {} cannot be made", path, errno);
   // The umask may have taken bits away; it cannot have added any.
   if (created && ::chmod(path.c_str(), directory_mode) != 0)
-    return failure(std::format("the mode of the directory {} cannot be set", path));
+    return directory_reason("backend.toolModelStore.directoryModeNotSet",
+                            "the mode of the directory {} cannot be set", path, errno);
   struct stat info{};
   if (::stat(path.c_str(), &info) != 0)
-    return failure(std::format("the directory {} cannot be examined", path));
+    return directory_reason("backend.toolModelStore.directoryNotExamined",
+                            "the directory {} cannot be examined", path, errno);
   if (!S_ISDIR(info.st_mode))
-    return std::unexpected(std::format("{} is not a directory", path));
+    return std::unexpected(
+        LocalizedReason{std::format("{} is not a directory", path),
+                        MessageKey{"backend.toolModelStore.notDirectory", {{"path", path}}}});
   return Directory{created, static_cast<unsigned>(info.st_mode) & permission_bits};
 }
 
 auto LocalToolModelFiles::lock(const std::string& directory) -> std::expected<void, LockError> {
-  const auto error = [](std::string_view what) -> std::unexpected<LockError> {
-    return std::unexpected(
-        LockError{false, std::format("{}: {}", what, std::generic_category().message(errno))});
-  };
   unlock();
   const auto file = directory + '/' + std::string(tool_model_lock_name);
   // Made by this call: 0600 exactly, whatever the umask. One that exists is left as it is.
   lock_ = ::open(file.c_str(), O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, file_mode);
   if (lock_ >= 0 && ::fchmod(lock_, file_mode) != 0) {
-    auto refused = error("the mode of the lock file cannot be set");
+    auto refused = std::unexpected(
+        LockError{false, io_reason("backend.toolModelStore.lockModeNotSet",
+                                   "the mode of the lock file cannot be set", errno)});
     static_cast<void>(close_descriptor(lock_));
     return refused;
   }
   if (lock_ < 0 && errno == EEXIST)
     lock_ = ::open(file.c_str(), O_RDWR | O_CLOEXEC | O_NOFOLLOW);
   if (lock_ < 0)
-    return error("the lock file cannot be opened");
+    return std::unexpected(LockError{false, io_reason("backend.toolModelStore.lockNotOpened",
+                                                      "the lock file cannot be opened", errno)});
   if (::flock(lock_, LOCK_EX | LOCK_NB) != 0) {
     const bool held = errno == EWOULDBLOCK;
-    auto refused = error("the lock cannot be taken");
-    refused.error().in_use = held;
+    auto refused = std::unexpected(LockError{
+        held, io_reason("backend.toolModelStore.lockNotTaken", "the lock cannot be taken", errno)});
     static_cast<void>(close_descriptor(lock_));
     return refused;
   }
@@ -169,17 +182,19 @@ auto LocalToolModelFiles::lock(const std::string& directory) -> std::expected<vo
 void LocalToolModelFiles::unlock() { static_cast<void>(close_descriptor(lock_)); }
 
 auto LocalToolModelFiles::read(const std::string& path, std::size_t limit)
-    -> std::expected<std::optional<Content>, std::string> {
+    -> std::expected<std::optional<Content>, LocalizedReason> {
   int file = ::open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
   if (file < 0) {
     if (errno == ENOENT)
       return std::optional<Content>{};
-    return failure("it cannot be opened");
+    return std::unexpected(
+        io_reason("backend.toolModelStore.fileNotOpened", "it cannot be opened", errno));
   }
   struct stat info{};
   if (::fstat(file, &info) != 0 || !S_ISREG(info.st_mode)) {
     static_cast<void>(close_descriptor(file));
-    return std::unexpected(std::string("it is not a regular file"));
+    return std::unexpected(LocalizedReason{"it is not a regular file",
+                                           MessageKey{"backend.toolModelStore.notRegularFile"}});
   }
   Content content;
   // One byte beyond the limit tells a longer file from one of exactly that size.
@@ -190,7 +205,8 @@ auto LocalToolModelFiles::read(const std::string& path, std::size_t limit)
     if (got < 0 && errno == EINTR)
       continue;
     if (got < 0) {
-      auto failed = failure("it cannot be read");
+      auto failed = std::unexpected(
+          io_reason("backend.toolModelStore.fileNotRead", "it cannot be read", errno));
       static_cast<void>(close_descriptor(file));
       return failed;
     }
@@ -209,10 +225,12 @@ auto LocalToolModelFiles::open_temporary(const std::string& path) -> Done {
   temporary_ =
       ::open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOFOLLOW, file_mode);
   if (temporary_ < 0)
-    return failure("the temporary file cannot be made");
+    return std::unexpected(io_reason("backend.toolModelStore.temporaryNotMade",
+                                     "the temporary file cannot be made", errno));
   // Also for one a crashed write left there, and whatever the umask.
   if (::fchmod(temporary_, file_mode) != 0)
-    return failure("the mode of the temporary file cannot be set");
+    return std::unexpected(io_reason("backend.toolModelStore.temporaryModeNotSet",
+                                     "the mode of the temporary file cannot be set", errno));
   return {};
 }
 
@@ -222,7 +240,8 @@ auto LocalToolModelFiles::write(std::string_view bytes) -> Done {
     if (written < 0 && errno == EINTR)
       continue;
     if (written < 0)
-      return failure("the temporary file cannot be written");
+      return std::unexpected(io_reason("backend.toolModelStore.temporaryNotWritten",
+                                       "the temporary file cannot be written", errno));
     bytes.remove_prefix(static_cast<std::size_t>(written));
   }
   return {};
@@ -230,35 +249,42 @@ auto LocalToolModelFiles::write(std::string_view bytes) -> Done {
 
 auto LocalToolModelFiles::sync() -> Done {
   if (::fsync(temporary_) != 0)
-    return failure("the temporary file cannot be synchronised");
+    return std::unexpected(io_reason("backend.toolModelStore.temporaryNotSynchronised",
+                                     "the temporary file cannot be synchronised", errno));
   if (!close_descriptor(temporary_))
-    return failure("the temporary file cannot be closed");
+    return std::unexpected(io_reason("backend.toolModelStore.temporaryNotClosed",
+                                     "the temporary file cannot be closed", errno));
   return {};
 }
 
 auto LocalToolModelFiles::rename(const std::string& from, const std::string& to) -> Done {
   if (::rename(from.c_str(), to.c_str()) != 0)
-    return failure("the file cannot be replaced");
+    return std::unexpected(
+        io_reason("backend.toolModelStore.fileNotReplaced", "the file cannot be replaced", errno));
   return {};
 }
 
 auto LocalToolModelFiles::link(const std::string& from, const std::string& to) -> Done {
   if (::link(from.c_str(), to.c_str()) != 0)
-    return failure("the file cannot be made");
+    return std::unexpected(
+        io_reason("backend.toolModelStore.fileNotMade", "the file cannot be made", errno));
   return {};
 }
 
 auto LocalToolModelFiles::sync_directory(const std::string& directory) -> Done {
   int opened = ::open(directory.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
   if (opened < 0)
-    return failure("the directory cannot be opened");
+    return std::unexpected(io_reason("backend.toolModelStore.directoryNotOpened",
+                                     "the directory cannot be opened", errno));
   if (::fsync(opened) != 0) {
-    auto failed = failure("the directory cannot be synchronised");
+    auto failed = std::unexpected(io_reason("backend.toolModelStore.directoryNotSynchronised",
+                                            "the directory cannot be synchronised", errno));
     static_cast<void>(close_descriptor(opened));
     return failed;
   }
   if (!close_descriptor(opened))
-    return failure("the directory cannot be closed");
+    return std::unexpected(io_reason("backend.toolModelStore.directoryNotClosed",
+                                     "the directory cannot be closed", errno));
   return {};
 }
 
@@ -271,22 +297,26 @@ auto LocalToolModelFiles::append(const std::string& path, std::string_view bytes
   int opened =
       ::open(path.c_str(), O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC | O_NOFOLLOW, file_mode);
   if (opened < 0)
-    return failure("the file cannot be opened");
+    return std::unexpected(io_reason("backend.toolModelStore.fileNotOpenedAppend",
+                                     "the file cannot be opened", errno));
   const auto done = [&]() -> Done {
     while (!bytes.empty()) {
       const auto written = ::write(opened, bytes.data(), bytes.size());
       if (written < 0 && errno == EINTR)
         continue;
       if (written < 0)
-        return failure("the file cannot be written");
+        return std::unexpected(io_reason("backend.toolModelStore.fileNotWritten",
+                                         "the file cannot be written", errno));
       bytes.remove_prefix(static_cast<std::size_t>(written));
     }
     if (::fsync(opened) != 0)
-      return failure("the file cannot be synchronised");
+      return std::unexpected(io_reason("backend.toolModelStore.fileNotSynchronised",
+                                       "the file cannot be synchronised", errno));
     return {};
   }();
   if (!close_descriptor(opened) && done)
-    return failure("the file cannot be closed");
+    return std::unexpected(
+        io_reason("backend.toolModelStore.fileNotClosed", "the file cannot be closed", errno));
   return done;
 }
 
@@ -320,7 +350,9 @@ void ToolModelArchive::show(ToolModels models) {
   if (!encoded) {
     models = unavailable(
         {std::format("Tool model settings cannot be shown: {} {}", encoded.error().text, not_saved),
-         MessageKey{"backend.toolModelStore.cannotShow", {{"detail", encoded.error().text}}}});
+         MessageKey{"backend.toolModelStore.cannotShow",
+                    {{"detail", encoded.error().text}},
+                    parameter_localization("detail", encoded.error().localization)}});
     encoded = encode_tool_models(models);
   }
   models_ = std::move(models);
@@ -328,7 +360,7 @@ void ToolModelArchive::show(ToolModels models) {
 }
 
 auto prepare_data_directory(ToolModelFiles& files, const std::string& directory)
-    -> std::expected<ToolModelFiles::Directory, std::string> {
+    -> std::expected<ToolModelFiles::Directory, LocalizedReason> {
   // Outermost first. What exists is left as it is; what is made is made durable in its
   // parent before anything is made inside it.
   for (auto end = directory.find('/', 1);; end = directory.find('/', end + 1)) {
@@ -341,15 +373,19 @@ auto prepare_data_directory(ToolModelFiles& files, const std::string& directory)
       const auto parent =
           slash == 0 || slash == std::string::npos ? std::string("/") : part.substr(0, slash);
       if (const auto durable = files.sync_directory(parent); !durable)
-        return std::unexpected(
-            std::format("the new directory {} cannot be made durable: {}", part, durable.error()));
+        return std::unexpected(LocalizedReason{
+            std::format("the new directory {} cannot be made durable: {}", part,
+                        durable.error().text),
+            MessageKey{"backend.toolModelStore.newDirectoryNotDurable",
+                       {{"path", part}, {"detail", durable.error().text}},
+                       parameter_localization("detail", durable.error().localization)}});
     }
     if (end == std::string::npos)
       return *made;
   }
 }
 
-auto ToolModelArchive::prepare() -> std::expected<void, std::string> {
+auto ToolModelArchive::prepare() -> ToolModelFiles::Done {
   const auto made = prepare_data_directory(files_, location_.directory);
   if (!made)
     return std::unexpected(made.error());
@@ -366,10 +402,12 @@ void ToolModelArchive::open() {
   if (location_.availability != ToolModelAvailability::available)
     return;
   if (const auto prepared = prepare(); !prepared) {
-    show(unavailable({std::format("Tool model settings in {} cannot be opened: {}. {}",
-                                  location_.directory, prepared.error(), not_saved),
-                      MessageKey{"backend.toolModelStore.cannotOpen",
-                                 {{"path", location_.directory}, {"detail", prepared.error()}}}}));
+    show(
+        unavailable({std::format("Tool model settings in {} cannot be opened: {}. {}",
+                                 location_.directory, prepared.error().text, not_saved),
+                     MessageKey{"backend.toolModelStore.cannotOpen",
+                                {{"path", location_.directory}, {"detail", prepared.error().text}},
+                                parameter_localization("detail", prepared.error().localization)}}));
     return;
   }
   if (const auto locked = files_.lock(location_.directory); !locked) {
@@ -381,9 +419,10 @@ void ToolModelArchive::open() {
     else
       show(unavailable(
           {std::format("Tool model settings in {} cannot be opened: {}. {}", location_.directory,
-                       locked.error().reason, not_saved),
+                       locked.error().reason.text, not_saved),
            MessageKey{"backend.toolModelStore.cannotOpen",
-                      {{"path", location_.directory}, {"detail", locked.error().reason}}}}));
+                      {{"path", location_.directory}, {"detail", locked.error().reason.text}},
+                      parameter_localization("detail", locked.error().reason.localization)}}));
     return;
   }
   locked_ = true;
@@ -407,9 +446,11 @@ auto ToolModelArchive::read() const -> ToolModels {
   const auto file = path(tool_model_file_name);
   auto read = files_.read(file, max_tool_model_bytes);
   if (!read)
-    return unavailable({std::format("{} cannot be read: {}. {}", file, read.error(), not_saved),
-                        MessageKey{"backend.toolModelStore.cannotRead",
-                                   {{"file", file}, {"detail", read.error()}}}});
+    return unavailable(
+        {std::format("{} cannot be read: {}. {}", file, read.error().text, not_saved),
+         MessageKey{"backend.toolModelStore.cannotRead",
+                    {{"file", file}, {"detail", read.error().text}},
+                    parameter_localization("detail", read.error().localization)}});
   const std::optional<ToolModelFiles::Content> content = std::move(*read);
   if (!content)
     return {location_.machine_id,
@@ -426,7 +467,8 @@ auto ToolModelArchive::read() const -> ToolModels {
     return unavailable(
         {std::format("{} is not usable: {} {}", file, saved.error().text, left_alone),
          MessageKey{"backend.toolModelStore.notUsable",
-                    {{"file", file}, {"detail", saved.error().text}}}});
+                    {{"file", file}, {"detail", saved.error().text}},
+                    parameter_localization("detail", saved.error().localization)}});
   if (saved->machine_id != location_.machine_id)
     return unavailable(
         {std::format("{} belongs to machine {}, not to {}. {}", file, saved->machine_id,
@@ -442,7 +484,8 @@ auto ToolModelArchive::read() const -> ToolModels {
     return unavailable(
         {std::format("{} is not usable: {} {}", file, encoded.error().text, left_alone),
          MessageKey{"backend.toolModelStore.notUsable",
-                    {{"file", file}, {"detail", encoded.error().text}}}});
+                    {{"file", file}, {"detail", encoded.error().text}},
+                    parameter_localization("detail", encoded.error().localization)}});
   return held;
 }
 
@@ -464,7 +507,8 @@ auto ToolModelArchive::apply(const ToolModelCommand& command) -> ToolModelReply 
       show(unavailable(
           {std::format("{} was changed from outside while CoffeeCNC runs: {}", file, now.reason),
            MessageKey{"backend.toolModelStore.changedOutsideReason",
-                      {{"file", file}, {"detail", now.reason}}}}));
+                      {{"file", file}, {"detail", now.reason}},
+                      parameter_localization("detail", now.reason_localization)}}));
     return {CommandOutcome::rejected, models_.reason, true, models_.reason_localization};
   }
   if (!models_.document)
@@ -492,9 +536,11 @@ auto ToolModelArchive::apply(const ToolModelCommand& command) -> ToolModelReply 
   const auto text =
       encode_tool_model_file({location_.machine_id.value_or(""), next.revision, *next.document});
   if (const auto message = encode_tool_models(next); !text || !message) {
-    const auto& detail = text ? message.error().text : text.error().text;
-    return {CommandOutcome::rejected, std::format("{} Nothing was saved.", detail), false,
-            MessageKey{"backend.toolModelStore.nothingSaved", {{"detail", detail}}}};
+    const auto& detail = text ? message.error() : text.error();
+    return {CommandOutcome::rejected, std::format("{} Nothing was saved.", detail.text), false,
+            MessageKey{"backend.toolModelStore.nothingSaved",
+                       {{"detail", detail.text}},
+                       parameter_localization("detail", detail.localization)}};
   }
 
   const auto file = path(tool_model_file_name);
@@ -510,8 +556,11 @@ auto ToolModelArchive::apply(const ToolModelCommand& command) -> ToolModelReply 
     files_.discard(temporary);
     return {CommandOutcome::failed,
             std::format("The tool models were not saved: {}. The saved file is unchanged.",
-                        step.error()),
-            false, MessageKey{"backend.toolModelStore.notSavedReason", {{"detail", step.error()}}}};
+                        step.error().text),
+            false,
+            MessageKey{"backend.toolModelStore.notSavedReason",
+                       {{"detail", step.error().text}},
+                       parameter_localization("detail", step.error().localization)}};
   }
   if (const auto durable = files_.sync_directory(location_.directory); !durable) {
     // The file was replaced, and whether that outlasts a power failure is not known. What it
@@ -520,8 +569,11 @@ auto ToolModelArchive::apply(const ToolModelCommand& command) -> ToolModelReply 
     return {CommandOutcome::failed,
             std::format("The tool models may not have been saved: {}. The outcome is uncertain; "
                         "what is shown was read back from the file.",
-                        durable.error()),
-            true, MessageKey{"backend.toolModelStore.uncertain", {{"detail", durable.error()}}}};
+                        durable.error().text),
+            true,
+            MessageKey{"backend.toolModelStore.uncertain",
+                       {{"detail", durable.error().text}},
+                       parameter_localization("detail", durable.error().localization)}};
   }
   show(std::move(next));
   return {CommandOutcome::accepted, {}, true};
@@ -551,10 +603,14 @@ void ToolModelStore::stop() {
   thread_.join();
 }
 
-auto ToolModelStore::held_location() -> ToolModelLocation {
+auto ToolModelStore::shared_lock_failure() -> std::optional<LocalizedReason> {
   std::unique_lock lock{mutex_};
   opened_.wait(lock, [this]() -> bool { return held_.has_value(); });
-  return held_ ? *held_ : ToolModelLocation{};
+  if (!held_)
+    return LocalizedReason{};
+  if (held_->availability == ToolModelAvailability::available)
+    return std::nullopt;
+  return LocalizedReason{held_->reason, held_->localization};
 }
 
 auto ToolModelStore::submit(PageToken page, RequestId id, ToolModelCommand command)

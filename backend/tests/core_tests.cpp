@@ -11,6 +11,7 @@
 #include <format>
 #include <iostream>
 #include <limits>
+#include <numbers>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -124,6 +125,30 @@ void edge_rotation_wraps() {
                                      std::pair{10.3624, 10.3624}, std::pair{0.0, 0.0}})
     require(std::abs(wrapped_rotation(sum) - wrapped) < 1e-9,
             std::format("rotation {} wraps to {}, not {}", sum, wrapped, wrapped_rotation(sum)));
+}
+
+// The runout correction (#247): exact on the four calibrated directions, the eccentricity for
+// every direction, the radius left between the axes by the squared direction cosines.
+void runout_correction() {
+  const ProbeRunout runout{.tool = 99, .table_diameter_mm = 2, .along_mm = {0.04, -0.06, -0.04, 0.02},
+                           .centred = true};
+  const auto e = runout.eccentricity();
+  const auto r = runout.radius_left();
+  require(std::abs(e[0] - 0.05) < 1e-12 && std::abs(e[1] + 0.03) < 1e-12 &&
+              std::abs(r[0] + 0.01) < 1e-12 && std::abs(r[1] + 0.01) < 1e-12,
+          "opposite directions give the eccentricity and the radius left");
+  const std::array<std::array<double, 2>, 4> axes{{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}};
+  for (std::size_t i = 0; i < axes.size(); ++i) {
+    const auto [ux, uy] = axes.at(i);
+    const auto shift = runout.correction(ux, uy);
+    require(std::abs(shift[0] * ux + shift[1] * uy - runout.along_mm.at(i)) < 1e-12,
+            "along a calibrated direction the correction is its measured value");
+  }
+  const double c = std::cos(std::numbers::pi / 6);
+  const double s = std::sin(std::numbers::pi / 6);
+  const auto turned = runout.correction(c, s);
+  require(std::abs(turned[0] - (0.05 - 0.01 * c)) < 1e-12 && std::abs(turned[1] - (-0.03 - 0.01 * s)) < 1e-12,
+          "between the axes: the eccentricity and the radius left along the travel");
 }
 
 void fixed_setter_homing() {
@@ -663,6 +688,7 @@ auto main() -> int {
     execution_gates();
     pending_manual_tool_change();
     reference_mark_homing();
+    runout_correction();
     fixed_setter_homing();
     edge_rotation_wraps();
     work_origin_gates();

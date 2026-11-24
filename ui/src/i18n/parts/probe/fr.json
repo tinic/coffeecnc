@@ -99,7 +99,22 @@
       "rotationTitle": "Appliquer comme rotation G5x ?",
       "rotationEffect": "Faire tourner les axes XY de {wcs} de {degrees} autour de son origine enregistrée. Sa rotation passe de {current} à {rotation}.",
       "shiftStays": "Le décalage G52/G92 actuel reste actif.",
-      "applyRotation": "Appliquer la rotation"
+      "applyRotation": "Appliquer la rotation",
+      "runout": "Faux-rond",
+      "runoutRing": "Bague…",
+      "runoutPin": "Tampon…",
+      "runoutClear": "Effacer",
+      "runoutRingLabel": "Faux-rond du stylet sur une bague étalon",
+      "runoutPinLabel": "Faux-rond du stylet sur un tampon étalon",
+      "runoutClearLabel": "Effacer la compensation de faux-rond",
+      "runoutBusy": "Mesure du faux-rond du stylet…",
+      "runoutClearing": "Effacement de la compensation de faux-rond…",
+      "runoutDone": "Faux-rond enregistré pour T{tool} : excentricité X {ex} Y {ey} mm, rayon restant X {rx} Y {ry} mm. Chaque résultat de palpage XY l’utilise désormais.",
+      "runoutRadiusDone": "Faux-rond enregistré pour T{tool} : rayon restant X {rx} Y {ry} mm. Le centre n’était pas connu, l’excentricité n’est donc pas mesurée.",
+      "runoutCleared": "Compensation de faux-rond effacée.",
+      "noRunout": "Le faux-rond n’a pas été enregistré.",
+      "runoutInUse": "En service : excentricité X {ex} Y {ey} mm, rayon restant X {rx} Y {ry} mm.",
+      "touchOffPin": "Mesurez d’abord {tool} et palpez le dessus Z du tampon."
     },
     "guide": {
       "angleFront": "Avant · Y−",
@@ -180,7 +195,14 @@
       "stepLatch": "Palpage lent · {pass} sur 3",
       "stepRetract": "Dégager",
       "stepLiftWork": "Remonter au-dessus de la pièce",
-      "stepClearance": "Dégager à la hauteur de dégagement"
+      "stepClearance": "Dégager à la hauteur de dégagement",
+      "titleRunoutRing": "Étalonner le faux-rond sur une bague",
+      "titleRunoutPin": "Étalonner le faux-rond sur un tampon",
+      "setupRunoutRing": "Étalonnez d’abord la bille. Amenez la bille dans la bague étalon, sous son bord, et saisissez son diamètre exact. Pour mesurer l’excentricité, définissez d’abord X0 Y0 au centre de la bague avec un comparateur.",
+      "setupRunoutPin": "Étalonnez d’abord la bille et définissez Z0 sur le dessus du tampon. Placez-vous au-dessus et saisissez son diamètre exact. Pour mesurer l’excentricité, définissez d’abord X0 Y0 au centre du tampon avec un comparateur.",
+      "resultRunout": "Enregistrer la correction de chaque direction. Chaque résultat de palpage XY ultérieur l’utilise",
+      "inputRing": "Diamètre de la bague",
+      "inputPin": "Diamètre du tampon"
     },
     "guideDialog": {
       "previous": "Mouvement précédent",
@@ -209,7 +231,10 @@
       "result": "Résultat",
       "lengthTolerance": "Tolérance de longueur",
       "startCheck": "Lancer le contrôle",
-      "startProbe": "Lancer le palpage"
+      "startProbe": "Lancer le palpage",
+      "centreChoice": "Centre de l’étalon",
+      "centreAtOrigin": "Centre en X0 Y0",
+      "centreFound": "Trouver le centre"
     },
     "guideCanvas": {
       "label": "Mouvement du palpeur en 3D : faites glisser pour tourner",

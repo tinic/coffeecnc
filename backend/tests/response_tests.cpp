@@ -65,6 +65,15 @@ void command_results() {
   const auto feature = Json::parse(encode_result(42, CommandOutcome::accepted, "", slot)).at("setter");
   require(feature.at("feature_size") == Json{{"y", 12.5}} && feature.at("material").at("axis") == "Y",
           "Slot response reports the physical width in millimetres for the measured axis only");
+  SetterState compensated{};
+  compensated.runout = ProbeRunout{.tool = 99, .table_diameter_mm = 2, .along_mm = {0.04, -0.06, -0.04, 0.02},
+                                   .centred = true};
+  const auto runout = Json::parse(encode_result(42, CommandOutcome::accepted, "", compensated)).at("setter").at("runout");
+  require(runout.at("tool") == 99 && runout.at("along").at("x_minus") == -0.06 &&
+              std::abs(runout.at("eccentricity").at(0).get<double>() - 0.05) < 1e-12 &&
+              std::abs(runout.at("radius_left").at(1).get<double>() + 0.01) < 1e-12 &&
+              runout.at("centred") == true,
+          "The runout in use reports its four directions, eccentricity and radius left in mm");
   slot.feature_size[1] = std::numeric_limits<double>::quiet_NaN();
   const auto invalid = Json::parse(encode_result(42, CommandOutcome::accepted, "", slot));
   require(invalid.at("outcome") == "failed" && !invalid.contains("setter"),

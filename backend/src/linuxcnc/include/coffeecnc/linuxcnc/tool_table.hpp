@@ -1,6 +1,8 @@
 #ifndef COFFEECNC_LINUXCNC_TOOL_TABLE_HPP
 #define COFFEECNC_LINUXCNC_TOOL_TABLE_HPP
 
+#include <coffeecnc/core/fixed_setter.hpp>
+
 #include <cstddef>
 #include <coffeecnc/core/command_policy.hpp>
 
@@ -48,6 +50,11 @@ struct TouchedOff {
 };
 [[nodiscard]] auto parse_touched_off(std::string_view text) -> std::optional<TouchedOff>;
 [[nodiscard]] auto format_touched_off(const TouchedOff& touched) -> std::string;
+// The touch probe's runout compensation (#247), kept beside the tool table. Text: `tool <n>`,
+// `diameter <mm>` (the table's ball diameter then), `+X`, `-X`, `+Y`, `-Y` with the correction
+// along each direction in mm, and `centred 0|1`, one per line in that order.
+[[nodiscard]] auto parse_probe_runout(std::string_view text) -> std::optional<ProbeRunout>;
+[[nodiscard]] auto format_probe_runout(const ProbeRunout& runout) -> std::string;
 // After a teach with the reference tool: the reference tool with its length, and each saved
 // tool whose length and the reference tool's are unchanged since. Lengths are relative to the
 // reference tool, so a new teach does not void them.

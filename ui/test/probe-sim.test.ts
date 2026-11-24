@@ -210,6 +210,62 @@ describe('browser probe scene', () => {
     }
   })
 
+  it('calibrates the runout on the bore as a ring and compensates the next bore', () => {
+    const { sim, cycle, send, result } = scene('bore')
+    expect(cycle({ action: 'bore' }).setter?.center_diameter).toBeCloseTo(19.96)
+    // X0 Y0 at the ring centre: the simulated ruby is 2.02 mm, the table says 2 mm.
+    const calibrated = cycle({ action: 'runout', diameter: 20, outside: false, centred: true })
+    const runout = calibrated.setter?.runout
+    expect(runout).toMatchObject({ tool: 99, table_diameter: 4, centred: true })
+    for (const value of Object.values(runout?.along ?? {})) expect(value).toBeCloseTo(0.02)
+    expect(runout?.eccentricity[0]).toBeCloseTo(0)
+    expect(runout?.radius_left[1]).toBeCloseTo(0.02)
+    // The compensated bore reads the true diameter.
+    expect(cycle({ action: 'bore' }).setter?.center_diameter).toBeCloseTo(20)
+    expect(sim.status().offsets.g5x.slice(0, 2).map(value => Math.round(value * 1000) / 1000)).toEqual([155, 108])
+    // A changed ball diameter voids it; clearing removes it.
+    const tool = sim.modal.tools.find(entry => entry.number === 99)
+    if (!tool) throw new Error('Missing probe')
+    tool.diameter = 4.04
+    expect(result(send({ type: 'fixed_setter', action: 'status' }))?.setter?.runout).toBeUndefined()
+    tool.diameter = 4
+    expect(result(send({ type: 'fixed_setter', action: 'status' }))?.setter?.runout).toBeDefined()
+    expect(result(send({ type: 'fixed_setter', action: 'clear_runout', tool: 99 }))?.setter?.runout).toBeUndefined()
+  })
+
+  it('calibrates the runout on the boss as a pin, also without a known centre', () => {
+    for (const centred of [true, false]) {
+      const { sim, cycle, send, result } = scene('boss')
+      const [x, y, z] = sim.status().axes.map(axis => axis.machine) as Vec3
+      // Back over the boss after a cycle that ends beside it.
+      const back = (): void => {
+        const id = send({ type: 'mdi', text: `G53 G0 X${String(x)} Y${String(y)} Z${String(z)}` })
+        sim.advanceUntil(() => result(id) !== undefined && sim.status().interp === 'idle' && sim.status().motion.in_position, 30_000)
+      }
+      if (centred) {
+        cycle({ action: 'boss', diameter: 24 })
+        back()
+      }
+      const runout = cycle({ action: 'runout', diameter: 24, outside: true, centred }).setter?.runout
+      back()
+      for (const value of Object.values(runout?.along ?? {})) expect(value).toBeCloseTo(0.02)
+      expect(runout?.centred).toBe(centred)
+      expect(cycle({ action: 'boss', diameter: 24 }).setter?.center_diameter).toBeCloseTo(24)
+    }
+  })
+
+  it('refuses a runout in a rotated system or with a wrong diameter', () => {
+    const { sim, submit, result, cycle } = scene('bore')
+    cycle({ action: 'bore' })
+    sim.modal.rotations[0] = 5
+    expect(result(submit({ action: 'runout', diameter: 20, outside: false, centred: true }))?.reason)
+      .toBe('Runout calibration needs a work system without rotation.')
+    sim.modal.rotations[0] = 0
+    const id = submit({ action: 'runout', diameter: 22, outside: false, centred: true })
+    sim.advanceUntil(() => result(id) !== undefined, 30_000)
+    expect(result(id)?.reason).toBe('The runout is more than 0.5 mm in a direction. Check the diameter, the centre and the ball calibration.')
+  })
+
   it('keeps an applied rotation inside -180..180° like the controller', () => {
     expect([363, -363, -180, 180, 540, 10.5].map(wrapped)).toEqual([3, -3, 180, 180, 180, 10.5])
     expect(wrapped(179 + 2.8624)).toBeCloseTo(-178.1376)

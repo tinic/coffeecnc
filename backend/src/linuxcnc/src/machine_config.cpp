@@ -830,4 +830,9 @@ auto MachineConfig::touched_off_file() const -> std::string {
   return (state_dir / "coffeecnc-touched-off.txt").string();
 }
 
+auto MachineConfig::probe_runout_file() const -> std::string {
+  return (std::filesystem::path(touched_off_file()).parent_path() / "coffeecnc-probe-runout.txt")
+      .string();
+}
+
 } // namespace coffeecnc

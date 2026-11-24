@@ -99,7 +99,22 @@
       "rotationTitle": "¿Aplicar como rotación G5x?",
       "rotationEffect": "Girar los ejes XY de {wcs} {degrees} alrededor de su origen guardado. Su rotación pasa de {current} a {rotation}.",
       "shiftStays": "El desplazamiento G52/G92 actual sigue activo.",
-      "applyRotation": "Aplicar rotación"
+      "applyRotation": "Aplicar rotación",
+      "runout": "Excentricidad",
+      "runoutRing": "Anillo…",
+      "runoutPin": "Perno…",
+      "runoutClear": "Borrar",
+      "runoutRingLabel": "Excentricidad del palpador en un anillo patrón",
+      "runoutPinLabel": "Excentricidad del palpador en un perno patrón",
+      "runoutClearLabel": "Borrar la compensación de excentricidad",
+      "runoutBusy": "Midiendo la excentricidad del palpador…",
+      "runoutClearing": "Borrando la compensación de excentricidad…",
+      "runoutDone": "Excentricidad guardada para T{tool}: excentricidad X {ex} Y {ey} mm, radio restante X {rx} Y {ry} mm. Todo resultado de palpado XY la usa ahora.",
+      "runoutRadiusDone": "Excentricidad guardada para T{tool}: radio restante X {rx} Y {ry} mm. El centro no se conocía, así que la excentricidad no se midió.",
+      "runoutCleared": "Compensación de excentricidad borrada.",
+      "noRunout": "La excentricidad no se guardó.",
+      "runoutInUse": "En uso: excentricidad X {ex} Y {ey} mm, radio restante X {rx} Y {ry} mm.",
+      "touchOffPin": "Primero mida {tool} y palpe Z superior en el perno."
     },
     "guide": {
       "angleFront": "Delantera · Y−",
@@ -180,7 +195,14 @@
       "stepLatch": "Palpado lento · {pass} de 3",
       "stepRetract": "Retracción",
       "stepLiftWork": "Subir por encima de la pieza",
-      "stepClearance": "Retraer a la distancia de seguridad"
+      "stepClearance": "Retraer a la distancia de seguridad",
+      "titleRunoutRing": "Calibrar la excentricidad en un anillo",
+      "titleRunoutPin": "Calibrar la excentricidad en un perno",
+      "setupRunoutRing": "Calibre primero la bola. Lleve la bola dentro del anillo patrón, por debajo de su borde, e introduzca su diámetro exacto. Para medir la excentricidad, fije antes X0 Y0 en el centro del anillo con un comparador.",
+      "setupRunoutPin": "Calibre primero la bola y fije Z0 en la parte superior del perno. Sitúese encima e introduzca su diámetro exacto. Para medir la excentricidad, fije antes X0 Y0 en el centro del perno con un comparador.",
+      "resultRunout": "Guardar la corrección de cada dirección. Todo resultado de palpado XY posterior la usa",
+      "inputRing": "Diámetro del anillo",
+      "inputPin": "Diámetro del perno"
     },
     "guideDialog": {
       "previous": "Movimiento anterior",
@@ -209,7 +231,10 @@
       "result": "Resultado",
       "lengthTolerance": "Tolerancia de longitud",
       "startCheck": "Iniciar comprobación",
-      "startProbe": "Iniciar palpado"
+      "startProbe": "Iniciar palpado",
+      "centreChoice": "Centro del patrón",
+      "centreAtOrigin": "Centro en X0 Y0",
+      "centreFound": "Buscar el centro"
     },
     "guideCanvas": {
       "label": "Movimiento del palpador en 3D: arrastre para girar",

@@ -99,7 +99,22 @@
       "rotationTitle": "Als G5x-Drehung übernehmen?",
       "rotationEffect": "Die XY-Achsen von {wcs} um {degrees} um den gespeicherten Nullpunkt drehen. Die Drehung ändert sich von {current} auf {rotation}.",
       "shiftStays": "Die aktuelle G52/G92-Verschiebung bleibt aktiv.",
-      "applyRotation": "Drehung übernehmen"
+      "applyRotation": "Drehung übernehmen",
+      "runout": "Rundlauf",
+      "runoutRing": "Ring…",
+      "runoutPin": "Dorn…",
+      "runoutClear": "Löschen",
+      "runoutRingLabel": "Taststift-Rundlauf am Einstellring",
+      "runoutPinLabel": "Taststift-Rundlauf am Prüfdorn",
+      "runoutClearLabel": "Rundlaufkorrektur löschen",
+      "runoutBusy": "Taststift-Rundlauf wird gemessen…",
+      "runoutClearing": "Rundlaufkorrektur wird gelöscht…",
+      "runoutDone": "Rundlauf für T{tool} gespeichert: Exzentrizität X {ex} Y {ey} mm, Restradius X {rx} Y {ry} mm. Jedes XY-Antastergebnis verwendet ihn jetzt.",
+      "runoutRadiusDone": "Rundlauf für T{tool} gespeichert: Restradius X {rx} Y {ry} mm. Die Mitte war nicht bekannt, daher ist die Exzentrizität nicht gemessen.",
+      "runoutCleared": "Rundlaufkorrektur gelöscht.",
+      "noRunout": "Der Rundlauf wurde nicht gespeichert.",
+      "runoutInUse": "In Verwendung: Exzentrizität X {ex} Y {ey} mm, Restradius X {rx} Y {ry} mm.",
+      "touchOffPin": "Zuerst {tool} einmessen und Z oben am Dorn antasten."
     },
     "guide": {
       "angleFront": "Vorne · Y−",
@@ -180,7 +195,14 @@
       "stepLatch": "Feinantastung · {pass} von 3",
       "stepRetract": "Rückzug",
       "stepLiftWork": "Über das Werkstück anheben",
-      "stepClearance": "Auf Sicherheitsabstand zurückziehen"
+      "stepClearance": "Auf Sicherheitsabstand zurückziehen",
+      "titleRunoutRing": "Taststift-Rundlauf am Ring kalibrieren",
+      "titleRunoutPin": "Taststift-Rundlauf am Dorn kalibrieren",
+      "setupRunoutRing": "Zuerst die Kugel kalibrieren. Die Kugel in den Einstellring unter seine Oberkante fahren und den genauen Durchmesser eingeben. Für die Exzentrizität vorher X0 Y0 mit einer Messuhr in die Ringmitte setzen.",
+      "setupRunoutPin": "Zuerst die Kugel kalibrieren und Z0 auf die Dornoberseite setzen. Über den Dorn fahren und den genauen Durchmesser eingeben. Für die Exzentrizität vorher X0 Y0 mit einer Messuhr in die Dornmitte setzen.",
+      "resultRunout": "Die Korrektur je Richtung speichern. Jedes spätere XY-Antastergebnis verwendet sie",
+      "inputRing": "Ringdurchmesser",
+      "inputPin": "Dorndurchmesser"
     },
     "guideDialog": {
       "previous": "Vorherige Bewegung",
@@ -209,7 +231,10 @@
       "result": "Ergebnis",
       "lengthTolerance": "Längentoleranz",
       "startCheck": "Prüfung starten",
-      "startProbe": "Antasten starten"
+      "startProbe": "Antasten starten",
+      "centreChoice": "Lehrenmitte",
+      "centreAtOrigin": "Mitte bei X0 Y0",
+      "centreFound": "Mitte suchen"
     },
     "guideCanvas": {
       "label": "Bewegung des Messtasters in 3D: zum Drehen ziehen",

@@ -928,6 +928,196 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
           "rotated probing changes only the active work coordinate system");
 }
 
+// Stylus runout (#247). The simulated ball sits e = (+0.05, -0.03) mm off the spindle axis and
+// triggers at 0.99 mm, though the table says Ø2: HAL trips where the ball centre, the commanded
+// spindle position plus e, is 9.01 mm from the ring centre C = machine (4, -2), a Ø20 ring; and,
+// for the pin, below Z 12 within 6.99 mm of C, a Ø12 pin. Each direction's runout is then
+// e along the travel - 0.01: +X 0.04, -X -0.06, +Y -0.04, -Y 0.02.
+void runout_scenarios(NmlPort& port, double scale, double degrees, const auto& mdi) {
+  checked(port.set_tool({98, 98, 50, 0, "Setter reference"}, {}));
+  checked(port.set_tool({99, 99, 45, 2, "Ruby probe"}, {}));
+  constexpr double none = std::numeric_limits<double>::quiet_NaN();
+  constexpr std::array<double, 2> centre{4, -2};
+  constexpr std::array<double, 2> eccentricity{0.05, -0.03};
+  constexpr std::array<double, 4> expected_along{0.04, -0.06, -0.04, 0.02};
+  const auto machine = [&] {
+    const auto axes = port.status().controller.axes;
+    return std::array{axes[0].machine, axes[1].machine, axes[2].machine};
+  };
+  const auto at = [&](double x, double y, double z) {
+    mdi(std::format("G21 G90 G53 G0 Z{:.8f}", std::max(z, machine()[2])));
+    mdi(std::format("G21 G90 G53 G0 X{:.8f} Y{:.8f}", x, y));
+    mdi(std::format("G21 G90 G53 G0 Z{:.8f}", z));
+    mdi(scale == 1 ? "G21 G91" : "G20 G91");
+  };
+  SetterEpoch epoch{1, 1, 1, 0};
+  for (const int tool : {98, 99}) {
+    mdi(std::format("M61 Q{}", tool));
+    mdi(std::format("G43 H{}", tool));
+    at(0, 0, 20);
+    ++epoch.tool;
+    halcmd(std::format("setp sim-tool-setter.max {}", (tool == 98 ? 10 : 12) / scale));
+    const auto touched = port.fixed_setter({SetterAction::touch_off, tool, machine()}, epoch, {});
+    require(touched.has_value(), touched ? "the reference and probe have known lengths" : touched.error());
+  }
+  // G55: X0 Y0 at the ring centre, as a test indicator would set it, Z0 at machine Z 12.
+  mdi("G21 G90 G54");
+  const auto g54 = port.status().g5x;
+  mdi(std::format("G10 L2 P2 X{} Y{} R0", centre[0], centre[1]));
+  mdi("G55");
+  at(4, -2, 20);
+  mdi("G21 G10 L20 P0 Z8");
+
+  // comp, wcomp and and2 belong to the machine's HAL: windows with near, gates with logic.
+  halcmd("loadrt sum2 names=sim-run-du,sim-run-dv,sim-run-r2");
+  halcmd("loadrt mult2 names=sim-run-du2,sim-run-dv2");
+  halcmd("loadrt near names=sim-run-ring,sim-run-pin,sim-run-z");
+  halcmd("loadrt logic names=sim-run-hollow,sim-run-solid personality=0x801,0x102");
+  for (const auto* part : {"sim-run-du", "sim-run-dv", "sim-run-du2", "sim-run-dv2", "sim-run-r2",
+                           "sim-run-ring", "sim-run-pin", "sim-run-z", "sim-run-hollow", "sim-run-solid"})
+    halcmd(std::format("addf {} servo-thread", part));
+  halcmd("net sim-run-mx axis.x.pos-cmd sim-run-du.in0");
+  halcmd("net sim-run-my axis.y.pos-cmd sim-run-dv.in0");
+  halcmd("setp sim-run-du.gain1 0");
+  halcmd("setp sim-run-dv.gain1 0");
+  halcmd(std::format("setp sim-run-du.offset {:.12f}", (eccentricity[0] - centre[0]) / scale));
+  halcmd(std::format("setp sim-run-dv.offset {:.12f}", (eccentricity[1] - centre[1]) / scale));
+  halcmd("net sim-run-u sim-run-du.out sim-run-du2.in0 sim-run-du2.in1");
+  halcmd("net sim-run-v sim-run-dv.out sim-run-dv2.in0 sim-run-dv2.in1");
+  halcmd("net sim-run-u2 sim-run-du2.out sim-run-r2.in0");
+  halcmd("net sim-run-v2 sim-run-dv2.out sim-run-r2.in1");
+  // r² within [0, R²]: inside the ring's contact circle (9.01) or the pin's (6.99).
+  halcmd("net sim-run-rr sim-run-r2.out sim-run-ring.in1 sim-run-pin.in1");
+  for (const auto& [name, contact] : {std::pair{"sim-run-ring", 9.01}, std::pair{"sim-run-pin", 6.99}}) {
+    const double r2 = contact * contact / (scale * scale);
+    halcmd(std::format("setp {}.in2 {:.12f}", name, r2 / 2));
+    halcmd(std::format("setp {}.difference {:.12f}", name, r2 / 2));
+    halcmd(std::format("setp {}.scale 1", name));
+  }
+  // Below the pin top: Z within [-100, 12].
+  halcmd("net sim-setter-z sim-run-z.in1");
+  halcmd(std::format("setp sim-run-z.in2 {:.12f}", -44 / scale));
+  halcmd(std::format("setp sim-run-z.difference {:.12f}", 56 / scale));
+  halcmd("setp sim-run-z.scale 1");
+  halcmd("net sim-run-in-ring sim-run-ring.out sim-run-hollow.in-00");
+  halcmd("net sim-run-in-pin sim-run-pin.out sim-run-solid.in-00");
+  halcmd("net sim-run-low sim-run-z.out sim-run-solid.in-01");
+  const auto probe_input = [&](std::string_view net, std::string_view pin) {
+    halcmd("unlinkp motion.probe-input");
+    halcmd("unlinkp coffeecnc.probe-input");
+    halcmd(std::format("net {} {} motion.probe-input coffeecnc.probe-input", net, pin));
+  };
+  const auto status = [&] { return port.fixed_setter({SetterAction::status}, epoch, {}); };
+  const auto calibrate = [&](std::string_view name, bool outside, bool centred,
+                             const std::array<double, 4>& expected) {
+    FixedSetterRequest request{.action = SetterAction::runout, .tool = 99, .start = machine()};
+    request.gauge_width_mm = outside ? 12 : 20;
+    request.outside = outside;
+    request.centred = centred;
+    const auto result = port.fixed_setter(request, epoch, {});
+    if (!result || !result->runout)
+      throw std::runtime_error(std::format("{} runout: {}", name, result ? "not reported" : result.error()));
+    const auto& along = result->runout->along_mm;
+    std::string line = std::format("fact=runout action={} centred={}", name, centred);
+    bool ok = result->runout->tool == 99 && std::abs(result->runout->table_diameter_mm - 2) < 0.005;
+    for (std::size_t i = 0; i < along.size(); ++i) {
+      ok = ok && std::abs(along.at(i) - expected.at(i)) < 0.01;
+      line += std::format(" {0}_expected={1:.4f} {0}_measured={2:.4f}", std::array{"xp", "xm", "yp", "ym"}.at(i),
+                          expected.at(i), along.at(i));
+    }
+    const auto e = result->runout->eccentricity();
+    line += std::format(" ecc_x={:.4f} ecc_y={:.4f} table_diameter={:.6f}", e[0], e[1],
+                        result->runout->table_diameter_mm);
+    std::cout << line << std::endl;
+    require(ok, std::format("{} measures the runout in each direction", name));
+  };
+  // A bore cycle in G56, a copy of G55 turned `turn` degrees: where it puts X0 Y0, and the size.
+  const auto bore = [&](std::string_view name, double turn, std::array<double, 2> expected_centre,
+                        double expected_diameter) {
+    mdi(std::format("G21 G10 L2 P3 X{} Y{} Z{} R{}", centre[0], centre[1], port.status().g5x[2], turn));
+    mdi("G56");
+    at(5, -1.5, 20);
+    const auto result = port.fixed_setter({SetterAction::bore, 99, machine()}, epoch, {});
+    if (!result)
+      throw std::runtime_error(std::format("{}: {}", name, result.error()));
+    const auto after = port.status();
+    const std::array measured{after.g5x[0], after.g5x[1]};
+    std::cout << std::format("fact=runout action={} rotation={} centre_x_expected={:.4f} centre_x_measured={:.4f} "
+                             "centre_y_expected={:.4f} centre_y_measured={:.4f} diameter_expected={:.4f} "
+                             "diameter_measured={:.4f}",
+                             name, turn, expected_centre[0], measured[0], expected_centre[1], measured[1],
+                             expected_diameter, result->center_diameter.value_or(none))
+              << std::endl;
+    require(result->center_diameter && std::abs(*result->center_diameter - expected_diameter) < 0.01 &&
+                std::abs(measured[0] - expected_centre[0]) < 0.01 &&
+                std::abs(measured[1] - expected_centre[1]) < 0.01,
+            std::format("{} finds the expected centre and diameter", name));
+    mdi("G55");
+  };
+
+  probe_input("sim-run-wall", "sim-run-hollow.nand");
+  // Uncompensated: the centre is off by the eccentricity, the diameter large by 2 × 0.01 mm.
+  bore("bore_uncompensated", 0, {centre[0] - eccentricity[0], centre[1] - eccentricity[1]}, 20.02);
+  // Calibrated on the ring around X0 Y0 of G55.
+  at(5, -1.5, 20);
+  calibrate("ring_centred", false, true, expected_along);
+  bore("bore_compensated", 0, centre, 20);
+  bore("bore_compensated_rotated", degrees, centre, 20);
+  // The compensation is kept: a later status reports it.
+  const auto kept = status();
+  require(kept && kept->runout && kept->runout->centred, "the runout stays in use");
+
+  // Without a known centre the eccentricity hides in the centre: the radius is still corrected.
+  at(5, -1.5, 20);
+  calibrate("ring_found", false, false, {-0.01, -0.01, -0.01, -0.01});
+  bore("bore_found_compensated", 0, {centre[0] - eccentricity[0], centre[1] - eccentricity[1]}, 20);
+
+  // A wrong ring diameter is more than 0.5 mm off in each direction: refused, nothing saved.
+  at(5, -1.5, 20);
+  FixedSetterRequest wrong{.action = SetterAction::runout, .tool = 99, .start = machine()};
+  wrong.gauge_width_mm = 22;
+  wrong.centred = true;
+  const auto refused = port.fixed_setter(wrong, epoch, {});
+  const auto still = status();
+  std::cout << std::format("fact=runout action=wrong_diameter refused={} kept_xp={:.4f}", !refused,
+                           still && still->runout ? still->runout->along_mm[0] : none)
+            << std::endl;
+  require(!refused && refused.error().contains("more than 0.5 mm") && still && still->runout &&
+              !still->runout->centred,
+          refused ? "expected a refused runout" : refused.error());
+
+  // A rotated work system is refused before any motion.
+  mdi("G21 G10 L2 P3 R10");
+  mdi("G56");
+  at(5, -1.5, 20);
+  const auto writes = port.writes().size();
+  FixedSetterRequest turned{.action = SetterAction::runout, .tool = 99, .start = machine()};
+  turned.gauge_width_mm = 20;
+  const auto turned_result = port.fixed_setter(turned, epoch, {});
+  require(!turned_result && turned_result.error().contains("without rotation") &&
+              port.writes().size() == writes,
+          turned_result ? "expected a refused rotated runout" : turned_result.error());
+  mdi("G55");
+
+  // The pin from outside, below Z0 (the pin top at machine Z 12), around X0 Y0.
+  probe_input("sim-run-boss", "sim-run-solid.and");
+  at(4.5, -2.5, 20);
+  calibrate("pin_centred", true, true, expected_along);
+
+  // Clearing it, and a changed ball diameter, end the compensation.
+  const auto cleared = port.fixed_setter({.action = SetterAction::clear_runout, .tool = 99}, epoch, {});
+  require(cleared && !cleared->runout, cleared ? "clearing removes the runout" : cleared.error());
+  at(4.5, -2.5, 20);
+  calibrate("pin_again", true, true, expected_along);
+  checked(port.set_tool({99, 99, 45, 2.02, "Ruby probe"}, {}));
+  const auto voided = status();
+  std::cout << std::format("fact=runout action=new_ball_diameter runout_kept={}", voided && voided->runout.has_value())
+            << std::endl;
+  require(voided && !voided->runout, "another ball diameter voids the runout");
+  mdi("G54");
+  require(port.status().g5x == g54, "runout calibration changes no work system");
+}
+
 void edge_rotations(NmlPort& port, double scale, const auto& mdi) {
   checked(port.set_tool({99, 99, 45, 2, "Ruby probe"}, {}));
   mdi("M61 Q99");
@@ -1254,6 +1444,7 @@ void run(const std::string& ini, std::string_view scenario) {
   const bool edge = scenario == "edge-rotation";
   const bool features = scenario == "features";
   const bool rotated = scenario == "rotated";
+  const bool runout = scenario == "runout";
   const bool g0759 = std::filesystem::path(ini).filename() == "coffeecnc_g0759.ini";
   auto config = load_machine_config(ini);
   if (!config)
@@ -1266,11 +1457,12 @@ void run(const std::string& ini, std::string_view scenario) {
   config->fixed_setter = FixedSetterLimits{15, 240, reference_tool, 0.5, 12, 60, 1};
   if (scenario == "measure-m6")
     config->fixed_setter->travel_mm = 30;
-  if (material || edge || features || rotated)
+  if (material || edge || features || rotated || runout)
     config->touch_probe_tool = 99;
   // The runner recreates the table, but retains files beside it between runs.
   std::filesystem::remove(std::filesystem::path(config->tool_table).parent_path() /
                           "coffeecnc-touched-off.txt");
+  std::filesystem::remove(config->probe_runout_file());
   auto component = HalComponent::create("coffeecnc", config->signals);
   if (!component)
     throw std::runtime_error(component.error());
@@ -1315,6 +1507,11 @@ void run(const std::string& ini, std::string_view scenario) {
   if (rotated) {
     // Millimetres at +7.5°, inches at -30°: each rotated cycle in both units and turns.
     rotated_scenarios(*port, scale, scale == 1 ? 7.5 : -30, mdi);
+    return;
+  }
+  if (runout) {
+    // The compensated bore also in G56 rotated +7.5° (mm) or -30° (inch).
+    runout_scenarios(*port, scale, scale == 1 ? 7.5 : -30, mdi);
     return;
   }
   if (scenario == "measure-m6") {
@@ -1598,7 +1795,8 @@ auto main(int argc, char** argv) -> int {
   const std::string_view scenario = argc == 4 ? argv[3] : "";
   const std::filesystem::path ini = argv[2];
   if ((scenario != "" && scenario != "material" && scenario != "edge-rotation" &&
-       scenario != "features" && scenario != "rotated" && scenario != "measure-m6") ||
+       scenario != "features" && scenario != "rotated" && scenario != "runout" &&
+       scenario != "measure-m6") ||
       ini.parent_path() != run_dir ||
       (ini.filename() != "coffeecnc_sim.ini" &&
        !(scenario == "edge-rotation" && ini.filename() == "coffeecnc_g0759.ini")))

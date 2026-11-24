@@ -99,7 +99,22 @@
       "rotationTitle": "G5x 回転として適用しますか？",
       "rotationEffect": "{wcs} の XY 軸を保存された原点を中心に {degrees} 回転します。回転は {current} から {rotation} に変わります。",
       "shiftStays": "現在の G52/G92 シフトは有効なままです。",
-      "applyRotation": "回転を適用"
+      "applyRotation": "回転を適用",
+      "runout": "振れ",
+      "runoutRing": "リング…",
+      "runoutPin": "ピン…",
+      "runoutClear": "消去",
+      "runoutRingLabel": "リングゲージでスタイラスの振れを校正",
+      "runoutPinLabel": "ピンゲージでスタイラスの振れを校正",
+      "runoutClearLabel": "振れ補正を消去",
+      "runoutBusy": "スタイラスの振れを測定中…",
+      "runoutClearing": "振れ補正を消去中…",
+      "runoutDone": "T{tool} の振れを保存しました：偏心 X {ex} Y {ey} mm、残り半径 X {rx} Y {ry} mm。以後の XY プローブ結果すべてに使います。",
+      "runoutRadiusDone": "T{tool} の振れを保存しました：残り半径 X {rx} Y {ry} mm。中心が不明だったため偏心は測定していません。",
+      "runoutCleared": "振れ補正を消去しました。",
+      "noRunout": "振れは保存されませんでした。",
+      "runoutInUse": "使用中：偏心 X {ex} Y {ey} mm、残り半径 X {rx} Y {ry} mm。",
+      "touchOffPin": "まず {tool} をツールセッターで測定し、ピン上面の Z をプローブしてください。"
     },
     "guide": {
       "angleFront": "手前 · Y−",
@@ -180,7 +195,14 @@
       "stepLatch": "低速再接触 · {pass}/3",
       "stepRetract": "退避",
       "stepLiftWork": "ワークより上へ上昇",
-      "stepClearance": "クリアランスまで退避"
+      "stepClearance": "クリアランスまで退避",
+      "titleRunoutRing": "リングでスタイラスの振れを校正",
+      "titleRunoutPin": "ピンでスタイラスの振れを校正",
+      "setupRunoutRing": "まずボールを校正してください。ボールをリングゲージの上端より下に入れ、正確な直径を入力します。偏心を測るには、先にテストインジケーターでリング中心に X0 Y0 を設定してください。",
+      "setupRunoutPin": "まずボールを校正し、ピン上面に Z0 を設定してください。ピンの上へ移動し、正確な直径を入力します。偏心を測るには、先にテストインジケーターでピン中心に X0 Y0 を設定してください。",
+      "resultRunout": "方向ごとの補正を保存します。以後の XY プローブ結果すべてに使われます",
+      "inputRing": "リング直径",
+      "inputPin": "ピン直径"
     },
     "guideDialog": {
       "previous": "前の動作",
@@ -209,7 +231,10 @@
       "result": "結果",
       "lengthTolerance": "長さ公差",
       "startCheck": "確認開始",
-      "startProbe": "プロービング開始"
+      "startProbe": "プロービング開始",
+      "centreChoice": "ゲージ中心",
+      "centreAtOrigin": "中心は X0 Y0",
+      "centreFound": "中心を探す"
     },
     "guideCanvas": {
       "label": "3D プローブ動作：ドラッグで回転",

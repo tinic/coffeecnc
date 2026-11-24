@@ -21,9 +21,10 @@ The optional `hello.fixed_setter` advertises `reference_tool`, `travel_mm`, `fee
 | `ball` | `tool`, machine start `x`, `y`, `z`, and `gauge_width` |
 | `angle` | `tool`, machine start `x`, `y`, `z`, `direction`, and `spacing` |
 | `apply_angle` | `tool` and the `measurement_id` of an `angle` result |
-| `ball` | `tool`, machine start `x`, `y`, `z`, and `gauge_width` |
-| `angle` | `tool`, machine start `x`, `y`, `z`, `direction`, and `spacing` |
-| `apply_angle` | `tool` and `measurement_id` |
+| `runout` | `tool`, machine start `x`, `y`, `z`, `diameter`, `outside` and `centred` |
+| `clear_runout` | `tool` |
+
+`runout` calibrates the stylus runout of the touch probe on a ring (`outside: false`, from inside) or a pin (`outside: true`, from outside below Z0) of the known `diameter`. It probes +X, −X, +Y and −Y through the centre. The centre is the active X0 Y0 with `centred: true` (centred with a test indicator), so the ball's eccentricity is measured. With `centred: false` the probe finds the centre first, and the eccentricity is taken as zero. It refuses a rotated work system and more than 0.5 mm in any direction. The controller keeps the result beside the tool table. Every result of the probe tool then reports it as `setter.runout`, which has `tool`, `table_diameter`, `along` (`x_plus`, `x_minus`, `y_plus`, `y_minus`: how far the true surface lies beyond the table radius along each travel, mm), `eccentricity` and `radius_left` (XY, mm) and `centred`. Each XY contact of every later probe action is moved by the eccentricity plus the radius left along its travel. The ball calibration and the runout calibration measure without it. A changed table diameter (a new ball calibration) voids it. `clear_runout` removes it.
 
 All wire lengths are in millimetres. The reference tool teaches the setter. Another tool positions at the taught XY, probes and saves the offset in one command. A successful result includes `setter.calibration` (machine setter X, Y and effective trigger-plane Z, or null) and `setter.measurement` (null or the result of the completed cycle with `calibration` as a boolean, `tool`, `contact` XYZ, `value`, `previous_length` and `stopping_distance`). Stopping distance is the downward travel from first contact to settled machine Z. Use `abort` to interrupt an active cycle. See the [workflow and HAL requirements](../docs/design/tool-length-probing.md).
 

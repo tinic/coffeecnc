@@ -628,6 +628,22 @@ export interface SetterState {
   edge_angle?: number
   /** `rotation`: the G5x rotation applying writes, the present rotation plus `edge_angle`. */
   edge_rotation?: { measurement_id: number; wcs: number; rotation?: number }
+  /** The touch probe's runout compensation in use for its XY results (#247). */
+  runout?: ProbeRunout
+}
+
+/**
+ * Stylus runout: for a search along each direction, how far the probed surface lies beyond the
+ * table's ball radius, mm. `eccentricity` (the ball centre's offset from the spindle axis) and
+ * `radius_left` follow from opposite directions; without a known centre the eccentricity is 0.
+ */
+export interface ProbeRunout {
+  tool: number
+  table_diameter: number
+  along: { x_plus: number; x_minus: number; y_plus: number; y_minus: number }
+  eccentricity: [number, number]
+  radius_left: [number, number]
+  centred: boolean
 }
 
 export interface DirectoryEntry {
@@ -925,6 +941,12 @@ export type FixedSetter = CommandBase & { type: 'fixed_setter' } & (
   /** Measures an edge's angle: the face of `direction` at the start and `spacing` mm along it. */
   | { action: 'angle'; direction: 'x_minus' | 'x_plus' | 'y_minus' | 'y_plus'; spacing: number; tool: number; x: number; y: number; z: number }
   | { action: 'apply_angle'; measurement_id: number; tool: number }
+  /**
+   * Calibrates the stylus runout on a ring (from inside) or pin (`outside`, below Z0) of the known
+   * `diameter`: +X, −X, +Y and −Y through its centre, which is the active X0 Y0 when `centred`.
+   */
+  | { action: 'runout'; diameter: number; outside: boolean; centred: boolean; tool: number; x: number; y: number; z: number }
+  | { action: 'clear_runout'; tool: number }
 )
 /** Replaces one tool table row, or adds it. */
 export interface SetTool extends CommandBase {

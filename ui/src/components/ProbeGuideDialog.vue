@@ -16,9 +16,12 @@ const props = defineProps<{
   ruby?: boolean
   startBlocked?: string | null
 }>()
-const emit = defineEmits<{ start: [value: number, angle: AngleEdge]; close: [] }>()
+const emit = defineEmits<{ start: [value: number, angle: AngleEdge, centred: boolean]; close: [] }>()
 const { t } = useI18n()
 const angle = ref<AngleEdge>('y_plus')
+/** A runout calibration: the ring's centre is the active X0 Y0 (set with a test indicator). */
+const centred = ref(true)
+const runoutTarget = computed(() => props.target.kind === 'runout_ring' || props.target.kind === 'runout_pin')
 const input = computed(() => guideInput(props.target))
 const text = ref(input.value?.initial ?? '')
 const value = computed(() => parseNumericExpression(text.value, 'mm'))
@@ -31,7 +34,7 @@ const valid = computed(() => {
   return length >= field.min && length <= field.max
 })
 const material = computed(() => !['teach', 'measure', 'check'].includes(props.target.kind))
-const outside = computed(() => ['corner', 'boss', 'ball', 'ridge'].includes(props.target.kind))
+const outside = computed(() => ['corner', 'boss', 'ball', 'ridge', 'runout_pin'].includes(props.target.kind))
 const travel = computed(() => material.value ? props.limits?.material_travel_mm : props.limits?.travel_mm)
 const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches // i18n-ignore
 const playing = ref(!reduced)
@@ -50,7 +53,7 @@ function unavailable(): void {
   playing.value = false
 }
 function start(): void {
-  if (valid.value && !props.startBlocked) emit('start', value.value ?? 0, angle.value)
+  if (valid.value && !props.startBlocked) emit('start', value.value ?? 0, angle.value, centred.value)
 }
 </script>
 
@@ -79,6 +82,10 @@ function start(): void {
           >
             {{ angleChoiceLabel(choice.travel) }}
           </button>
+        </div>
+        <div v-if="runoutTarget" class="edge-choice" role="group" :aria-label="t('probe.guideDialog.centreChoice')">
+          <button class="btn" type="button" :aria-pressed="centred" @click="centred = true">{{ t('probe.guideDialog.centreAtOrigin') }}</button>
+          <button class="btn" type="button" :aria-pressed="!centred" @click="centred = false">{{ t('probe.guideDialog.centreFound') }}</button>
         </div>
         <label v-if="input" class="dimension">
           <span>{{ t('probe.guideDialog.inputLabel', { label: input.label }) }}</span>

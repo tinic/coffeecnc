@@ -220,6 +220,37 @@ auto format_touched_off(const TouchedOff& touched) -> std::string {
   return text;
 }
 
+auto parse_probe_runout(std::string_view text) -> std::optional<ProbeRunout> {
+  std::istringstream in{std::string(text)};
+  ProbeRunout runout;
+  std::string word;
+  if (!(in >> word >> runout.tool) || word != "tool" || runout.tool <= 0 ||
+      !(in >> word >> runout.table_diameter_mm) || word != "diameter" ||
+      !std::isfinite(runout.table_diameter_mm) || runout.table_diameter_mm <= 0)
+    return std::nullopt;
+  for (std::size_t i = 0; i < runout.along_mm.size(); ++i) {
+    double value{};
+    if (!(in >> word >> value) || word != std::array{"+X", "-X", "+Y", "-Y"}.at(i) ||
+        !std::isfinite(value) || std::abs(value) > max_runout_mm)
+      return std::nullopt;
+    runout.along_mm.at(i) = value;
+  }
+  int centred{};
+  if (!(in >> word >> centred) || word != "centred" || (centred != 0 && centred != 1))
+    return std::nullopt;
+  runout.centred = centred == 1;
+  if (in >> word)
+    return std::nullopt;
+  return runout;
+}
+
+auto format_probe_runout(const ProbeRunout& runout) -> std::string {
+  return std::format("tool {}\ndiameter {:.6f}\n+X {:.6f}\n-X {:.6f}\n+Y {:.6f}\n-Y {:.6f}\n"
+                     "centred {}\n",
+                     runout.tool, runout.table_diameter_mm, runout.along_mm[0], runout.along_mm[1],
+                     runout.along_mm[2], runout.along_mm[3], runout.centred ? 1 : 0);
+}
+
 auto restored_touched_off(std::string_view table, int reference_tool,
                           const std::optional<TouchedOff>& saved) -> std::map<int, double> {
   std::map<int, double> marks;

@@ -16,7 +16,7 @@ import { vTooltip } from '../tooltip'
 
 const props = defineProps<{ tool: number }>()
 const { t } = useI18n()
-type Request = Extract<CommandBody, { type: 'fixed_setter'; action: 'material' | 'corner' | 'ball' | 'bore' | 'boss' | 'angle' | 'apply_angle' | 'inside_corner' | 'pocket' | 'slot' | 'ridge' }>
+type Request = Extract<CommandBody, { type: 'fixed_setter'; action: 'material' | 'corner' | 'ball' | 'bore' | 'boss' | 'angle' | 'apply_angle' | 'inside_corner' | 'pocket' | 'slot' | 'ridge' | 'runout' | 'clear_runout' }>
 // The button names the part face. The protocol still specifies the tool's travel.
 const surfaces = [
   { key: 'zTop', label: null, travel: 'z_top', approach: '−Z' },
@@ -102,10 +102,25 @@ function openGuide(target: MaterialGuideTarget): void {
     guide.value = target
   }
 }
-function startGuide(size: number, angle: AngleEdge): void {
+function startGuide(size: number, angle: AngleEdge, centred: boolean): void {
   const target = guide.value
   guide.value = null
-  if (target !== null) probe(target, size, angle)
+  if (target !== null) probe(target, size, angle, centred)
+}
+/** The runout compensation the controller applies to this probe's XY results. */
+const runout = computed(() => setterState.value?.runout?.tool === props.tool ? setterState.value.runout : null)
+const signed = (mm: number): string => `${mm >= 0 ? '+' : '−'}${Math.abs(mm).toFixed(3)}`
+const runoutValues = computed(() => {
+  const value = runout.value
+  return value ? { ex: signed(value.eccentricity[0]), ey: signed(value.eccentricity[1]), rx: signed(value.radius_left[0]), ry: signed(value.radius_left[1]) } : null
+})
+function clearRunout(): void {
+  if (pending.value || !runout.value) return
+  choosingFeature.value = false
+  const request = { type: 'fixed_setter', action: 'clear_runout', tool: props.tool } as const
+  pending.value = request
+  line.value = { text: (): string => t('probe.materialProbe.runoutClearing'), level: 'busy' }
+  send(request)
 }
 const askingRotation = shallowRef(false)
 /** A measured edge: the turn from the present work axes, and the rotation applying it writes. */
@@ -129,7 +144,7 @@ function applyRotation(): void {
   send(request)
 }
 
-function probe(target: MaterialGuideTarget, size: number, angle: AngleEdge): void {
+function probe(target: MaterialGuideTarget, size: number, angle: AngleEdge, centred = true): void {
   if (pending.value) return
   cycleFailed.value = false
   edgeRotation.value = null
@@ -152,6 +167,7 @@ function probe(target: MaterialGuideTarget, size: number, angle: AngleEdge): voi
     if (target.kind === 'boss') reason = (): string => t('probe.materialProbe.touchOffBoss', { tool })
     if (target.kind === 'ridge') reason = (): string => t('probe.materialProbe.touchOffRidge', { tool })
     if (target.kind === 'ball') reason = (): string => t('probe.materialProbe.touchOffGauge', { tool })
+    if (target.kind === 'runout_pin') reason = (): string => t('probe.materialProbe.touchOffPin', { tool })
   }
   if (reason !== null || x === undefined || y === undefined || z === undefined || ![x, y, z].every(Number.isFinite)) {
     line.value = { text: reason ?? ((): string => t('probe.materialProbe.waitPosition')), level: 'blocked' }
@@ -186,6 +202,11 @@ function probe(target: MaterialGuideTarget, size: number, angle: AngleEdge): voi
     case 'boss':
       request = { ...position, action: 'boss', diameter: size }
       busy = (): string => t('probe.materialProbe.bossBusy')
+      break
+    case 'runout_ring':
+    case 'runout_pin':
+      request = { ...position, action: 'runout', diameter: size, outside: target.kind === 'runout_pin', centred }
+      busy = (): string => t('probe.materialProbe.runoutBusy')
       break
     case 'bore':
     case 'pocket':
@@ -225,6 +246,24 @@ const removeListener = onResult((command, result) => {
   const failure = (fallback: () => string): Line => ({
     text: (): string => result.reason ? translateMessage(result.reason, result.refusal) : fallback(), level: 'blocked',
   })
+  if (request.action === 'runout' || request.action === 'clear_runout') {
+    if (result.outcome !== 'accepted') {
+      line.value = failure((): string => t('probe.materialProbe.noRunout'))
+      return
+    }
+    setterState.value = result.setter ?? null
+    const saved = result.setter?.runout
+    if (request.action === 'clear_runout' || !saved) {
+      line.value = { text: (): string => t('probe.materialProbe.runoutCleared'), level: 'done' }
+      return
+    }
+    const values = { tool: String(props.tool), ex: signed(saved.eccentricity[0]), ey: signed(saved.eccentricity[1]),
+      rx: signed(saved.radius_left[0]), ry: signed(saved.radius_left[1]) }
+    line.value = saved.centred
+      ? { text: (): string => t('probe.materialProbe.runoutDone', values), level: 'done' }
+      : { text: (): string => t('probe.materialProbe.runoutRadiusDone', values), level: 'done' }
+    return
+  }
   if (request.action === 'apply_angle') {
     const degrees = result.setter?.edge_angle
     edgeRotation.value = null
@@ -410,6 +449,15 @@ onBeforeUnmount(() => {
               </button>
             </div>
           </div>
+          <div class="feature-row">
+            <span>{{ t('probe.materialProbe.runout') }}</span>
+            <div class="feature-buttons runout">
+              <button class="btn" type="button" :aria-label="t('probe.materialProbe.runoutRingLabel')" @click="openGuide({ kind: 'runout_ring' })">{{ t('probe.materialProbe.runoutRing') }}</button>
+              <button class="btn" type="button" :aria-label="t('probe.materialProbe.runoutPinLabel')" @click="openGuide({ kind: 'runout_pin' })">{{ t('probe.materialProbe.runoutPin') }}</button>
+              <button class="btn" type="button" :disabled="!runout" :aria-label="t('probe.materialProbe.runoutClearLabel')" @click="clearRunout">{{ t('probe.materialProbe.runoutClear') }}</button>
+            </div>
+          </div>
+          <p v-if="runoutValues" class="runout-in-use">{{ t('probe.materialProbe.runoutInUse', runoutValues) }}</p>
           <div v-for="kind in narrowFeatures" :key="kind" class="feature-row">
             <span class="feature-name">{{ kind === 'slot' ? t('probe.materialProbe.slot') : t('probe.materialProbe.ridge') }}</span>
             <div class="feature-buttons">
@@ -458,6 +506,8 @@ onBeforeUnmount(() => {
 .feature-name { text-transform: capitalize; }
 .feature-buttons { display: grid; grid-template-columns: repeat(2, minmax(44px, 1fr)); gap: 6px; }
 .feature-buttons.corners { grid-template-columns: repeat(4, minmax(44px, 1fr)); }
+.feature-buttons.runout { grid-template-columns: repeat(3, minmax(44px, 1fr)); }
+.runout-in-use { margin: -3px 0 0; color: var(--text-dim); font-size: 12px; }
 .feature-options button { min-height: 44px; padding-inline: 6px; }
 .feature-buttons button { white-space: nowrap; }
 @container (max-width: 400px) {

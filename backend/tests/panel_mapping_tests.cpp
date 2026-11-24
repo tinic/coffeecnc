@@ -1074,6 +1074,20 @@ void coolant_wiring() {
 
 // Touched-off marks beside the tool table: the file round trips, and a teach of the reference
 // tool restores exactly the tools whose length and the reference length are unchanged.
+// The probe runout file (#247) round trips and refuses what is not a whole record.
+void probe_runout_file() {
+  const ProbeRunout saved{.tool = 99, .table_diameter_mm = 1.98, .along_mm = {0.04, -0.06, -0.04, 0.02},
+                          .centred = true};
+  require(parse_probe_runout(format_probe_runout(saved)) == saved, "the runout file round trips");
+  require(!parse_probe_runout(""), "an empty runout file is no record");
+  require(!parse_probe_runout("tool 99\ndiameter 2\n+X 0\n-X 0\n+Y 0\n"), "a missing direction is refused");
+  require(!parse_probe_runout("tool 99\ndiameter 2\n+X 0.6\n-X 0\n+Y 0\n-Y 0\ncentred 1\n"),
+          "more than 0.5 mm is refused");
+  require(!parse_probe_runout("tool 99\ndiameter 2\n-X 0\n+X 0\n+Y 0\n-Y 0\ncentred 1\n"),
+          "the directions come in their order");
+  require(!parse_probe_runout(format_probe_runout(saved) + "extra 1\n"), "trailing words are refused");
+}
+
 void touched_off_marks() {
   const TouchedOff saved{.reference = 19.05, .tools = {{1, 19.051667}, {98, 19.05}, {99, 53.185}}};
   require(parse_touched_off(format_touched_off(saved)) == saved, "the file round trips");
@@ -1157,6 +1171,7 @@ auto main(int argc, char** argv) -> int {
     work_systems();
     parameter_file_systems();
     tool_comments();
+    probe_runout_file();
     touched_off_marks();
     source_status_and_age();
     source_inactive_systems();

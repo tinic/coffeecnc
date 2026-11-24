@@ -99,7 +99,22 @@
       "rotationTitle": "作为 G5x 旋转应用？",
       "rotationEffect": "将 {wcs} 的 XY 轴绕其保存的零点旋转 {degrees}。旋转从 {current} 变为 {rotation}。",
       "shiftStays": "当前的 G52/G92 偏移保持有效。",
-      "applyRotation": "应用旋转"
+      "applyRotation": "应用旋转",
+      "runout": "跳动",
+      "runoutRing": "环规…",
+      "runoutPin": "塞规…",
+      "runoutClear": "清除",
+      "runoutRingLabel": "用环规校准测针跳动",
+      "runoutPinLabel": "用塞规校准测针跳动",
+      "runoutClearLabel": "清除跳动补偿",
+      "runoutBusy": "正在测量测针跳动…",
+      "runoutClearing": "正在清除跳动补偿…",
+      "runoutDone": "已保存 T{tool} 的跳动：偏心 X {ex} Y {ey} mm，剩余半径 X {rx} Y {ry} mm。此后所有 XY 探测结果都会使用它。",
+      "runoutRadiusDone": "已保存 T{tool} 的跳动：剩余半径 X {rx} Y {ry} mm。中心未知，因此未测量偏心。",
+      "runoutCleared": "已清除跳动补偿。",
+      "noRunout": "跳动未保存。",
+      "runoutInUse": "使用中：偏心 X {ex} Y {ey} mm，剩余半径 X {rx} Y {ry} mm。",
+      "touchOffPin": "请先对 {tool} 对刀，并探测塞规顶面 Z。"
     },
     "guide": {
       "angleFront": "前 · Y−",
@@ -180,7 +195,14 @@
       "stepLatch": "慢速复测 · 第 {pass} 次，共 3 次",
       "stepRetract": "退回",
       "stepLiftWork": "抬起越过工件",
-      "stepClearance": "退回到安全距离"
+      "stepClearance": "退回到安全距离",
+      "titleRunoutRing": "用环规校准测针跳动",
+      "titleRunoutPin": "用塞规校准测针跳动",
+      "setupRunoutRing": "请先校准测球。将测球移入环规并低于其顶面，输入其精确直径。要测量偏心，请先用杠杆表把 X0 Y0 设在环规中心。",
+      "setupRunoutPin": "请先校准测球，并在塞规顶面设置 Z0。移动到塞规上方，输入其精确直径。要测量偏心，请先用杠杆表把 X0 Y0 设在塞规中心。",
+      "resultRunout": "保存每个方向的修正。此后所有 XY 探测结果都会使用它",
+      "inputRing": "环规直径",
+      "inputPin": "塞规直径"
     },
     "guideDialog": {
       "previous": "上一个移动",
@@ -209,7 +231,10 @@
       "result": "结果",
       "lengthTolerance": "长度公差",
       "startCheck": "开始检查",
-      "startProbe": "开始探测"
+      "startProbe": "开始探测",
+      "centreChoice": "量规中心",
+      "centreAtOrigin": "中心在 X0 Y0",
+      "centreFound": "查找中心"
     },
     "guideCanvas": {
       "label": "3D 探测动作：拖动以旋转",

@@ -392,7 +392,8 @@
       "browserSimulator": "浏览器模拟器",
       "simRestored": "模拟恢复：刀具表和工件坐标偏置已恢复为备份内容。此浏览器保持打开。",
       "simNoFile": "{path} 不存在。",
-      "noHalTools": "浏览器模拟器没有 HAL 工具：它在没有 LinuxCNC 的情况下运行。"
+      "noHalTools": "浏览器模拟器没有 HAL 工具：它在没有 LinuxCNC 的情况下运行。",
+      "runoutTooLargeSim": "某一方向的跳动超过 0.5 mm。请检查直径、中心和测球校准。"
     },
     "bridge": {
       "noController": "CoffeeCNC 无法连接到其原生控制器。请重新启动应用程序。",

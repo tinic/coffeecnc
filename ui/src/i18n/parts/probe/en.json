@@ -99,7 +99,22 @@
       "rotationTitle": "Apply as G5x rotation?",
       "rotationEffect": "Turn the {wcs} XY axes {degrees} about its stored origin. Its rotation changes from {current} to {rotation}.",
       "shiftStays": "The current G52/G92 shift stays active.",
-      "applyRotation": "Apply rotation"
+      "applyRotation": "Apply rotation",
+      "runout": "Runout",
+      "runoutRing": "Ring…",
+      "runoutPin": "Pin…",
+      "runoutClear": "Clear",
+      "runoutRingLabel": "Stylus runout on a ring gauge",
+      "runoutPinLabel": "Stylus runout on a pin gauge",
+      "runoutClearLabel": "Clear the runout compensation",
+      "runoutBusy": "Measuring the stylus runout…",
+      "runoutClearing": "Clearing the runout compensation…",
+      "runoutDone": "Runout saved for T{tool}: eccentricity X {ex} Y {ey} mm, radius left X {rx} Y {ry} mm. Every XY probe result now uses it.",
+      "runoutRadiusDone": "Runout saved for T{tool}: radius left X {rx} Y {ry} mm. The centre was not known, so the eccentricity is not measured.",
+      "runoutCleared": "Runout compensation cleared.",
+      "noRunout": "The runout was not saved.",
+      "runoutInUse": "In use: eccentricity X {ex} Y {ey} mm, radius left X {rx} Y {ry} mm.",
+      "touchOffPin": "Touch off {tool} and probe Z top on the pin first."
     },
     "guide": {
       "angleFront": "Front · Y−",
@@ -180,7 +195,14 @@
       "stepLatch": "Slow latch · {pass} of 3",
       "stepRetract": "Retract",
       "stepLiftWork": "Lift clear of the work",
-      "stepClearance": "Retract to clearance"
+      "stepClearance": "Retract to clearance",
+      "titleRunoutRing": "Calibrate stylus runout on a ring",
+      "titleRunoutPin": "Calibrate stylus runout on a pin",
+      "setupRunoutRing": "Calibrate the ball first. Jog the ball into the ring gauge below its top and enter its exact diameter. To measure the eccentricity, first set X0 Y0 at the ring centre with a test indicator.",
+      "setupRunoutPin": "Calibrate the ball and set Z0 on the pin top first. Jog above the pin and enter its exact diameter. To measure the eccentricity, first set X0 Y0 at the pin centre with a test indicator.",
+      "resultRunout": "Save the correction for each direction. Every later XY probe result uses it",
+      "inputRing": "Ring diameter",
+      "inputPin": "Pin diameter"
     },
     "guideDialog": {
       "previous": "Previous move",
@@ -209,7 +231,10 @@
       "result": "Result",
       "lengthTolerance": "Length tolerance",
       "startCheck": "Start check",
-      "startProbe": "Start probe"
+      "startProbe": "Start probe",
+      "centreChoice": "Gauge centre",
+      "centreAtOrigin": "Centre at X0 Y0",
+      "centreFound": "Find the centre"
     },
     "guideCanvas": {
       "label": "3D probe motion: drag to rotate",

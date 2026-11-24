@@ -294,6 +294,12 @@ if(BUILD_TESTING)
           $<TARGET_FILE:coffeecnc_fixed_setter_tests> rotated)
         set_tests_properties(linuxcnc_rotated_probe_${units} PROPERTIES LABELS linuxcnc
           RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 810)
+        # Stylus runout calibration and its compensation (#247), rotated +7.5° in mm, -30° in inch.
+        add_test(NAME linuxcnc_probe_runout_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+          -u ${units} -t 480 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_probe_runout_${units}
+          $<TARGET_FILE:coffeecnc_fixed_setter_tests> runout)
+        set_tests_properties(linuxcnc_probe_runout_${units} PROPERTIES LABELS linuxcnc
+          RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 810)
         add_test(NAME linuxcnc_jog_contact_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
           -u ${units} -t 25 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_jog_contact_${units}
           $<TARGET_FILE:coffeecnc_sim_tests> jog-contact)

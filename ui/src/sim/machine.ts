@@ -1440,7 +1440,7 @@ export class SimMachine {
     const blocked = this.notOn('probe') ?? this.busy('probe')
     const tool = this.modal.tools.find(row => row.number === this.toolInSpindle)
     const start = this.reported()
-    const confirmed = command.action === 'apply_angle' || [command.x, command.y, command.z].every(
+    const confirmed = command.action === 'apply_angle' || command.action === 'clear_runout' || [command.x, command.y, command.z].every(
       (value, axis) => Math.abs(value - (start[axis] ?? Infinity)) <= 0.1,
     )
     if (blocked !== null || command.tool !== tool?.number || !this.allHomed() || !this.inPosition() ||

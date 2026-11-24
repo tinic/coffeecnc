@@ -130,8 +130,8 @@ const waitingLabels = { on: 'status.statusBar.waitingOn', off: 'status.statusBar
       <img v-show="!isDarkTheme(theme)" class="brand-logo" src="/branding/coffeecnc-logo-light.svg" alt="CoffeeCNC" width="161" height="36" />
       <img v-show="isDarkTheme(theme)" class="brand-logo" src="/branding/coffeecnc-logo-dark.svg" alt="CoffeeCNC" width="161" height="36" />
     </div>
-    <nav class="em-nav" :aria-label="t('status.statusBar.workspace')">
-      <button v-for="[tab, label] in tabs" :key="tab" class="choice" type="button" :aria-current="panel.tab === tab ? 'page' : undefined" @click="panel.tab = tab">{{ label }}</button>
+    <nav class="em-nav button-group" :aria-label="t('status.statusBar.workspace')">
+      <button v-for="[tab, label] in tabs" :key="tab" class="btn" type="button" :aria-current="panel.tab === tab ? 'page' : undefined" @click="panel.tab = tab">{{ label }}</button>
     </nav>
     <div class="machine">
       <span v-tooltip="linkLabel" class="connection" :class="{ disconnected: !live }" :aria-label="linkLabel"><i class="dot"></i><span v-if="live" class="connection-label">{{ linkLabel }}</span></span>
@@ -184,7 +184,7 @@ const waitingLabels = { on: 'status.statusBar.waitingOn', off: 'status.statusBar
 .em-top { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 20px; padding: 8px 24px; background: var(--panel); }
 .em-brand { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
 .brand-logo { display: block; flex: none; width: 161px; height: 36px; }
-.em-nav { display: flex; padding: 3px; gap: 3px; }
+.em-nav { padding: 3px; }
 .em-nav button { min-width: 94px; padding: 0 19px; font-weight: 600; color: var(--text-dim); }
 .machine { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
 .connection { display: flex; align-items: center; gap: 8px; font-size: var(--type-sm); color: var(--text-dim); }

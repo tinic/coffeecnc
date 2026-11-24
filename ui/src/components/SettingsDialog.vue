@@ -150,7 +150,7 @@ async function save(): Promise<void> {
         <p class="hint">{{ settings.state.storage === 'session_only' ? t('status.settings.startupNeedsSaved') : t('status.settings.startupNextOpen') }}</p>
         <fieldset :disabled="startupDisabled">
           <legend>{{ t('status.settings.displayUnits') }}</legend>
-          <div class="units segmented" :aria-label="t('status.settings.startupUnits')">
+          <div class="units button-group" :aria-label="t('status.settings.startupUnits')">
             <button v-for="option in (['machine', 'mm', 'inch'] as const)" :key="option" class="btn" :class="{ on: startupUnits === option }" type="button" :aria-pressed="startupUnits === option" @click="startupUnits = option">{{ option === 'machine' ? t('status.settings.machineDefault') : option === 'inch' ? t('status.settings.inch') : 'mm' }}</button>
           </div>
           <label class="speed-label" for="settings-spindle">{{ t('status.settings.defaultSpindle') }}</label>

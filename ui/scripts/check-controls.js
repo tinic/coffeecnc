@@ -10,6 +10,7 @@
 //   - border: a border side with a width, a style and a visible colour;
 //   - outline: an outline at rest (the sweep removes focus first);
 //   - edge: any box-shadow on a control;
+//   - group: a framed button group or a button with joined corners;
 //   - unfilled: no background of its own, or a background less than 1.1:1 from the surface under
 //     it, disabled or not (a soft red, amber or green fill too, on a bar or a band as on a card);
 //   - label: less than 4.5:1 on its fill; a disabled label outside 2.8:1 to 4.6:1 (dimmed, not
@@ -158,6 +159,14 @@ function pageMeasure(themes, allowed) {
       }
       if (cs.outlineStyle !== 'none' && parseFloat(cs.outlineWidth) > 0) reasons.push(`outline ${cs.outlineWidth}`)
       if (cs.boxShadow !== 'none') reasons.push(`box-shadow ${cs.boxShadow}`)
+      if (el.parentElement?.matches('.button-group')) {
+        const group = getComputedStyle(el.parentElement)
+        const groupFill = parse(group.backgroundColor)
+        const framed = groupFill?.[3] > 0 || group.backgroundImage !== 'none' || group.boxShadow !== 'none'
+          || ['Top', 'Right', 'Bottom', 'Left'].some((side) => parseFloat(group[`border${side}Width`]) > 0)
+        if (framed) reasons.push('button group frame')
+        if (['TopLeft', 'TopRight', 'BottomRight', 'BottomLeft'].some((corner) => parseFloat(cs[`border${corner}Radius`]) === 0)) reasons.push('joined button corners')
+      }
       const paint = parse(cs.backgroundColor)
       const own = paint && [paint[0], paint[1], paint[2], paint[3] * Number(cs.opacity)]
       const base = under(el)

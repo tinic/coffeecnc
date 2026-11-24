@@ -288,7 +288,7 @@ const fieldGroups = computed(() => {
                 <select v-if="field.select || field.options.length > 3" v-model="entered[field.key]" class="field" :aria-label="t(field.label)" :disabled="saving">
                   <option v-for="[value, text] in field.options" :key="value" :value="value">{{ t(text) }}</option>
                 </select>
-                <div v-else class="segmented" role="group" :aria-label="t(field.label)">
+                <div v-else class="button-group" role="group" :aria-label="t(field.label)">
                   <button
                     v-for="[value, text] in field.options" :key="value" class="btn" type="button" :disabled="saving"
                     :class="{ on: entered[field.key] === value }" :aria-pressed="entered[field.key] === value"
@@ -376,7 +376,7 @@ const fieldGroups = computed(() => {
 .entry { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .operation-note { margin: 0; font-size: 13px; color: var(--warn); }
 .entry .field { width: 100%; min-width: 0; min-height: 44px; }
-.segmented { display: flex; }.segmented .btn { flex: 1; min-width: 0; padding: 0 8px; }
+.button-group { display: flex; }.button-group .btn { flex: 1; min-width: 0; padding: 0 8px; }
 .errors { margin: 0; padding: 0 0 0 18px; color: var(--warn); font-size: 12px; line-height: 1.5; }
 p.errors { padding: 0; }
 .file { flex: 1; min-width: 0; overflow: hidden; align-self: center; font-size: 12px; }

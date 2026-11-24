@@ -2352,7 +2352,7 @@ public:
   auto check_restore(const std::string&) -> MachineDataAnswer override { return {}; }
   std::uint64_t page = 0; // of the last restore
   auto restore(const std::string&, const std::string&, std::uint64_t asked,
-               const std::function<std::string()>&) -> MachineDataAnswer override {
+               const std::function<LocalizedReason()>&) -> MachineDataAnswer override {
     if (during)
       during();
     ++staged;

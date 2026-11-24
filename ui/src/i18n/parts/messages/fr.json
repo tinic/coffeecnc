@@ -79,6 +79,7 @@
       "toolTouchOffInvalid": "Chargez un outil et indiquez une valeur de prise d’origine finie.",
       "fixedSetterNeeds": "Le palpeur d’outil fixe exige l’outil confirmé et une broche arrêtée.",
       "probeValuesFinite": "Les positions et dimensions de palpage doivent être finies.",
+      "probeAlwaysWrites": "Cette action de palpage écrit toujours son résultat.",
       "probeNeedsAxes": "Le palpeur exige des axes configurés et aucune fin de course active.",
       "stopBeforeToolEdit": "Arrêtez l’exécution et terminez les changements d’outil avant de modifier les outils.",
       "invalidToolRow": "Ligne de table d’outils non valide.",

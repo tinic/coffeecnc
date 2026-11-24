@@ -375,6 +375,8 @@
       "loadCuttingTool": "Carregue uma ferramenta de corte antes de verificar o seu comprimento.",
       "measureEdgeAgain": "Meça a aresta de novo antes de aplicar a rotação.",
       "frameChanged": "O referencial da peça ou a ferramenta mudou. Meça a aresta de novo.",
+      "probeFeatureAgain": "Apalpe o elemento novamente antes de aplicar a medição.",
+      "measuredFrameChanged": "O sistema da peça ou a ferramenta mudou. Apalpe o elemento novamente.",
       "rotationCancelled": "A rotação foi cancelada antes de escrever o sistema da peça.",
       "rotationCommand": "Não foi possível construir o comando de rotação da peça.",
       "rotationUnverified": "Não foi possível verificar a rotação aplicada. Verifique o sistema da peça ativo.",

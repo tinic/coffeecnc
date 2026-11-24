@@ -1,6 +1,8 @@
 #ifndef COFFEECNC_APP_BACKUP_ARCHIVE_HPP
 #define COFFEECNC_APP_BACKUP_ARCHIVE_HPP
 
+#include <coffeecnc/core/message_key.hpp>
+
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -25,7 +27,7 @@ inline constexpr std::size_t max_archive_bytes = std::size_t{64} * 1024 * 1024;
 
 // The archive of the entries, in their order: regular files with mode 0644, owner 0.
 [[nodiscard]] auto write_archive(const std::vector<ArchiveEntry>& entries)
-    -> std::expected<std::string, std::string>;
+    -> std::expected<std::string, LocalizedReason>;
 
 // The regular files of a tar archive, plain or gzip-compressed, in its order; directory entries
 // are skipped. Refused: anything libarchive cannot read, every other entry type (symbolic and
@@ -33,7 +35,7 @@ inline constexpr std::size_t max_archive_bytes = std::size_t{64} * 1024 * 1024;
 // all. Nothing is extracted: the names come back as written, and what they may be is the
 // caller's to check against its own list of targets.
 [[nodiscard]] auto read_archive(std::string_view archive)
-    -> std::expected<std::vector<ArchiveEntry>, std::string>;
+    -> std::expected<std::vector<ArchiveEntry>, LocalizedReason>;
 
 } // namespace coffeecnc
 

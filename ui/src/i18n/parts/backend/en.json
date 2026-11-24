@@ -663,7 +663,8 @@
     "nmlPanelSource": {
       "toolTableUnreadable": "The tool table file {file} cannot be read: the tool table is not shown.",
       "toolTableMemory": "LinuxCNC's tool table cannot be read.",
-      "textNotShown": "The text of {file} cannot be shown: {detail}"
+      "textNotShown": "The text of {file} cannot be shown: {detail}",
+      "programReadFailed": "The text of {file} cannot be shown: Program cannot be read: {detail}"
     },
     "controllerPort": {
       "estopStatus": "LinuxCNC's status cannot be read; E-stop was not confirmed.",

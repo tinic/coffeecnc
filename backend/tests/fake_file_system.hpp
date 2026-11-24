@@ -122,13 +122,14 @@ public:
   }
 
   auto read(const std::string& path, std::size_t limit) const
-      -> std::expected<std::string, std::string> override {
+      -> std::expected<std::string, LocalizedReason> override {
     calls.push_back("read " + path);
     if (std::ranges::find(unreadable_files, path) != unreadable_files.end())
-      return std::unexpected(std::string("Permission denied"));
+      return std::unexpected(LocalizedReason{"Permission denied"});
     const auto node = nodes.find(path);
     if (node == nodes.end() || node->second.kind != FileKind::file)
-      return std::unexpected(std::string("The file cannot be opened."));
+      return std::unexpected(LocalizedReason{"The file cannot be opened.",
+                                             MessageKey{"backend.fileSystem.cannotOpen"}});
     return node->second.content.substr(0, limit);
   }
 

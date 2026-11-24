@@ -303,17 +303,29 @@ struct NmlPanelSource::Impl {
     lines.not_before = clock();
     program.reset();
     auto text =
-        programs ? programs(program_file, program_revision)
-                 : std::unexpected(LocalizedReason{"No program directory is configured.",
-                                                   MessageKey{"backend.programStore.noDirectory"}});
-    if (text)
+        programs
+            ? programs(program_file, program_revision)
+            : std::unexpected(ProgramReadError{{"No program directory is configured.",
+                                                MessageKey{"backend.programStore.noDirectory"}}});
+    if (text) {
       program = std::make_shared<const ProgramText>(std::move(*text));
-    else
+      return;
+    }
+    const auto& detail = text.error().reason;
+    if (text.error().stage == ProgramReadError::Stage::contents) {
+      messages.push_back({true,
+                          std::format("The text of {} cannot be shown: Program cannot be read: {}",
+                                      program_file, detail.text),
+                          MessageKey{"backend.nmlPanelSource.programReadFailed",
+                                     {{"file", program_file}, {"detail", detail.text}},
+                                     parameter_localization("detail", detail.localization)}});
+    } else {
       messages.push_back(
-          {true, std::format("The text of {} cannot be shown: {}", program_file, text.error().text),
+          {true, std::format("The text of {} cannot be shown: {}", program_file, detail.text),
            MessageKey{"backend.nmlPanelSource.textNotShown",
-                      {{"file", program_file}, {"detail", text.error().text}},
-                      parameter_localization("detail", text.error().localization)}});
+                      {{"file", program_file}, {"detail", detail.text}},
+                      parameter_localization("detail", detail.localization)}});
+    }
   }
 };
 

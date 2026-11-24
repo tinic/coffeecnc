@@ -275,15 +275,14 @@ auto ProgramStore::resolve_new_program(std::string_view path) const
 }
 
 auto ProgramStore::read_program(std::string_view path, std::uint64_t revision) const
-    -> std::expected<ProgramText, LocalizedReason> {
+    -> std::expected<ProgramText, ProgramReadError> {
   auto file = resolve_program(path);
   if (!file)
-    return std::unexpected(std::move(file.error()));
-  const auto content = files_.read(*file, max_program_bytes + 1);
+    return std::unexpected(ProgramReadError{std::move(file.error())});
+  auto content = files_.read(*file, max_program_bytes + 1);
   if (!content)
-    return std::unexpected(LocalizedReason{
-        std::format("Program cannot be read: {}", content.error()),
-        MessageKey{"backend.programStore.cannotRead", {{"detail", content.error()}}}});
+    return std::unexpected(
+        ProgramReadError{std::move(content.error()), ProgramReadError::Stage::contents});
   ProgramText program;
   program.revision = revision;
   program.file = std::move(*file);

@@ -43,6 +43,7 @@ const adapter = import.meta.glob<string>([
   '../../backend/src/app/src/tool_model_json.hpp',
   '../../backend/src/app/include/coffeecnc/app/tool_model_store.hpp',
   '../../backend/src/app/src/program_store.cpp',
+  '../../backend/src/app/src/file_system.cpp',
   '../../backend/src/app/src/program_progress.cpp',
   '../../backend/src/app/src/program_edit.cpp',
   '../../backend/src/app/src/messages.cpp',
@@ -544,6 +545,14 @@ describe('translateMessage', () => {
         params_localization: { detail: { key: 'backend.programStore.outsideDirectory', params: {} } },
       },
     )).toBe('Impossible d’afficher le texte de /home/cnc/outside.ngc : Le chemin est en dehors du dossier de programmes.')
+
+    const file = '/home/cnc/part.ngc'
+    const detail = 'The file cannot be read.'
+    expect(translateMessage(`The text of ${file} cannot be shown: Program cannot be read: ${detail}`, {
+      key: 'backend.nmlPanelSource.programReadFailed',
+      params: { file, detail },
+      params_localization: { detail: { key: 'backend.fileSystem.cannotRead', params: {} } },
+    })).toBe('Impossible d’afficher le texte de /home/cnc/part.ngc : Impossible de lire le programme : Impossible de lire le fichier.')
   })
 
   it('passes unknown text unchanged', async () => {

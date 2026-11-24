@@ -663,7 +663,8 @@
     "nmlPanelSource": {
       "toolTableUnreadable": "工具テーブルファイル {file} を読み込めないため、工具テーブルを表示できません。",
       "toolTableMemory": "LinuxCNC の工具テーブルを読み込めません。",
-      "textNotShown": "{file} のテキストを表示できません：{detail}"
+      "textNotShown": "{file} のテキストを表示できません：{detail}",
+      "programReadFailed": "{file} のテキストを表示できません：プログラムを読み込めません：{detail}"
     },
     "controllerPort": {
       "estopStatus": "LinuxCNC の状態を読み込めないため、非常停止を確認できませんでした。",

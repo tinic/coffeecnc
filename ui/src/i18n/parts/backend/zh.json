@@ -663,7 +663,8 @@
     "nmlPanelSource": {
       "toolTableUnreadable": "无法读取刀具表文件 {file}：不显示刀具表。",
       "toolTableMemory": "无法读取 LinuxCNC 的刀具表。",
-      "textNotShown": "无法显示 {file} 的文本：{detail}"
+      "textNotShown": "无法显示 {file} 的文本：{detail}",
+      "programReadFailed": "无法显示 {file} 的文本：无法读取程序：{detail}"
     },
     "controllerPort": {
       "estopStatus": "无法读取 LinuxCNC 的状态；急停未确认。",

@@ -68,10 +68,11 @@ auto LocalFileSystem::names(const std::string& directory, std::size_t limit) con
 }
 
 auto LocalFileSystem::read(const std::string& path, std::size_t limit) const
-    -> std::expected<std::string, std::string> {
+    -> std::expected<std::string, LocalizedReason> {
   std::ifstream file{path, std::ios::binary};
   if (!file.is_open())
-    return std::unexpected(std::string("The file cannot be opened."));
+    return std::unexpected(
+        LocalizedReason{"The file cannot be opened.", MessageKey{"backend.fileSystem.cannotOpen"}});
   std::string content;
   std::string block(std::size_t{65536}, '\0');
   while (content.size() < limit && file) {
@@ -80,7 +81,8 @@ auto LocalFileSystem::read(const std::string& path, std::size_t limit) const
     content.append(block.data(), static_cast<std::size_t>(file.gcount()));
   }
   if (file.bad())
-    return std::unexpected(std::string("The file cannot be read."));
+    return std::unexpected(
+        LocalizedReason{"The file cannot be read.", MessageKey{"backend.fileSystem.cannotRead"}});
   return content;
 }
 

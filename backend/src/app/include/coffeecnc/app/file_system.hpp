@@ -1,6 +1,8 @@
 #ifndef COFFEECNC_APP_FILE_SYSTEM_HPP
 #define COFFEECNC_APP_FILE_SYSTEM_HPP
 
+#include <coffeecnc/core/message_key.hpp>
+
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -40,7 +42,7 @@ public:
       -> std::expected<Names, std::string> = 0;
   // The first `limit` bytes of the file, or all of it when it is shorter.
   [[nodiscard]] virtual auto read(const std::string& path, std::size_t limit) const
-      -> std::expected<std::string, std::string> = 0;
+      -> std::expected<std::string, LocalizedReason> = 0;
 
 protected:
   FileSystem(const FileSystem&) = default;
@@ -59,7 +61,7 @@ public:
   [[nodiscard]] auto names(const std::string& directory, std::size_t limit) const
       -> std::expected<Names, std::string> override;
   [[nodiscard]] auto read(const std::string& path, std::size_t limit) const
-      -> std::expected<std::string, std::string> override;
+      -> std::expected<std::string, LocalizedReason> override;
 };
 
 } // namespace coffeecnc

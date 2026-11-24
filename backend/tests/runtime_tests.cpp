@@ -140,7 +140,19 @@ public:
     return called(action);
   }
 
-  auto read() -> ControllerState override { return snapshot(); }
+  // The status loop observes one sample before it starts its next read. Waiting for the
+  // second read proves the first sample has reached Session rather than just left the source.
+  void wait_for_initial_observation() {
+    std::unique_lock lock{mutex_};
+    if (!changed_.wait_for(lock, 20s, [&]() -> bool { return status_reads_ >= 2; }))
+      throw std::runtime_error("No initial controller observation reached the session");
+  }
+  auto read() -> ControllerState override {
+    const std::scoped_lock lock{mutex_};
+    if (++status_reads_ == 2)
+      changed_.notify_all();
+    return state_;
+  }
   auto snapshot() -> ControllerState override {
     const std::scoped_lock lock{mutex_};
     return state_;
@@ -229,6 +241,7 @@ private:
   std::mutex mutex_;
   std::condition_variable changed_;
   ControllerState state_{homed_machine()};
+  std::size_t status_reads_{};
   Calls calls_;
   std::map<std::string, std::deque<ActionResult>> script_;
   std::string block_on_;
@@ -834,14 +847,18 @@ struct Threads {
   PageToken page{runtime->begin_page()};
   RequestId next_id{1};
 
-  Threads() { static_cast<void>(result(R"("type":"ready")")); }
+  Threads() {
+    static_cast<void>(delivered.wait_result(page, send(R"("type":"ready")")));
+    port.wait_for_initial_observation();
+  }
   auto send(std::string_view body) -> RequestId {
     const auto id = next_id++;
     delivered.add(runtime->submit(page, std::format("{{\"id\":{},{}}}", id, body)));
     return id;
   }
-  auto result(std::string_view body) -> std::string {
-    return delivered.wait_result(page, send(body)).at("outcome").get<std::string>();
+  void jog_x() {
+    const auto result = delivered.wait_result(page, send(hold_x));
+    require(result.at("outcome") == "accepted", "The threaded jog starts: " + result.dump());
   }
 };
 
@@ -853,7 +870,7 @@ auto milliseconds(Clock::duration time) -> double {
 // seconds while the lease runs out.
 void threads_keep_the_dead_man_on_time() {
   Threads threads;
-  require(threads.result(hold_x) == "accepted", "The jog starts");
+  threads.jog_x();
   threads.port.block("set_coolant");
   const auto blocked = threads.send(slow);
   threads.port.wait_blocked();
@@ -893,7 +910,7 @@ void threads_keep_the_dead_man_on_time() {
 // Property 8: destroying the runtime with the worker inside a call.
 void shutdown_is_safe_and_bounded() {
   Threads threads;
-  require(threads.result(hold_x) == "accepted", "The jog starts");
+  threads.jog_x();
   threads.port.block("set_coolant");
   static_cast<void>(threads.send(slow));
   static_cast<void>(threads.send(R"("type":"mdi","text":"G0 X1")"));

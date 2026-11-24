@@ -227,7 +227,8 @@ auto words(long type) -> std::string_view {
 }
 
 auto withdrawn() -> ActionResult {
-  return {ActionStatus::cancelled, "Cancelled before it was sent."};
+  return {ActionStatus::cancelled, "Cancelled before it was sent.",
+          MessageKey{"backend.nmlPort.cancelledBeforeSent"}};
 }
 
 // Polls until `done` holds. False when it did not within the timeout.
@@ -269,48 +270,9 @@ auto joint_jog_refusal(const MachineConfig& config, Axis axis) -> std::optional<
                      "XYZ"[index_of(axis)], motors == 2 ? "two" : std::to_string(motors));
 }
 
-struct ProbeLine {
-  std::size_t axis;
-  double sign;
-  std::array<double, 3> forward; // Signed direction in machine axes.
-
-  auto distance(const std::array<double, 3>& from, const std::array<double, 3>& to) const
-      -> double {
-    return (to[0] - from[0]) * forward[0] + (to[1] - from[1]) * forward[1] +
-           (to[2] - from[2]) * forward[2];
-  }
-
-  auto advance(std::array<double, 3> point, double travel) const -> std::array<double, 3> {
-    for (std::size_t i = 0; i < point.size(); ++i)
-      point[i] += travel * forward[i];
-    return point;
-  }
-
-  auto word() const -> char { return "XYZ"[axis]; }
-};
-
-auto probe_line(ProbeDirection direction, double rotation_xy) -> ProbeLine {
-  const double angle = rotation_xy * std::numbers::pi / 180;
-  const double sign =
-      direction == ProbeDirection::x_plus || direction == ProbeDirection::y_plus ? 1.0 : -1.0;
-  switch (direction) {
-  case ProbeDirection::x_minus:
-  case ProbeDirection::x_plus:
-    return {0, sign, {sign * std::cos(angle), sign * std::sin(angle), 0}};
-  case ProbeDirection::y_minus:
-  case ProbeDirection::y_plus:
-    return {1, sign, {-sign * std::sin(angle), sign * std::cos(angle), 0}};
-  case ProbeDirection::z_top:
-    return {2, -1, {0, 0, -1}};
-  }
-  std::unreachable();
-}
-
-// The line a probe move searches along in machine coordinates, in a work system turned by
-// `rotation_xy`. The runout compensation takes the same line as the search, so a contact is
-// corrected along its actual travel.
+// The line `move` searches along (core search_line): its heading when it has one.
 auto search_line(const FixedSetterMove& move, double rotation_xy) -> ProbeLine {
-  return probe_line(move.material.value_or(ProbeDirection::z_top), rotation_xy);
+  return coffeecnc::search_line(move.material, move.heading_deg, rotation_xy);
 }
 
 } // namespace
@@ -658,7 +620,7 @@ struct NmlPort::Impl {
   }
 
   // A failure whose reason is what task published about it, or `fallback`.
-  [[nodiscard]] auto failure(std::size_t from, std::string_view fallback) -> ActionResult {
+  [[nodiscard]] auto failure(std::size_t from, LocalizedReason fallback) -> ActionResult {
     static_cast<void>(until(error_text_time, [&]() -> bool {
       collect();
       return error_since(from);
@@ -669,7 +631,9 @@ struct NmlPort::Impl {
       return false;
     }));
     auto reason = take_errors(from);
-    return failed(reason.empty() ? std::string(fallback) : std::move(reason));
+    if (!reason.empty())
+      return {ActionStatus::failed, std::move(reason)};
+    return {ActionStatus::failed, std::move(fallback.text), std::move(fallback.localization)};
   }
 
   // Ends an action: its `Wanted` is the caller's and is not kept past the call.
@@ -766,7 +730,8 @@ struct NmlPort::Impl {
       return answered(stat());
     });
     if (!echo)
-      return {ActionStatus::timed_out, "LinuxCNC did not acknowledge the command."};
+      return {ActionStatus::timed_out, "LinuxCNC did not acknowledge the command.",
+              MessageKey{"backend.nmlPort.notAcknowledged"}};
     unanswered_stop.reset();
     return {};
   }
@@ -824,9 +789,11 @@ struct NmlPort::Impl {
       return echo;
     const int rcs = outcome(completion_timeout);
     if (rcs == RCS_EXEC)
-      return {ActionStatus::timed_out, "LinuxCNC did not finish the command."};
+      return {ActionStatus::timed_out, "LinuxCNC did not finish the command.",
+              MessageKey{"backend.nmlPort.notFinished"}};
     if (rcs == RCS_ERROR)
-      return failure(from, "LinuxCNC reported an error.");
+      return failure(from,
+                     {"LinuxCNC reported an error.", MessageKey{"backend.nmlPort.reportedError"}});
     return {};
   }
 
@@ -851,7 +818,8 @@ struct NmlPort::Impl {
       return refused;
     }));
     if (refused)
-      return failure(from, "LinuxCNC reported an error.");
+      return failure(from,
+                     {"LinuxCNC reported an error.", MessageKey{"backend.nmlPort.reportedError"}});
     return {};
   }
 
@@ -861,13 +829,14 @@ struct NmlPort::Impl {
     if (auto sent = send(message); !accepted(sent))
       return sent;
     if (outcome(start_window) == RCS_ERROR)
-      return failure(from, "LinuxCNC reported an error.");
+      return failure(from,
+                     {"LinuxCNC reported an error.", MessageKey{"backend.nmlPort.reportedError"}});
     return {};
   }
 
   // Waits for a state task reports after the command is done.
   template <typename Predicate>
-  [[nodiscard]] auto settled(std::size_t from, std::string_view otherwise, Predicate reached)
+  [[nodiscard]] auto settled(std::size_t from, LocalizedReason otherwise, Predicate reached)
       -> ActionResult {
     const bool ok = until(settle_timeout, [&]() -> bool {
       collect();
@@ -877,7 +846,7 @@ struct NmlPort::Impl {
     const EMC_STAT* s = stat();
     if (ok && s != nullptr && reached(*s))
       return {};
-    return failure(from, otherwise);
+    return failure(from, std::move(otherwise));
   }
 
   // World (teleop) mode for axis jogs, joint mode for joint jogs and homing.
@@ -891,10 +860,13 @@ struct NmlPort::Impl {
     message.enable = on ? 1 : 0;
     if (auto done = run(message, from); !accepted(done))
       return done;
-    auto switched = settled(from,
-                            on ? "LinuxCNC did not enter world mode for an axis jog."
-                               : "LinuxCNC did not enter joint mode.",
-                            [&](const EMC_STAT& s) -> bool { return in_teleop(s) == on; });
+    auto switched =
+        settled(from,
+                on ? LocalizedReason{"LinuxCNC did not enter world mode for an axis jog.",
+                                     MessageKey{"backend.nmlPort.noWorldMode"}}
+                   : LocalizedReason{"LinuxCNC did not enter joint mode.",
+                                     MessageKey{"backend.nmlPort.noJointMode"}},
+                [&](const EMC_STAT& s) -> bool { return in_teleop(s) == on; });
     // The wait is over: the command this was the preparation for may not be wanted any more.
     if (accepted(switched) && !still())
       return withdraw();
@@ -1193,18 +1165,21 @@ auto NmlPort::set_machine_state(MachineState state, const Wanted& wanted) -> Act
   if (auto done = impl_->run(message, from); !accepted(done))
     return done;
   // Task reports the command done even when it left the state as it was (on from E-stop).
-  return impl_->settled(
-      from, "LinuxCNC did not change the machine state.", [&](const EMC_STAT& now) -> bool {
-        switch (state) {
-        case MachineState::estop:
-          return now.task.state == EMC_TASK_STATE_ESTOP;
-        case MachineState::on:
-          return now.task.state == EMC_TASK_STATE_ON;
-        case MachineState::off:
-          break;
-        }
-        return now.task.state == EMC_TASK_STATE_ESTOP_RESET || now.task.state == EMC_TASK_STATE_OFF;
-      });
+  return impl_->settled(from,
+                        {"LinuxCNC did not change the machine state.",
+                         MessageKey{"backend.nmlPort.machineStateUnchanged"}},
+                        [&](const EMC_STAT& now) -> bool {
+                          switch (state) {
+                          case MachineState::estop:
+                            return now.task.state == EMC_TASK_STATE_ESTOP;
+                          case MachineState::on:
+                            return now.task.state == EMC_TASK_STATE_ON;
+                          case MachineState::off:
+                            break;
+                          }
+                          return now.task.state == EMC_TASK_STATE_ESTOP_RESET ||
+                                 now.task.state == EMC_TASK_STATE_OFF;
+                        });
 }
 
 auto NmlPort::power_off() -> ActionResult {
@@ -1216,12 +1191,15 @@ auto NmlPort::power_off() -> ActionResult {
   message.state = EMC_TASK_STATE_OFF;
   if (auto done = impl_->run(message, from); !accepted(done))
     return done;
-  return impl_->settled(from, "LinuxCNC did not confirm machine power off.",
+  return impl_->settled(from,
+                        {"LinuxCNC did not confirm machine power off.",
+                         MessageKey{"backend.nmlPort.powerOffUnconfirmed"}},
                         [&](const EMC_STAT& now) -> bool {
-    return impl_->status.link() == Link::live &&
-           (now.task.state == EMC_TASK_STATE_ESTOP ||
-            now.task.state == EMC_TASK_STATE_ESTOP_RESET || now.task.state == EMC_TASK_STATE_OFF);
-  });
+                          return impl_->status.link() == Link::live &&
+                                 (now.task.state == EMC_TASK_STATE_ESTOP ||
+                                  now.task.state == EMC_TASK_STATE_ESTOP_RESET ||
+                                  now.task.state == EMC_TASK_STATE_OFF);
+                        });
 }
 
 auto NmlPort::set_task_mode(TaskMode mode, const Wanted& wanted) -> ActionResult {
@@ -1238,7 +1216,9 @@ auto NmlPort::set_task_mode(TaskMode mode, const Wanted& wanted) -> ActionResult
   // Task ignores a mode change during a jog and refuses one while a program runs, in both cases
   // with an operator error only: the mode itself is the evidence.
   return impl_->settled(
-      from, "LinuxCNC did not change the task mode.", [&](const EMC_STAT& now) -> bool {
+      from,
+      {"LinuxCNC did not change the task mode.", MessageKey{"backend.nmlPort.taskModeUnchanged"}},
+      [&](const EMC_STAT& now) -> bool {
         return now.task.mode == message.mode &&
                (now.echo_serial_number != impl_->serial || now.status != RCS_EXEC);
       });
@@ -1382,7 +1362,8 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   if (move.tool <= 0 || !std::isfinite(move.travel_mm) || move.travel_mm <= 0 ||
       move.travel_mm > max_travel || !std::isfinite(move.feed_mm_min) || move.feed_mm_min <= 0 ||
       move.feed_mm_min > limits->feed_mm_min ||
-      !std::ranges::all_of(move.start, [](double value) { return std::isfinite(value); }))
+      !std::ranges::all_of(move.start, [](double value) { return std::isfinite(value); }) ||
+      (move.heading_deg && (!material || !std::isfinite(*move.heading_deg))))
     return std::unexpected("The confirmed probe move exceeds the fixed setter limits.");
   const double move_seconds = move.travel_mm / move.feed_mm_min * seconds_per_minute;
   if (move_seconds > 180)
@@ -1407,7 +1388,9 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   };
   const auto& c = before.controller;
   const auto line = search_line(move, before.rotation_xy);
-  const bool rotated = material && line.axis != 2 && before.rotation_xy != 0;
+  // A heading is a search along any XY direction of the work system: like a rotated one.
+  const bool rotated =
+      material && line.axis != 2 && (before.rotation_xy != 0 || move.heading_deg.has_value());
   auto search_start = move.approach.value_or(move.start);
   if (rotated && !move.approach) {
     // Hold the commanded transverse position, as the trajectory planner will.
@@ -1775,6 +1758,7 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
         const double average = std::accumulate(latches.begin(), latches.end(), 0.0) /
                                static_cast<double>(latches.size());
         contact->machine = line.advance(contact->machine, average - coordinate(contact->machine));
+        contact->latch_spread_mm = high - low;
       }
       contact->stopping_distance = search_stop;
     }
@@ -1978,6 +1962,8 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
   const bool ball = request.action == SetterAction::ball;
   const bool bore = request.action == SetterAction::bore;
   const bool boss = request.action == SetterAction::boss;
+  const bool bore_arc = request.action == SetterAction::bore_arc;
+  const bool boss_arc = request.action == SetterAction::boss_arc;
   const bool angle = request.action == SetterAction::angle;
   const bool material = is_material_probe(request.action);
   const bool runout_calibration = request.action == SetterAction::runout;
@@ -2193,6 +2179,22 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
                                     before.rotation_xy),
                       surface});
   };
+  // A three-point search travels along `travel_deg` from the work +X axis: its surface point is
+  // one ball radius further along it, reported with the nearest work axis direction.
+  const auto record_heading = [&](double travel_deg, const std::array<double, 3>& contact,
+                                  double ball_radius) {
+    const double turn_deg = std::fmod(std::fmod(travel_deg, 360.0) + 360.0, 360.0);
+    const auto direction = turn_deg <= 45 || turn_deg > 315 ? ProbeDirection::x_plus
+                           : turn_deg <= 135                ? ProbeDirection::y_plus
+                           : turn_deg <= 225                ? ProbeDirection::x_minus
+                                                            : ProbeDirection::y_minus;
+    const auto surface = probe_line(ProbeDirection::x_plus, before.rotation_xy + travel_deg)
+                             .advance(contact, ball_radius);
+    probed.push_back({direction,
+                      work_position(surface, before.g5x, before.g92, before.tool_offset,
+                                    before.rotation_xy),
+                      surface});
+  };
   const auto measured = [&](SetterState state, const std::array<double, 3>& origin,
                             const std::array<bool, 3>& axes)
       -> std::expected<SetterState, std::string> {
@@ -2352,6 +2354,97 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     return SetterState{calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,
                        std::move(current_marks)};
   }
+  // A three-point bore or boss (#247): refused before any motion unless the three directions
+  // spread far enough around the circle for a usable centre.
+  if (bore_arc || boss_arc) {
+    const auto spread = arc_spread(request.angles_deg);
+    if (!(spread.closest_deg >= arc_min_separation_deg) || !(spread.span_deg >= arc_min_span_deg))
+      return std::unexpected(
+          "Enter three probe angles at least 10° apart that cover at least 90° of the circle.");
+  }
+  // Every search of a three-point cycle, checked against the configured travel before the first
+  // move: the search start and endpoint of each direction in machine space, and for a boss the
+  // lift to clearance at each start and the traverse at that height. probe_fixed_setter checks
+  // each move again when it runs.
+  const auto arc_in_travel = [&](const std::array<double, 3>& point) {
+    for (std::size_t i = 0; i < point.size(); ++i) {
+      const auto& travel = impl_->config.travel.at(i);
+      if (!std::isfinite(point.at(i)) || point.at(i) < travel.min || point.at(i) > travel.max)
+        return false;
+    }
+    return true;
+  };
+  const auto arc_searches_in_travel =
+      [&](const std::array<std::optional<std::array<double, 3>>, 3>& approaches,
+          double heading_turn, std::optional<double> clearance) -> std::expected<void, std::string> {
+    auto from = request.start;
+    for (std::size_t i = 0; i < approaches.size(); ++i) {
+      const double heading = request.angles_deg.at(i);
+      const auto search_start = approaches.at(i).value_or(request.start);
+      const auto endpoint =
+          probe_line(ProbeDirection::x_plus, before.rotation_xy + heading + heading_turn)
+              .advance(search_start, limits->material_travel_mm);
+      const bool lift_ok =
+          !clearance || (std::isfinite(*clearance) && *clearance >= from[2] &&
+                         *clearance >= search_start[2] &&
+                         arc_in_travel({from[0], from[1], *clearance}) &&
+                         arc_in_travel({search_start[0], search_start[1], *clearance}));
+      if (!arc_in_travel(search_start) || !arc_in_travel(endpoint) || !lift_ok)
+        return std::unexpected(std::format("Contact {} at {:.1f}°: {}", i + 1, heading,
+                                           "The probe move is outside the configured travel."));
+      // A boss search lifts to clearance on its approach; the next one starts there.
+      if (clearance)
+        from = {search_start[0], search_start[1], *clearance};
+    }
+    return {};
+  };
+  // The circle through three ball-centre contacts, in the frame of the work axes; the surface
+  // is `ball_offset` further out (a bore) or in (a boss). The contacts must cover a real arc of
+  // it, the start must lie inside it, the centre must be certain enough from the latch spread
+  // of each contact, and a boss must be about the diameter entered.
+  const auto arc_origin = [&](const std::array<std::array<double, 2>, 3>& contacts,
+                              const std::array<double, 3>& latch_spreads,
+                              double ball_offset) -> std::expected<SetterState, std::string> {
+    const auto circle = circle_through(contacts);
+    const double span = circle ? measured_span(contacts, circle->centre) : 0;
+    if (!circle || !(span >= arc_min_measured_span_deg))
+      return std::unexpected(std::format(
+          "The three contacts lie almost on a line: they cover {:.1f}° of a circle. Spread the "
+          "angles further, and check that all three touched the same round wall.",
+          span));
+    const double surface = circle->radius + ball_offset;
+    if (!(surface > 0) || !(std::hypot(start_frame[0] - circle->centre[0],
+                                       start_frame[1] - circle->centre[1]) < surface))
+      return std::unexpected(
+          "The circle through the contacts does not enclose the confirmed starting point.");
+    if (boss_arc && !boss_diameter_plausible(2 * surface, request.gauge_width_mm))
+      return std::unexpected(std::format(
+          "The contacts give a boss of Ø {:.3f} mm, which differs from the entered Ø {:.3f} mm "
+          "by more than 0.5 mm or 10 %. Check that all three touched the boss, then probe "
+          "again.",
+          2 * surface, request.gauge_width_mm));
+    std::array<double, 3> sigma{};
+    std::ranges::transform(latch_spreads, sigma.begin(), contact_sigma);
+    const auto uncertainty = arc_centre_uncertainty(contacts, circle->centre, sigma);
+    if (!uncertainty || !(*uncertainty <= arc_max_centre_uncertainty_mm))
+      return std::unexpected(std::format(
+          "The estimated centre uncertainty from latch repeatability is {:.3f} mm, more than "
+          "0.02 mm: the contacts cover {:.1f}° with a latch spread up to {:.4f} mm. Spread the "
+          "angles further and probe again.",
+          uncertainty.value_or(std::numeric_limits<double>::infinity()), span,
+          std::ranges::max(latch_spreads)));
+    SetterState state{calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,
+                      std::move(current_marks), SetterState::Material{frame.wcs, 'X', true}};
+    state.center_diameter = 2 * surface;
+    state.arc_span_deg = span;
+    state.center_uncertainty_mm = uncertainty;
+    const std::array origin{circle->centre[0], circle->centre[1], 0.0};
+    if (request.measure_only)
+      return measured(std::move(state), origin, {true, true, false});
+    if (auto set = set_origin(origin); !set)
+      return std::unexpected(set.error());
+    return state;
+  };
   if (inside_corner || pocket || slot || ridge) {
     if (frame.wcs < 1 || frame.wcs > 9)
       return std::unexpected("The active work coordinate system is unavailable.");
@@ -2601,7 +2694,44 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
       return std::unexpected(set.error());
     return state;
   }
-  if (corner || ball || boss) {
+  if (bore_arc) {
+    // Three walls from the start inside the bore, each outward along its direction and back.
+    if (frame.wcs < 1 || frame.wcs > 9)
+      return std::unexpected("The active work coordinate system is unavailable.");
+    const double radius = tool_diameter(*table, tool).value_or(0) * machine_scale / 2;
+    if (!std::isfinite(radius) || radius <= 0)
+      return std::unexpected("Set the probe ball diameter in the tool table first.");
+    if (auto travel = arc_searches_in_travel({}, 0, std::nullopt); !travel)
+      return std::unexpected(travel.error());
+    std::array<std::array<double, 2>, 3> contacts{};
+    std::array<double, 3> spreads{};
+    for (std::size_t i = 0; i < contacts.size(); ++i) {
+      const auto* s = impl_->stat();
+      if (s == nullptr || impl_->status.link() != Link::live)
+        return std::unexpected("Controller status was lost inside the bore.");
+      const auto reading = to_status(*s, impl_->config, impl_->hal, Link::live);
+      const std::array from{reading.controller.axes[0].machine, reading.controller.axes[1].machine,
+                            reading.controller.axes[2].machine};
+      const double heading = request.angles_deg.at(i);
+      // Through the runout wrapper: corrected along the heading, as every other contact.
+      const auto contact = probe({.tool = tool,
+                                  .start = i == 0 ? request.start : from,
+                                  .travel_mm = limits->material_travel_mm,
+                                  .feed_mm_min = limits->feed_mm_min,
+                                  .material = ProbeDirection::x_plus,
+                                  .heading_deg = heading},
+                                 wanted);
+      if (!contact)
+        return std::unexpected(
+            std::format("Contact {} at {:.1f}°: {}", i + 1, heading, contact.error()));
+      const auto at = to_frame(contact->machine);
+      contacts.at(i) = {at[0], at[1]};
+      spreads.at(i) = contact->latch_spread_mm;
+      record_heading(heading, contact->machine, radius);
+    }
+    return arc_origin(contacts, spreads, radius);
+  }
+  if (corner || ball || boss || boss_arc) {
     // A corner: the X face, then the Y face, each probed from beside the work below its top.
     // A ball calibration: both X faces of a gauge of known width, the same way.
     // The operator jogs the probe over the work within the configured reach of both faces; Z0 of the
@@ -2615,7 +2745,7 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     const double half_gauge = request.gauge_width_mm / 2;
     if (ball && !(request.gauge_width_mm >= 2 && request.gauge_width_mm <= 200))
       return std::unexpected("Enter the gauge width, 2 to 200 mm.");
-    if (boss && !(request.gauge_width_mm >= 2 && request.gauge_width_mm <= 200))
+    if ((boss || boss_arc) && !(request.gauge_width_mm >= 2 && request.gauge_width_mm <= 200))
       return std::unexpected("Enter the approximate boss diameter, 2 to 200 mm.");
     if (ball && rotated)
       return std::unexpected("Ball calibration needs a work system without rotation.");
@@ -2657,20 +2787,58 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
       approach[line.axis] -= line.sign * offset;
       approach[2] = depth;
       const auto contact = probe({.tool = tool,
-                                               .start = from,
-                                               .travel_mm = limits->material_travel_mm,
-                                               .feed_mm_min = limits->feed_mm_min,
-                                               .approach = to_machine(approach),
-                                               .clearance_z = clearance,
-                                               .material = direction,
-                                               .return_to_clearance = true},
-                                              wanted);
+                                  .start = from,
+                                  .travel_mm = limits->material_travel_mm,
+                                  .feed_mm_min = limits->feed_mm_min,
+                                  .approach = to_machine(approach),
+                                  .clearance_z = clearance,
+                                  .material = direction,
+                                  .return_to_clearance = true},
+                                 wanted);
       if (!contact)
         return std::unexpected(contact.error());
       record(direction, contact->machine, radius);
       // The ball's centre touched: the face is one radius further along the travel.
       return to_frame(contact->machine)[line.axis] + line.sign * radius;
     };
+    if (boss_arc) {
+      // Three faces, each from beyond the entered diameter along its direction, inward.
+      std::array<std::optional<std::array<double, 3>>, 3> approaches{};
+      for (std::size_t i = 0; i < approaches.size(); ++i) {
+        const double turn_to = request.angles_deg.at(i) * std::numbers::pi / 180;
+        approaches.at(i) = to_machine({start_frame[0] + (half_gauge + outside) * std::cos(turn_to),
+                                       start_frame[1] + (half_gauge + outside) * std::sin(turn_to),
+                                       depth});
+      }
+      if (auto travel = arc_searches_in_travel(approaches, 180, clearance); !travel)
+        return std::unexpected(travel.error());
+      std::array<std::array<double, 2>, 3> contacts{};
+      std::array<double, 3> spreads{};
+      for (std::size_t i = 0; i < contacts.size(); ++i) {
+        const auto from = i == 0 ? std::optional{request.start} : here();
+        if (!from)
+          return std::unexpected("Controller status was lost between the boss faces.");
+        const double heading = request.angles_deg.at(i);
+        const auto contact = probe({.tool = tool,
+                                    .start = *from,
+                                    .travel_mm = limits->material_travel_mm,
+                                    .feed_mm_min = limits->feed_mm_min,
+                                    .approach = approaches.at(i),
+                                    .clearance_z = clearance,
+                                    .material = ProbeDirection::x_plus,
+                                    .return_to_clearance = true,
+                                    .heading_deg = heading + 180},
+                                   wanted);
+        if (!contact)
+          return std::unexpected(
+              std::format("Contact {} at {:.1f}°: {}", i + 1, heading, contact.error()));
+        const auto at = to_frame(contact->machine);
+        contacts.at(i) = {at[0], at[1]};
+        spreads.at(i) = contact->latch_spread_mm;
+        record_heading(heading + 180, contact->machine, radius);
+      }
+      return arc_origin(contacts, spreads, -radius);
+    }
     if (boss) {
       // A boss: both X faces from outside, then both Y faces through the centre X. Faces are
       // where the surface is, so their midpoints are the centre and their distance the diameter.
@@ -3025,7 +3193,7 @@ auto NmlPort::open_program_file(std::string_view path, const Wanted& wanted, boo
       impl_->discard_breakpoint();
   }
   return impl_->settled(
-      from, "LinuxCNC did not open the program.",
+      from, {"LinuxCNC did not open the program.", MessageKey{"backend.nmlPort.notOpened"}},
       [&](const EMC_STAT& now) -> bool { return text_of(now.task.file) == path; });
 }
 
@@ -3071,10 +3239,11 @@ auto NmlPort::start_checked(const PreviewInputs& inputs, const Wanted& current,
     return opened;
   // The public status maps the temporary wrapper to its original. Check the exact file
   // reported by Task before revalidating the inputs or sending PLAN_RUN.
-  if (auto settled = impl_->settled(from, "LinuxCNC did not open the checked program.",
-                                   [&](const EMC_STAT& now) -> bool {
-                                     return text_of(now.task.file) == open.file;
-                                   });
+  if (auto settled = impl_->settled(
+          from,
+          {"LinuxCNC did not open the checked program.",
+           MessageKey{"backend.nmlPort.checkedNotOpened"}},
+          [&](const EMC_STAT& now) -> bool { return text_of(now.task.file) == open.file; });
       !accepted(settled))
     return settled;
   if (!current())
@@ -3316,16 +3485,23 @@ auto NmlPort::prepare_tool_measurement(int tool, std::uint64_t request, int line
            now.wcs == before.wcs && now.g5x == before.g5x && now.g92 == before.g92 &&
            now.rotation_xy == before.rotation_xy;
   };
-  if (auto stopped = impl_->settled(from, "LinuxCNC did not clear the pending tool change.", stationary);
+  if (auto stopped =
+          impl_->settled(from,
+                         {"LinuxCNC did not clear the pending tool change.",
+                          MessageKey{"backend.toolChangeMeasurement.pendingChangeNotCleared"}},
+                         stationary);
       !accepted(stopped))
     return stopped;
   EMC_TASK_SET_MODE mode;
   mode.mode = EMC_TASK_MODE_MDI;
   if (auto sent = impl_->send(mode); !accepted(sent))
     return sent;
-  if (auto switched = impl_->settled(
-          from, "LinuxCNC did not enter idle MDI for tool measurement.",
-          [&](const EMC_STAT& current) { return current.task.mode == mode.mode && stationary(current); });
+  if (auto switched = impl_->settled(from,
+                                     {"LinuxCNC did not enter idle MDI for tool measurement.",
+                                      MessageKey{"backend.toolChangeMeasurement.idleMdi"}},
+                                     [&](const EMC_STAT& current) {
+                                       return current.task.mode == mode.mode && stationary(current);
+                                     });
       !accepted(switched))
     return switched;
   if (impl_->read_tool_table() != table)
@@ -3340,11 +3516,13 @@ auto NmlPort::prepare_tool_measurement(int tool, std::uint64_t request, int line
     return registered;
   if (impl_->loads)
     ++impl_->loads->mdi_blocks;
-  return impl_->settled(from, "LinuxCNC did not confirm the installed tool.",
-                       [&](const EMC_STAT& current) {
-                         return current.task.mode == mode.mode && stationary(current) &&
-                                current.io.tool.toolInSpindle == tool;
-                       });
+  return impl_->settled(from,
+                        {"LinuxCNC did not confirm the installed tool.",
+                         MessageKey{"backend.toolChangeMeasurement.registrationUnconfirmed"}},
+                        [&](const EMC_STAT& current) {
+                          return current.task.mode == mode.mode && stationary(current) &&
+                                 current.io.tool.toolInSpindle == tool;
+                        });
 }
 
 auto NmlPort::validate_restart(RestartPoint& point, const PreviewInputs& inputs) -> std::string {
@@ -3392,7 +3570,7 @@ auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inpu
              !raw.motion.on_soft_limit;
     };
     const auto wait = [&](std::chrono::milliseconds timeout, const auto& ready,
-                          std::string_view reason) -> ActionResult {
+                          LocalizedReason reason) -> ActionResult {
       bool done = false;
       static_cast<void>(until(timeout, [&] {
         impl_->collect();
@@ -3404,7 +3582,7 @@ auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inpu
       }));
       if (!impl_->still())
         return impl_->withdraw();
-      return done ? ActionResult{} : impl_->failure(from, reason);
+      return done ? ActionResult{} : impl_->failure(from, std::move(reason));
     };
     const auto mode = [&](auto target) -> ActionResult {
       EMC_TASK_SET_MODE message;
@@ -3412,7 +3590,8 @@ auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inpu
       if (auto sent = impl_->send(message); !accepted(sent))
         return sent;
       return wait(settle_timeout, [&](const EMC_STAT& s) { return s.task.mode == target; },
-                  "LinuxCNC did not change mode for the restart.");
+                  {"LinuxCNC did not change mode for the restart.",
+                   MessageKey{"backend.nmlPort.restartModeUnchanged"}});
     };
     const auto send_mdi = [&](std::string_view block) -> ActionResult {
       EMC_TASK_PLAN_EXECUTE message;
@@ -3431,9 +3610,11 @@ auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inpu
         -> ActionResult {
       if (auto sent = send_mdi(text); !accepted(sent))
         return sent;
-      return wait(timeout, [&](const EMC_STAT& s) {
-        return s.echo_serial_number == impl_->serial && complete(s);
-      }, "LinuxCNC did not complete the restart approach.");
+      return wait(
+          timeout,
+          [&](const EMC_STAT& s) { return s.echo_serial_number == impl_->serial && complete(s); },
+          {"LinuxCNC did not complete the restart approach.",
+           MessageKey{"backend.nmlPort.approachIncomplete"}});
     };
     const auto current_tool = [&] {
       const auto table = impl_->read_tool_table();
@@ -3451,7 +3632,8 @@ auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inpu
       if (synch == Impl::Synch::given_way)
         return impl_->withdraw();
       if (synch != Impl::Synch::done)
-        return impl_->failure(from, "LinuxCNC did not save its parameters for the restart.");
+        return impl_->failure(from, {"LinuxCNC did not save its parameters for the restart.",
+                                     MessageKey{"backend.nmlPort.restartSynchFailed"}});
       if (!files_current())
         return failed("The machine's saved parameters changed after the restart was reviewed. "
                       "Choose the line again.",
@@ -3462,9 +3644,13 @@ auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inpu
       return failed("The restart program or tool length changed.",
                     MessageKey{"backend.nmlPort.restartChanged"});
     if (after_change) {
-      if (auto done = wait(completion_timeout, [&](const EMC_STAT& s) {
-            return complete(s) && s.io.tool.toolInSpindle == point.tool;
-          }, "LinuxCNC did not finish loading the restart tool."); !accepted(done))
+      if (auto done = wait(completion_timeout,
+                           [&](const EMC_STAT& s) {
+                             return complete(s) && s.io.tool.toolInSpindle == point.tool;
+                           },
+                           {"LinuxCNC did not finish loading the restart tool.",
+                            MessageKey{"backend.nmlPort.restartToolNotLoaded"}});
+          !accepted(done))
         return done;
       if (auto current = synched(); !accepted(current))
         return current;
@@ -3483,13 +3669,14 @@ auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inpu
       if (auto done = block("M5 M9", completion_timeout); !accepted(done))
         return done;
       if (config.signals.spindle_rpm) {
-        if (auto stopped = wait(
-                std::chrono::seconds{15},
-                [&](const EMC_STAT& raw) {
-                  const auto s = to_status(raw, config, impl_->hal, impl_->status.link());
-                  return s.spindle_actual_rpm && *s.spindle_actual_rpm < 1.0;
-                },
-                "The spindle did not stop before the restart approach.");
+        if (auto stopped = wait(std::chrono::seconds{15},
+                                [&](const EMC_STAT& raw) {
+                                  const auto s =
+                                      to_status(raw, config, impl_->hal, impl_->status.link());
+                                  return s.spindle_actual_rpm && *s.spindle_actual_rpm < 1.0;
+                                },
+                                {"The spindle did not stop before the restart approach.",
+                                 MessageKey{"backend.nmlPort.spindleNotStopped"}});
             !accepted(stopped))
           return stopped;
       }
@@ -3505,20 +3692,28 @@ auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inpu
                             std::chrono::seconds{45}); !accepted(done))
         return done;
       // The trajectory reports completion before the individual joints can report in-position.
-      if (auto lifted = wait(settle_timeout, [&](const EMC_STAT& raw) {
-            const auto settled = to_status(raw, config, impl_->hal, impl_->status.link());
-            return idle(settled) &&
-                   restart_at_z(settled, clearance, config.motion_tolerances.restart_position_mm);
-          }, "The machine did not reach the confirmed Z clearance.");
+      if (auto lifted = wait(settle_timeout,
+                             [&](const EMC_STAT& raw) {
+                               const auto settled =
+                                   to_status(raw, config, impl_->hal, impl_->status.link());
+                               return idle(settled) &&
+                                      restart_at_z(settled, clearance,
+                                                   config.motion_tolerances.restart_position_mm);
+                             },
+                             {"The machine did not reach the confirmed Z clearance.",
+                              MessageKey{"backend.nmlPort.zClearanceNotReached"}});
           !accepted(lifted))
         return lifted;
       if (point.tool != inputs.start.tool_in_spindle) {
         if (auto sent = send_mdi(std::format("T{} M6", point.tool)); !accepted(sent))
           return sent;
-        return wait(completion_timeout, [&](const EMC_STAT& raw) {
-          const auto s = to_status(raw, config, impl_->hal, impl_->status.link());
-          return s.controller.requested_tool == point.tool;
-        }, "LinuxCNC did not request the required tool change.");
+        return wait(completion_timeout,
+                    [&](const EMC_STAT& raw) {
+                      const auto s = to_status(raw, config, impl_->hal, impl_->status.link());
+                      return s.controller.requested_tool == point.tool;
+                    },
+                    {"LinuxCNC did not request the required tool change.",
+                     MessageKey{"backend.nmlPort.toolChangeNotRequested"}});
       }
     }
     const auto loaded = read();
@@ -3624,7 +3819,7 @@ auto NmlPort::pause(const Wanted& wanted) -> ActionResult {
   EMC_TASK_PLAN_PAUSE message;
   if (auto sent = impl_->send(message); !accepted(sent))
     return sent;
-  return impl_->settled(from, "LinuxCNC did not pause.",
+  return impl_->settled(from, {"LinuxCNC did not pause.", MessageKey{"backend.nmlPort.notPaused"}},
                         [](const EMC_STAT& now) -> bool { return now.task.task_paused != 0; });
 }
 
@@ -3648,7 +3843,7 @@ auto NmlPort::move_paused_z(double distance, bool returning, const Wanted& wante
     return failed("The paused spindle state changed. Review the controls and try again.",
                   MessageKey{"messages.policy.pausedSpindleChanged"});
   if (!stop_spindle && !z->reason.empty())
-    return failed(z->reason);
+    return failed(z->reason, z->localization);
   if (!std::isfinite(distance) ||
       (!returning && (distance == 0 || std::abs(distance) > limits->lift_mm)))
     return failed("The paused Z jog distance is out of range.",
@@ -3873,10 +4068,12 @@ auto NmlPort::resume(const Wanted& wanted) -> ActionResult {
     EMC_TASK_PLAN_RESUME message;
     if (auto sent = impl_->send(message); !accepted(sent))
       return sent;
-    return impl_->settled(from, "LinuxCNC did not resume.", [&](const EMC_STAT& now) {
-      return now.task.task_paused == 0 ||
-             (!at_breakpoint && impl_->breakpoint && impl_->breakpoint->marker_seen.load());
-    });
+    return impl_->settled(
+        from, {"LinuxCNC did not resume.", MessageKey{"backend.nmlPort.notResumed"}},
+        [&](const EMC_STAT& now) {
+          return now.task.task_paused == 0 ||
+                 (!at_breakpoint && impl_->breakpoint && impl_->breakpoint->marker_seen.load());
+        });
   };
   auto resumed = resume_program();
   if (restoring) {

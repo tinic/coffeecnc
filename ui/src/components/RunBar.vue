@@ -74,8 +74,8 @@ const showZ = computed(() => panel.tab === 'program' && pausedZ.value !== undefi
 const zStep = computed(() => panel.unit === 'inch' ? 1.27 : 1)
 const length = (mm: number): string => `${formatLength(mm, panel.unit)} ${panel.unit === 'inch' ? 'in' : 'mm'}`
 const zBlocked = computed(() => {
-  const reason = pausedZ.value?.reason ?? ''
-  return linkBlock.value ?? (pendingZ.value ? t('status.runBar.pausedZBusy') : reason === '' ? null : translateMessage(reason))
+  const z = pausedZ.value
+  return linkBlock.value ?? (pendingZ.value ? t('status.runBar.pausedZBusy') : z?.reason ? translateMessage(z.reason, z.localization) : null)
 })
 const up = computed(() => Math.min(zStep.value, (pausedZ.value?.max_lift ?? 0) - (pausedZ.value?.offset ?? 0)))
 const down = computed(() => Math.min(zStep.value, pausedZ.value?.offset ?? 0))

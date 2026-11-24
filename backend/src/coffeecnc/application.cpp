@@ -700,7 +700,9 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
     alarms = std::make_unique<AlarmLog>(
         alarm_files,
         location.availability == ToolModelAvailability::available ? location.directory : "",
-        location.availability == ToolModelAvailability::available ? "" : location.reason,
+        location.availability == ToolModelAvailability::available
+            ? LocalizedReason{}
+            : LocalizedReason{location.reason, location.localization},
         [&window](PageToken page, std::vector<std::string> messages) -> void {
           window.post(page, std::move(messages));
         },
@@ -717,8 +719,8 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
         history_files,
         location.availability == ToolModelAvailability::available ? location.directory : "",
         location.availability == ToolModelAvailability::available
-            ? ""
-            : location.reason);
+            ? LocalizedReason{}
+            : LocalizedReason{location.reason, location.localization});
     program_writer.emplace(programs, edit_files);
     models->set_fixed_probe_tool(config->touch_probe_tool);
     diagnostics = std::make_unique<DiagnosticsFeed>(

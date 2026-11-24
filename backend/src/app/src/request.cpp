@@ -416,6 +416,8 @@ auto command(const Json& object) -> Command {
                                               {"ball", SetterAction::ball},
                                               {"bore", SetterAction::bore},
                                               {"boss", SetterAction::boss},
+                                              {"bore_arc", SetterAction::bore_arc},
+                                              {"boss_arc", SetterAction::boss_arc},
                                               {"angle", SetterAction::angle},
                                               {"apply_angle", SetterAction::apply_angle},
                                               {"runout", SetterAction::runout},
@@ -461,6 +463,21 @@ auto command(const Json& object) -> Command {
         fields(object, {"id", "type", "action", "tool", "x", "y", "z", "diameter", "outside"});
         request.gauge_width_mm = number(object, "diameter");
         request.outside = boolean(object, "outside");
+      } else if (action == SetterAction::bore_arc || action == SetterAction::boss_arc) {
+        if (action == SetterAction::boss_arc) {
+          fields(object, {"id", "type", "action", "tool", "x", "y", "z", "angles", "diameter"},
+                 {"measure_only"});
+          request.gauge_width_mm = number(object, "diameter");
+        } else {
+          fields(object, {"id", "type", "action", "tool", "x", "y", "z", "angles"}, {"measure_only"});
+        }
+        const auto& angles = field(object, "angles");
+        if (!angles.is_array() || angles.size() != request.angles_deg.size() ||
+            !std::ranges::all_of(angles, [](const Json& angle) { return angle.is_number(); }))
+          throw InvalidRequest(LocalizedReason{"Expected three probe angles in degrees.",
+                                               MessageKey{"messages.request.expectedAngles"}});
+        for (std::size_t i = 0; i < request.angles_deg.size(); ++i)
+          request.angles_deg.at(i) = angles.at(i).get<double>();
       } else if (action == SetterAction::slot || action == SetterAction::ridge) {
         if (action == SetterAction::ridge) {
           fields(object, {"id", "type", "action", "tool", "x", "y", "z", "axis", "width"},

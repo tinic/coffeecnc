@@ -114,6 +114,14 @@
       "noRunout": "La excentricidad no se guardó.",
       "runoutInUse": "En uso: corrección del radio de disparo X {rx} Y {ry} mm. La excentricidad no se corrige: el husillo no puede orientarse.",
       "touchOffPin": "Primero mida {tool} y palpe Z superior en el perno.",
+      "arcFeature": "3 puntos",
+      "arcBore": "Agujero",
+      "arcBoss": "Saliente",
+      "arcBoreLabel": "Agujero por 3 puntos",
+      "arcBossLabel": "Saliente por 3 puntos",
+      "arcBoreBusy": "Palpando tres paredes del agujero…",
+      "arcBossBusy": "Palpando tres caras del saliente…",
+      "arcDone": "{wcs} X0 Y0 fijado en el centro del círculo, Ø {diameter} mm, con contactos en {span}°. Centro estimado ±{uncertainty} mm (solo repetibilidad de captura).",
       "measureOnly": "Solo medir",
       "measureOnlyTip": "Palpar y mostrar el resultado sin fijar un decalaje. Puede fijarlo después desde el resultado.",
       "measuredDone": "Medido {values} en {wcs}. No se fijó nada.",
@@ -125,6 +133,7 @@
       "resultMachine": "Máquina",
       "resultSize": "Tamaño",
       "resultDiameter": "Diámetro",
+      "resultUncertainty": "Centro, estimado (solo repetibilidad de captura)",
       "resultAngle": "Ángulo",
       "resultFaces": "Puntos de superficie",
       "copy": "Copiar",
@@ -224,7 +233,15 @@
       "setupRunoutPin": "Calibre primero la bola y fije Z0 en la parte superior del perno. Sitúese encima e introduzca su diámetro exacto. El palpador encuentra el centro. Solo se corrige el radio de disparo: sin orientación del husillo, la excentricidad de la bola cambia con el ángulo del husillo y no se puede compensar.",
       "resultRunout": "Guardar la corrección del radio de disparo en X e Y. Todo resultado de palpado XY posterior la usa",
       "inputRing": "Diámetro del anillo",
-      "inputPin": "Diámetro del perno"
+      "inputPin": "Diámetro del perno",
+      "titleBoreArc": "Palpar el centro del agujero por 3 puntos",
+      "titleBossArc": "Palpar el centro del saliente por 3 puntos",
+      "setupBoreArc": "Lleve la bola dentro del agujero, por debajo de su borde. Elija tres direcciones con una pared dentro del recorrido de búsqueda. Palpa hacia fuera en cada una desde el inicio. Basta con una parte del círculo.",
+      "setupBossArc": "Primero fije Z0 en la parte superior del saliente. Sitúese encima, introduzca su diámetro aproximado y tres direcciones en las que tiene una cara. Basta con una parte del círculo. La comprobación del diámetro solo detecta fallos graves: use Solo medir para comprobar el diámetro indicado antes de fijar el origen.",
+      "resultArc": "Fijar X0 e Y0 en el centro del círculo que pasa por los tres contactos e informar su diámetro",
+      "contactAt": "contacto a {angle}°",
+      "aboveContact": "Mover fuera de la cara a {angle}°",
+      "inputAngles": "Direcciones desde +X"
     },
     "guideDialog": {
       "previous": "Movimiento anterior",
@@ -253,7 +270,9 @@
       "result": "Resultado",
       "lengthTolerance": "Tolerancia de longitud",
       "startCheck": "Iniciar comprobación",
-      "startProbe": "Iniciar palpado"
+      "startProbe": "Iniciar palpado",
+      "arcDirection": "Dirección {n}",
+      "arcRange": "Grados en sentido antihorario, separados al menos {separation}°, cubriendo al menos {span}°."
     },
     "guideCanvas": {
       "label": "Movimiento del palpador en 3D: arrastre para girar",

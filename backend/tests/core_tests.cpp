@@ -16,6 +16,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <utility>
 
 using namespace coffeecnc;
@@ -154,6 +155,34 @@ void runout_correction() {
   require(std::abs(max_runout_mm - 0.05) < 1e-12, "a gauge-diameter typo of 0.05 mm (19.00 for 19.05) is the limit");
 }
 
+// The line of a search (#247): along its work axis direction, or with a heading (the three-point
+// bore and boss of #318, material +X), along that heading. The runout correction follows it.
+void search_line_heading() {
+  const auto near = [](const ProbeLine& line, double ux, double uy) {
+    return std::abs(line.forward[0] - ux) < 1e-12 && std::abs(line.forward[1] - uy) < 1e-12 &&
+           line.forward[2] == 0;
+  };
+  const double c = std::cos(std::numbers::pi / 6);
+  const double s = std::sin(std::numbers::pi / 6);
+  require(near(search_line(ProbeDirection::y_minus, std::nullopt, 0), 0, -1),
+          "without a heading the search runs along its work axis direction");
+  require(search_line(std::nullopt, std::nullopt, 30).axis == 2,
+          "without a direction or heading the search is Z top");
+  require(near(search_line(ProbeDirection::x_plus, 120, 0), -s, c),
+          "with a heading the search runs along it, not along +X");
+  require(near(search_line(ProbeDirection::x_plus, 210, 0), -c, -s),
+          "a boss heading of 30° + 180° runs inward, the opposite way");
+  require(near(search_line(ProbeDirection::x_plus, 90, -60), c, s),
+          "a heading turns with the work system: 90° in a system turned -60° is machine 30°");
+  // The correction of a contact along its heading.
+  const ProbeRunout runout{.tool = 99, .table_diameter_mm = 2, .radius_mm = {-0.04, 0.02}};
+  const auto line = search_line(ProbeDirection::x_plus, 120, 0);
+  const auto shift = runout.correction(line.forward[0], line.forward[1]);
+  const double along = -0.04 * s * s + 0.02 * c * c;
+  require(std::abs(shift[0] - along * -s) < 1e-12 && std::abs(shift[1] - along * c) < 1e-12,
+          "a contact at 120° is corrected along 120°, not along +X");
+}
+
 // Before any motion the runout calibration checks that the search reaches the gauge: in a ring
 // its radius, beside a pin the boss's approach (outside plus the ball radius).
 void runout_travel() {
@@ -163,6 +192,89 @@ void runout_travel() {
   require(runout_travel_reaches(true, 200, 14, 1, 15), "beside a pin, the diameter does not matter");
   require(!runout_travel_reaches(true, 12, 14, 1, 14.9),
           "beside a pin, the travel must reach from outside to the surface, as for a boss");
+}
+
+// Three-point bore and boss geometry (#247): the circle, the arc it covers, the spread checks.
+void arc_geometry() {
+  const auto on_circle = [](double degrees) {
+    const double a = degrees * std::numbers::pi / 180;
+    return std::array{4 + 7 * std::cos(a), -2 + 7 * std::sin(a)};
+  };
+  for (const auto& angles : {std::array{0.0, 120.0, 240.0}, std::array{-80.0, -40.0, 0.0},
+                             std::array{200.0, 240.0, 280.0}, std::array{10.0, 25.0, 40.0}}) {
+    const std::array points{on_circle(angles[0]), on_circle(angles[1]), on_circle(angles[2])};
+    const auto circle = circle_through(points);
+    require(circle && std::abs(circle->centre[0] - 4) < 1e-9 &&
+                std::abs(circle->centre[1] + 2) < 1e-9 && std::abs(circle->radius - 7) < 1e-9,
+            std::format("the circle through {}°, {}°, {}° has its centre at (4, -2) and radius 7",
+                        angles[0], angles[1], angles[2]));
+    require(circle && std::abs(measured_span(points, circle->centre) - arc_spread(angles).span_deg) < 1e-9,
+            "the measured arc equals the requested one for contacts on the circle");
+  }
+  require(!circle_through({std::array{0.0, 0.0}, std::array{1.0, 1.0}, std::array{2.0, 2.0}}),
+          "three points on a line have no circle");
+  require(!circle_through({std::array{0.0, 0.0}, std::array{1.0, 0.0}, std::array{2.0, 1e-9}}),
+          "three points almost on a line give no usable circle");
+  const auto spread = arc_spread({350, 365, 10});
+  require(std::abs(spread.closest_deg - 5) < 1e-9 && std::abs(spread.span_deg - 20) < 1e-9,
+          "directions are compared around the full turn");
+  const auto full = arc_spread({0, 120, 240});
+  require(std::abs(full.closest_deg - 120) < 1e-9 && std::abs(full.span_deg - 240) < 1e-9,
+          "three even directions cover 240° and are 120° apart");
+  const auto partial = arc_spread({-80, -40, 0});
+  require(std::abs(partial.closest_deg - 40) < 1e-9 && std::abs(partial.span_deg - 80) < 1e-9,
+          "a partial arc covers the angle between its outer directions");
+  require(arc_spread({-45, 0, 45}).span_deg >= arc_min_span_deg &&
+              !(arc_spread({-44, 0, 44}).span_deg >= arc_min_span_deg) &&
+              !(arc_spread({-80, -40, 0}).span_deg >= arc_min_span_deg),
+          "three directions must cover at least 90°");
+
+  // The centre uncertainty against an independent Monte Carlo with 2.5 µm radial noise on r = 8
+  // (95th percentile: 0.40 mm at 20°, 0.18 mm at 30°, 0.10 mm at 40°, 0.026 mm at 80°, 0.005 mm
+  // at 240°).
+  const auto on_8 = [](double degrees) {
+    const double a = degrees * std::numbers::pi / 180;
+    return std::array{8 * std::cos(a), 8 * std::sin(a)};
+  };
+  const auto uncertainty = [&](double span, double sigma) {
+    const std::array points{on_8(-span / 2), on_8(0), on_8(span / 2)};
+    return arc_centre_uncertainty(points, {0, 0}, {sigma, sigma, sigma}).value_or(-1);
+  };
+  for (const auto& [span, expected] : {std::pair{20.0, 0.40}, std::pair{30.0, 0.18},
+                                       std::pair{40.0, 0.10}, std::pair{80.0, 0.026},
+                                       std::pair{240.0, 0.0057}}) {
+    const double found = uncertainty(span, 0.0025);
+    std::cout << std::format("fact=arc_uncertainty span={:.0f} sigma_mm=0.0025 expected_mm={:.4f} "
+                             "computed_mm={:.4f}",
+                             span, expected, found)
+              << '\n';
+    require(std::abs(found - expected) <= 0.12 * expected,
+            std::format("the centre uncertainty over {}° is about {} mm", span, expected));
+  }
+  // The refusal: a 90° arc writes with a clean latch, not with a latch spread of 6 µm; a wide
+  // arc writes with that spread.
+  const auto refused = [&](double span, double latch_spread) {
+    return !(uncertainty(span, contact_sigma(latch_spread)) <= arc_max_centre_uncertainty_mm);
+  };
+  for (const auto& [span, latch, refuse] :
+       {std::tuple{90.0, 0.0, false}, std::tuple{90.0, 0.006, true}, std::tuple{240.0, 0.006, false},
+        std::tuple{120.0, 0.01, true}}) {
+    std::cout << std::format("fact=arc_uncertainty_refusal span={:.0f} latch_spread_mm={:.4f} "
+                             "uncertainty_mm={:.4f} limit_mm=0.02 refused={}",
+                             span, latch, uncertainty(span, contact_sigma(latch)), refused(span, latch))
+              << '\n';
+    require(refused(span, latch) == refuse,
+            std::format("an arc of {}° with a latch spread of {} mm is {}", span, latch,
+                        refuse ? "refused" : "written"));
+  }
+  require(!arc_centre_uncertainty({std::array{1.0, 0.0}, std::array{0.0, 0.0}, std::array{0.0, 1.0}},
+                                  {0, 0}, {0.001, 0.001, 0.001}),
+          "a contact at the centre has no uncertainty estimate");
+  // A three-point boss within 0.5 mm or 10 % of the entered diameter.
+  require(boss_diameter_plausible(12.4, 12) && !boss_diameter_plausible(13.3, 12) &&
+              boss_diameter_plausible(10.9, 12) && boss_diameter_plausible(3.4, 3) &&
+              !boss_diameter_plausible(3.6, 3),
+          "a boss diameter is plausible within the larger of 0.5 mm and 10 %");
 }
 
 void fixed_setter_homing() {
@@ -199,6 +311,9 @@ void fixed_setter_homing() {
   require(!homing.evaluate(FixedSetterRequest{.action = SetterAction::boss,
                                               .tool = 99, .gauge_width_mm = nan}, s).allowed,
           "a probe gauge width is finite");
+  require(!homing.evaluate(FixedSetterRequest{.action = SetterAction::bore_arc, .tool = 99,
+                                              .angles_deg = {0, nan, 240}}, s).allowed,
+          "three-point probe angles are finite");
   require(homing.evaluate(FixedSetterRequest{.action = SetterAction::bore, .tool = 99,
                                              .measure_only = true}, s).allowed,
           "a feature probe can run as a measurement only");
@@ -218,7 +333,14 @@ void paused_z_gates() {
   s.mode = TaskMode::automatic;
   s.interp = InterpState::paused;
   s.program_loaded = true;
-  s.paused_z = PausedZStatus{0, 20, false, true, "Stop the spindle.", PausedSpindle::can_stop};
+  const MessageKey stop_spindle{"backend.nmlStatus.stopSpindle"};
+  s.paused_z = PausedZStatus{
+      0,           20, false, true, "Stop the spindle before jogging Z.", PausedSpindle::can_stop,
+      stop_spindle};
+  const auto blocked = policy.evaluate(JogPausedZ{5, false}, s);
+  require(!blocked.allowed && blocked.reason == s.paused_z->reason &&
+              blocked.refusal == stop_spindle,
+          "A refused lift carries the paused Z reason and key");
   const JogPausedZ lift{5, true};
   require(policy.evaluate(lift, s).allowed, "An otherwise valid paused lift may stop the spindle");
   s.axes[0].homed = false;
@@ -722,9 +844,11 @@ auto main() -> int {
     pending_manual_tool_change();
     reference_mark_homing();
     runout_correction();
+    search_line_heading();
     runout_travel();
     fixed_setter_homing();
     edge_rotation_wraps();
+    arc_geometry();
     work_origin_gates();
     rotation_and_shift_gates();
     paused_z_gates();

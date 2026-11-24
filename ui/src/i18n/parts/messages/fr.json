@@ -164,6 +164,7 @@
       "missingField": "Champ obligatoire manquant : {field}.",
       "unexpectedField": "Champ inattendu dans la requête.",
       "expectedString": "Chaîne attendue : {field}.",
+      "expectedAngles": "Trois angles de palpage en degrés étaient attendus.",
       "nulInString": "NUL n’est pas autorisé dans les chaînes de la requête.",
       "expectedNumber": "Nombre attendu : {field}.",
       "expectedFinite": "Nombre fini attendu : {field}.",

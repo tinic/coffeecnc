@@ -227,6 +227,7 @@ export interface Status {
     max_lift: number
     displaced: boolean
     reason: string
+    localization?: MessageKey
     spindle?: 'can_stop' | 'stopping' | 'restore' | 'recover'
   }
   tool: {
@@ -415,6 +416,7 @@ export interface OffsetHistory {
   storage: 'saved' | 'session_only'
   /** Why the history is not saved, or what went wrong reading or writing it; empty otherwise. */
   reason: string
+  localization?: MessageKey
   entries: HistoryEntry[]
 }
 
@@ -477,6 +479,7 @@ export interface AlarmLog {
   storage: 'saved' | 'session_only'
   /** Why the log is not saved, or what went wrong reading or writing it; empty otherwise. */
   reason: string
+  localization?: MessageKey
   /** This run's session number. */
   session: number
   /** Lines of the saved log that could not be read. */
@@ -634,8 +637,12 @@ export interface SetterState {
   material?: { wcs: number; axis: 'X' | 'Y' | 'Z' | 'XY' }
   /** After a ball calibration: the effective ball diameter written to the tool table, mm. */
   ball_diameter?: number
-  /** After a bore or boss: its diameter through the centre, mm. */
+  /** After a bore or boss: its diameter through the centre, mm. After a 3-point one: the circle's diameter. */
   center_diameter?: number
+  /** After a 3-point bore or boss: the arc its contacts cover around the centre, degrees. */
+  arc_span?: number
+  /** After a 3-point bore or boss: the estimated 95 % uncertainty of the centre, mm. */
+  center_uncertainty?: number
   /** Physical face-to-face widths in mm, one entry for each axis that was probed. */
   feature_size?: { x?: number; y?: number }
   /**
@@ -978,6 +985,13 @@ export type FixedSetter = CommandBase & { type: 'fixed_setter' } & (
   | { action: 'bore'; tool: number; x: number; y: number; z: number; measure_only?: boolean }
   /** X0 Y0 at the centre of a boss of about `diameter` mm; probed from outside below Z0. */
   | { action: 'boss'; diameter: number; tool: number; x: number; y: number; z: number; measure_only?: boolean }
+  /**
+   * X0 Y0 at the centre of the circle through three contacts (#247): a bore probed outward from the
+   * start, a boss inward from beyond `diameter`, along `angles` (degrees from the work +X axis). The
+   * directions must be at least 10° apart and cover at least 90°.
+   */
+  | { action: 'bore_arc'; angles: [number, number, number]; tool: number; x: number; y: number; z: number; measure_only?: boolean }
+  | { action: 'boss_arc'; angles: [number, number, number]; diameter: number; tool: number; x: number; y: number; z: number; measure_only?: boolean }
   /** Measures an edge's angle: the face of `direction` at the start and `spacing` mm along it. */
   | { action: 'angle'; direction: 'x_minus' | 'x_plus' | 'y_minus' | 'y_plus'; spacing: number; tool: number; x: number; y: number; z: number; measure_only?: boolean }
   | { action: 'apply_angle'; measurement_id: number; tool: number }

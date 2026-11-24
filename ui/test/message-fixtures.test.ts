@@ -297,7 +297,17 @@ const examples = [
       "M4"
     ],
     "program_units": "mm",
-    "probe_input": false
+    "probe_input": false,
+    "paused_z": {
+      "offset": 0,
+      "max_lift": 20,
+      "displaced": false,
+      "reason": "Pause a running program before jogging Z.",
+      "localization": {
+        "key": "backend.nmlStatus.pauseFirst",
+        "params": {}
+      }
+    }
   },
   {
     "type": "status",
@@ -1068,7 +1078,11 @@ const examples = [
     "type": "result",
     "id": 43,
     "outcome": "failed",
-    "reason": "LinuxCNC reported an error."
+    "reason": "LinuxCNC reported an error.",
+    "localization": {
+      "key": "backend.nmlPort.reportedError",
+      "params": {}
+    }
   },
   {
     "type": "result",
@@ -1465,6 +1479,17 @@ const examples = [
     "entries": []
   },
   {
+    "type": "offset_history",
+    "revision": 2,
+    "storage": "saved",
+    "reason": "The saved offset history was damaged and starts empty. The damaged file is kept as offset-history.json.corrupt.",
+    "entries": [],
+    "localization": {
+      "key": "backend.offsetHistory.damagedKept",
+      "params": { "file": "offset-history.json.corrupt" }
+    }
+  },
+  {
     "type": "alarm_log",
     "storage": "saved",
     "reason": "",
@@ -1476,6 +1501,18 @@ const examples = [
       { "session": 2, "time": 1700000105000, "level": "error", "text": "The machine is off.", "outcome": "rejected",
         "command": { "type": "home", "axis": "x" } }
     ]
+  },
+  {
+    "type": "alarm_log",
+    "storage": "saved",
+    "reason": "The alarm log could not be saved: No space left on device",
+    "session": 3,
+    "skipped": 0,
+    "entries": [],
+    "localization": {
+      "key": "backend.alarmLog.notSaved",
+      "params": { "detail": "No space left on device" }
+    }
   },
   {
     "type": "alarm_log",

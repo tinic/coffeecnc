@@ -424,6 +424,11 @@ void power(Rig& rig) {
   rig.direct([&]() -> void {
     const auto forced = rig.port.set_machine_state(MachineState::on, always());
     check("port_on_in_estop_fails", forced.status == ActionStatus::failed, forced.reason);
+    if (!machine_hal)
+      check("port_on_in_estop_localizes_state_fallback",
+            forced.reason == "LinuxCNC did not change the machine state." &&
+                forced.localization == MessageKey{"backend.nmlPort.machineStateUnchanged"},
+            forced.reason);
   });
 
   // On the external configuration the operator releases the wired E-stop button.
@@ -878,6 +883,11 @@ void hal_stop_without_nml(Rig& rig) {
                       "nml_stop={}",
                       static_cast<int>(pressed.status), pressed.reason, b - a, d - c, active,
                       nml.status == ActionStatus::timed_out ? "timed_out" : "other"));
+    check("port_localizes_command_echo_timeout",
+          nml.status == ActionStatus::timed_out &&
+              nml.reason == "LinuxCNC did not acknowledge the command." &&
+              nml.localization == MessageKey{"backend.nmlPort.notAcknowledged"},
+          nml.reason);
     // Task runs again: the stop that was written is executed, and one more is accepted.
     rig.direct_pump(300ms);
     const auto again = rig.port.stop_jog(Axis::x);
@@ -4718,8 +4728,14 @@ void paused_z_jog(Rig& rig) {
   if (!at_pause("M5"))
     return;
   const auto lift_without_home = rig.send(lift);
+  const auto show_home_first = [&]() {
+    const auto z = rig.status().controller.paused_z;
+    return z && z->localization == MessageKey{"backend.nmlStatus.homeFirst"};
+  };
   check("paused_z_requires_homing",
-        !lift_without_home.accepted() && lift_without_home.reason.find("Home all axes") != std::string::npos,
+        !lift_without_home.accepted() &&
+            lift_without_home.reason.find("Home all axes") != std::string::npos &&
+            rig.pump_until(2s, show_home_first),
         lift_without_home.text());
   rig.send(stop);
   for (const auto axis : {"x", "y", "z"}) {

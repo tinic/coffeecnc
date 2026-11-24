@@ -204,6 +204,13 @@ auto encoded_messages() -> std::vector<Encoded> {
   paused.wait = WaitPaused{};
   paused.active_codes = {"G1", "G54", "G93", "M4"};
   paused.probe_input = false;
+  paused.paused_z = PausedZStatus{0,
+                                  20,
+                                  false,
+                                  true,
+                                  "Pause a running program before jogging Z.",
+                                  PausedSpindle::none,
+                                  MessageKey{"backend.nmlStatus.pauseFirst"}};
   for (auto& a : paused.axes) {
     a.reference_mark = false;
     a.at_reference_mark = false;
@@ -317,7 +324,8 @@ auto encoded_messages() -> std::vector<Encoded> {
   messages.emplace_back(encode_result(
       46, CommandOutcome::rejected, "Jog velocity is above the Z axis limit of 750 mm/min.", {}, {},
       RefusalMessage{"messages.policy.jogVelocityAxisLimit", {{"axis", "Z"}, {"limit", "750"}}}));
-  messages.emplace_back(encode_result(43, CommandOutcome::failed, "LinuxCNC reported an error."));
+  messages.emplace_back(encode_result(43, CommandOutcome::failed, "LinuxCNC reported an error.", {},
+                                      {}, {}, MessageKey{"backend.nmlPort.reportedError"}));
   messages.emplace_back(encode_result(44, CommandOutcome::timed_out, "LinuxCNC did not answer."));
   messages.emplace_back(encode_result(47, CommandOutcome::timed_out, "LinuxCNC did not answer.", {},
                                       {}, {}, MessageKey{"messages.session.linuxcncNoAnswer"}));
@@ -419,6 +427,14 @@ auto encoded_messages() -> std::vector<Encoded> {
   messages.push_back(encode_offset_history(history));
   messages.push_back(
       encode_offset_history({1, false, "No machine identity configured", {}}));
+  messages.push_back(
+      encode_offset_history({2,
+                             true,
+                             "The saved offset history was damaged and starts empty. The damaged "
+                             "file is kept as offset-history.json.corrupt.",
+                             {},
+                             MessageKey{"backend.offsetHistory.damagedKept",
+                                        {{"file", "offset-history.json.corrupt"}}}}));
   AlarmLogView alarms;
   alarms.saved = true;
   alarms.session = 3;
@@ -429,6 +445,13 @@ auto encoded_messages() -> std::vector<Encoded> {
       {2, 2, 1700000105000, MessageLevel::error, "The machine is off.", "rejected",
        R"({"axis":"x","type":"home"})"}};
   messages.emplace_back(encode_alarm_log(alarms));
+  messages.emplace_back(encode_alarm_log(
+      {true,
+       "The alarm log could not be saved: No space left on device",
+       3,
+       0,
+       {},
+       MessageKey{"backend.alarmLog.notSaved", {{"detail", "No space left on device"}}}}));
   messages.emplace_back(encode_alarm_log({false, "No machine identity configured", 1, 0, {}}));
   messages.emplace_back(
       encode_backup_written({"/media/cnc/STICK/coffeecnc-G0759-20261123-140200.tar.gz",

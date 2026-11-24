@@ -19,7 +19,9 @@ const native = import.meta.glob<string>([
   '../../backend/src/app/include/coffeecnc/app/panel_feed.hpp',
 ], { query: '?raw', import: 'default', eager: true })
 const adapter = import.meta.glob<string>([
+  '../../backend/src/linuxcnc/src/nml_status.cpp',
   '../../backend/src/core/include/coffeecnc/core/controller_port.hpp',
+  '../../backend/src/app/src/alarm_log.cpp',
   '../../backend/src/core/include/coffeecnc/core/jog_stop_report.hpp',
   '../../backend/src/linuxcnc/src/nml_port.cpp',
   '../../backend/src/linuxcnc/src/nml_panel_source.cpp',
@@ -30,6 +32,7 @@ const adapter = import.meta.glob<string>([
   '../../backend/src/app/src/backup_archive.cpp',
   '../../backend/src/app/src/restore_helper.cpp',
   '../../backend/src/app/src/operator_settings_store.cpp',
+  '../../backend/src/app/src/offset_history.cpp',
   '../../backend/src/app/src/tool_models.cpp',
   '../../backend/src/app/src/tool_model_store.cpp',
   '../../backend/src/app/src/tool_model_json.hpp',

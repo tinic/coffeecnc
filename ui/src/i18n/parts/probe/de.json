@@ -114,6 +114,14 @@
       "noRunout": "Der Rundlauf wurde nicht gespeichert.",
       "runoutInUse": "In Verwendung: Korrektur des Schaltradius X {rx} Y {ry} mm. Die Exzentrizität wird nicht korrigiert: Die Spindel kann nicht orientieren.",
       "touchOffPin": "Zuerst {tool} einmessen und Z oben am Dorn antasten.",
+      "arcFeature": "3 Punkte",
+      "arcBore": "Bohrung",
+      "arcBoss": "Zapfen",
+      "arcBoreLabel": "Bohrung aus 3 Punkten",
+      "arcBossLabel": "Zapfen aus 3 Punkten",
+      "arcBoreBusy": "Drei Bohrungswände werden angetastet…",
+      "arcBossBusy": "Drei Zapfenflächen werden angetastet…",
+      "arcDone": "{wcs} X0 Y0 im Kreismittelpunkt gesetzt, Ø {diameter} mm, aus Kontakten über {span}°. Mitte geschätzt ±{uncertainty} mm (nur Latch-Wiederholbarkeit).",
       "measureOnly": "Nur messen",
       "measureOnlyTip": "Antasten und das Ergebnis zeigen, ohne einen Nullpunkt zu setzen. Sie können ihn danach aus dem Ergebnis setzen.",
       "measuredDone": "Gemessen: {values} in {wcs}. Nichts wurde gesetzt.",
@@ -125,6 +133,7 @@
       "resultMachine": "Maschine",
       "resultSize": "Größe",
       "resultDiameter": "Durchmesser",
+      "resultUncertainty": "Mitte, geschätzt (nur Latch-Wiederholbarkeit)",
       "resultAngle": "Winkel",
       "resultFaces": "Flächenpunkte",
       "copy": "Kopieren",
@@ -224,7 +233,15 @@
       "setupRunoutPin": "Zuerst die Kugel kalibrieren und Z0 auf die Dornoberseite setzen. Über den Dorn fahren und den genauen Durchmesser eingeben. Der Taster findet die Mitte. Nur der Schaltradius wird korrigiert: Ohne Spindelorientierung ändert sich die Exzentrizität der Kugel mit dem Spindelwinkel und lässt sich nicht ausgleichen.",
       "resultRunout": "Die Korrektur des Schaltradius in X und Y speichern. Jedes spätere XY-Antastergebnis verwendet sie",
       "inputRing": "Ringdurchmesser",
-      "inputPin": "Dorndurchmesser"
+      "inputPin": "Dorndurchmesser",
+      "titleBoreArc": "Bohrungsmitte aus 3 Punkten antasten",
+      "titleBossArc": "Zapfenmitte aus 3 Punkten antasten",
+      "setupBoreArc": "Die Kugel in die Bohrung unter ihre Oberkante fahren. Drei Richtungen wählen, in denen eine Wand innerhalb des Suchwegs liegt. Es wird vom Start aus in jeder Richtung nach außen angetastet. Ein Teil des Kreises genügt.",
+      "setupBossArc": "Zuerst Z0 auf der Zapfenoberseite setzen. Über den Zapfen fahren, den ungefähren Durchmesser und drei Richtungen mit einer Fläche eingeben. Ein Teil des Kreises genügt. Die Durchmesserprüfung erkennt nur grobe Fehler: Prüfen Sie mit „Nur messen“ den gemeldeten Durchmesser, bevor Sie den Nullpunkt setzen.",
+      "resultArc": "X0 und Y0 in der Mitte des Kreises durch die drei Kontakte setzen und seinen Durchmesser zeigen",
+      "contactAt": "Kontakt bei {angle}°",
+      "aboveContact": "Außerhalb der Fläche bei {angle}° positionieren",
+      "inputAngles": "Richtungen ab +X"
     },
     "guideDialog": {
       "previous": "Vorherige Bewegung",
@@ -253,7 +270,9 @@
       "result": "Ergebnis",
       "lengthTolerance": "Längentoleranz",
       "startCheck": "Prüfung starten",
-      "startProbe": "Antasten starten"
+      "startProbe": "Antasten starten",
+      "arcDirection": "Richtung {n}",
+      "arcRange": "Grad gegen den Uhrzeigersinn, mindestens {separation}° auseinander, über mindestens {span}°."
     },
     "guideCanvas": {
       "label": "Bewegung des Messtasters in 3D: zum Drehen ziehen",

@@ -775,6 +775,12 @@ auto load_machine_config(const std::string& ini_file) -> std::expected<MachineCo
            {"HEIGHT_MAP_Z_LAG_TOLERANCE_MM", &tolerances.height_map_z_lag_mm},
            {"RESTART_POSITION_TOLERANCE_MM", &tolerances.restart_position_mm}}); !parsed)
     return std::unexpected(parsed.error());
+  // The Z difference allowed between height-map points is also a real Z error the map accepts,
+  // so it may not be larger than the probe backlash tolerance.
+  if (tolerances.height_map_z_lag_mm > tolerances.probe_backlash_mm)
+    return std::unexpected(std::format(
+        "[COFFEECNC] HEIGHT_MAP_Z_LAG_TOLERANCE_MM must not be above "
+        "PROBE_BACKLASH_TOLERANCE_MM ({} mm).", tolerances.probe_backlash_mm));
   auto configured_macros = macros(ini, file);
   if (!configured_macros)
     return std::unexpected(std::move(configured_macros.error()));

@@ -186,8 +186,8 @@ struct FixedSetterMove {
   double retract_above_contact_mm{};
   std::optional<ProbeDirection> material{};
   bool return_to_clearance{}; // lift on the search-start XY with the probe interlock still active
-  // A height map's later point: at the start the Z encoder may trail the command by up to this
-  // much, mm (the last retract's lag). Zero for every other probe: the command and the encoder
+  // A height map's later point: at the start the Z encoder may differ from the command by up to
+  // this much in either direction, mm (the last retract's settling). Zero for every other probe: the command and the encoder
   // must agree within the position tolerance.
   double start_z_lag_mm{};
 };

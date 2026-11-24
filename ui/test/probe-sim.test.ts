@@ -324,7 +324,20 @@ describe('browser probe scene', () => {
     expect(left.sim.modal.offsets[0]?.[0]).toBe(x)
   })
 
-  it.each(['ball', 'touch_off', 'check', 'height_map'] as const)('refuses %s as measure-only, as the controller does', (action) => {
+  it('refuses measure_only on a height map as an unexpected field, as the controller does', () => {
+    const { sim, send, result } = scene('top')
+    const before = structuredClone(sim.status().offsets)
+    const [x, y, z] = sim.status().axes.map(axis => axis.machine) as Vec3
+    for (const measure_only of [true, false]) {
+      const command = { type: 'fixed_setter', action: 'height_map', tool: 99, x, y, z, x_min: 0, y_min: 0,
+        x_max: 10, y_max: 10, step: 5, clearance: 2, measure_only }
+      expect(result(send(command as unknown as CommandBody))).toMatchObject({ outcome: 'rejected',
+        reason: 'Unexpected field in request.', refusal: { key: 'messages.request.unexpectedField' } })
+    }
+    expect(sim.status().offsets).toEqual(before)
+  })
+
+  it.each(['ball', 'touch_off', 'check'] as const)('refuses %s as measure-only, as the controller does', (action) => {
     const { sim, send, result } = scene('top')
     const before = structuredClone(sim.status().offsets)
     const tools = JSON.stringify(sim.modal.tools)

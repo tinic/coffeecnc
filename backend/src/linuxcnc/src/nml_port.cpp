@@ -1628,7 +1628,8 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   raw = live_cycle();
   const auto probe_pin = interlock();
   // The start is measured, and the command must agree with it. Only a height map's later point
-  // (`start_z_lag_mm`) lets the command lead it along Z, by the last retract's encoder lag.
+  // (`start_z_lag_mm`) lets the command and the encoder differ along Z, in either direction, by
+  // the last retract's settling.
   const auto commanded_at_start = [&](const EMC_STAT& current) {
     const auto commanded = machine_position(current.motion.traj.position);
     if (line.axis != 2 || !(move.start_z_lag_mm > 0))
@@ -2308,7 +2309,8 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
     };
     // Where the last point left the probe: its search start at the clearance.
     std::optional<std::array<double, 3>> left_at;
-    // The Z encoder may trail the command after a point's retract, by at most this much.
+    // After a point's retract the Z encoder may differ from the command, in either direction
+    // (lag or overshoot), by at most this much.
     const double z_lag = impl_->config.motion_tolerances.height_map_z_lag_mm;
     for (int row = 0; row < grid->rows; ++row) {
       for (int along = 0; along < grid->columns; ++along) {
@@ -2325,7 +2327,7 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
         const std::array here{reading.controller.axes[0].machine, reading.controller.axes[1].machine,
                               reading.controller.axes[2].machine};
         // Each later point starts where the last one ended: commanded there, and measured there
-        // but for the Z encoder's lag after the retract (0.125 mm on the G0759).
+        // but for the Z encoder's settling after the retract (0.125 mm on the G0759).
         if (left_at) {
           const auto& commanded = reading.commanded_position;
           const bool held =

@@ -345,6 +345,9 @@ auto encoded_messages() -> std::vector<Encoded> {
   messages.emplace_back(
       encode_result(49, CommandOutcome::rejected, "Missing required field: path.", {}, {},
                     RefusalMessage{"messages.request.missingField", {{"field", "path"}}}));
+  messages.emplace_back(encode_result(
+      52, CommandOutcome::failed, "Tool measured. The updated program check is unavailable.", {},
+      {}, {}, MessageKey{"backend.toolChangeMeasurement.measuredCheckUnavailable"}));
 
   Directory top;
   top.path = "/home/cnc/nc_files";

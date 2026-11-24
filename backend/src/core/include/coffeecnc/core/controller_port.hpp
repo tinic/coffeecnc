@@ -231,7 +231,8 @@ public:
   // installed tool in idle MDI. This does not move the machine or apply compensation.
   [[nodiscard]] virtual auto prepare_tool_measurement(int, std::uint64_t, int, const RestartPoint&,
                                                       const PreviewInputs&, const Wanted&) -> ActionResult {
-    return {ActionStatus::failed, "Measuring during a program tool change is unavailable."};
+    return {ActionStatus::failed, "Measuring during a program tool change is unavailable.",
+            MessageKey{"backend.toolChangeMeasurement.unavailable"}};
   }
   // The tool length offset in effect, read from the controller's status and tool table. A port
   // that cannot tell reports none.

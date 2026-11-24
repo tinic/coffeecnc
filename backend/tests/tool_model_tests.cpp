@@ -15,6 +15,7 @@
 #include <array>
 #include <atomic>
 #include <bit>
+#include <cerrno>
 #include <chrono>
 #include <cmath>
 #include <condition_variable>
@@ -35,6 +36,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -1667,6 +1669,14 @@ void on_the_host(const std::filesystem::path& scratch) {
 
     // A second instance, as a second process has it: its own open file of the same lock.
     LocalToolModelFiles second_files;
+    const auto held = second_files.lock(folder.string());
+    const auto contention = std::generic_category().message(EWOULDBLOCK);
+    require(!held && held.error().in_use &&
+                held.error().reason ==
+                    LocalizedReason{"the lock cannot be taken: " + contention,
+                                    MessageKey{"backend.toolModelStore.lockNotTaken",
+                                               {{"osError", contention}}}},
+            "Real lock contention retains its key and the operating-system error");
     ToolModelArchive second{second_files, where};
     second.open();
     require(second.models().availability == ToolModelAvailability::unavailable &&
@@ -1797,6 +1807,22 @@ void on_the_host(const std::filesystem::path& scratch) {
                 "backend.toolModelStore.notRegularFile",
             "The native read failure retains its storage detail key");
     LocalToolModelFiles blocked_files;
+    const auto below_file = (folder / "lock" / "below").string();
+    const auto not_directory = std::generic_category().message(ENOTDIR);
+    const auto made = blocked_files.make_directory(below_file);
+    require(!made &&
+                made.error() ==
+                    LocalizedReason{std::format("the directory {} cannot be made: {}", below_file,
+                                                not_directory),
+                                    MessageKey{"backend.toolModelStore.directoryNotMade",
+                                               {{"path", below_file}, {"osError", not_directory}}}},
+            "The failed mkdir retains the original path and operating-system error");
+    const auto opened = blocked_files.read(below_file, 10);
+    require(!opened &&
+                opened.error() == LocalizedReason{"it cannot be opened: " + not_directory,
+                                                  MessageKey{"backend.toolModelStore.fileNotOpened",
+                                                             {{"osError", not_directory}}}},
+            "The failed open retains the key and does not rewrite the operating-system error");
     ToolModelArchive blocked{blocked_files,
                              resolve_tool_model_location(
                                  {"m", (folder / "lock" / "below").string(), {}, {}})};

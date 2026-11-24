@@ -314,12 +314,30 @@ void manages_program_files(const fs::path& base) {
   require(!refused && read(programs / "part.ngc") == bytes &&
               std::distance(fs::directory_iterator{programs}, fs::directory_iterator{}) == 1,
           "Refusal leaves old bytes and removes the staged upload");
-  require(writer.receive("part.ngc", "M30\n", true,
-                         [](const std::string&, const ProgramWriter::Commit& commit) {
-                           return commit().transform_error(
-                               [](std::string error) { return LocalizedReason{std::move(error)}; });
-                         })
-                  .has_value() &&
+  const auto raced =
+      writer.receive("race.ngc", "M30\n", true,
+                     [](const std::string& target, const ProgramWriter::Commit& commit) {
+                       // The target becomes a directory after validation, before the atomic
+                       // replace.
+                       fs::create_directory(target);
+                       return commit();
+                     });
+  require(!raced, "The staged upload cannot replace the new directory");
+  const auto race_target = programs / "race.ngc";
+  const auto& issue = raced.error();
+  require(issue.text.starts_with("The program could not be saved: the file cannot be replaced:") &&
+              issue.localization && issue.localization->key == "backend.programEdit.notSaved" &&
+              issue.localization->params_localization.at("detail").key ==
+                  "backend.toolModelStore.fileNotReplaced" &&
+              fs::is_directory(race_target) && read(programs / "part.ngc") == bytes &&
+              std::distance(fs::directory_iterator{programs}, fs::directory_iterator{}) == 2,
+          "The rename failure retains its key and leaves the external directory and the original "
+          "program alone");
+  fs::remove(race_target);
+  const auto publish = [](const std::string&, const ProgramWriter::Commit& commit) {
+    return commit();
+  };
+  require(writer.receive("part.ngc", "M30\n", true, publish).has_value() &&
               read(programs / "part.ngc") == "M30\n",
           "Accepted replacement publishes the new bytes");
   const auto reopened = writer.receive(
@@ -327,7 +345,7 @@ void manages_program_files(const fs::path& base) {
       [](const std::string&,
          const ProgramWriter::Commit& commit) -> std::expected<void, LocalizedReason> {
         if (auto saved = commit(); !saved)
-          return std::unexpected(LocalizedReason{std::move(saved.error())});
+          return saved;
         return std::unexpected(
             LocalizedReason{"Saved on disk, but not reopened. LinuxCNC refused the open.",
                             MessageKey{"messages.session.savedNotReopened",

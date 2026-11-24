@@ -26,7 +26,7 @@ namespace coffeecnc {
 // The replaced file is readable and writable by its owner only (mode 0600).
 class ProgramWriter {
 public:
-  using Commit = std::function<std::expected<void, std::string>()>;
+  using Commit = std::function<ToolModelFiles::Done()>;
   using Publish =
       std::function<std::expected<void, LocalizedReason>(const std::string&, const Commit&)>;
 

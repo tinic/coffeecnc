@@ -642,7 +642,7 @@ void parameters_and_saved_positions() {
   // Without a parameter file the saved positions and the other work systems are not known.
   const auto g28 =
       stops("G28", "G28 moves to a position that is not in the machine's parameter file");
-  require(g28.error->localization &&
+  require(g28.error && g28.error->localization &&
               g28.error->localization->params_localization.at("detail") ==
                   MessageParameterKey{"backend.previewEngine.stopSavedPosition", {{"code", "28"}}},
           "A coded saved-position stop names G28 in its translated detail");
@@ -672,14 +672,14 @@ void parameters_and_saved_positions() {
               motion_use("G+1 X5") == MotionUse::sets,
           "An explicit positive G word follows the same rules as the unsigned form");
   const auto probe = stops("G38.2 X5 F10", "probe");
-  require(probe.error->localization &&
+  require(probe.error && probe.error->localization &&
               probe.error->localization->params_localization.at("detail") ==
                   MessageParameterKey{"backend.previewEngine.stopProbe"},
           "The helper supplies the probe stop key");
   stops("M66 P0 L0", "M66");
   stops("M101", "M101");
   const auto m199 = stops("M199 P1", "M199");
-  require(m199.error->localization &&
+  require(m199.error && m199.error->localization &&
               m199.error->localization->params_localization.at("detail") ==
                   MessageParameterKey{"backend.previewEngine.stopMachineMCode", {{"code", "199"}}},
           "The interpreter preserves the machine-specific M-code number");

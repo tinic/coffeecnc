@@ -374,17 +374,6 @@ describe('translateMessage', () => {
     })).toBe('Anfrage der Bedienoberfläche ignoriert: Bad packet.')
   })
 
-  it('translates a program read notice with a keyed file detail', async () => {
-    await setLanguage('fr')
-    const file = '/home/cnc/part.ngc'
-    const detail = 'The file cannot be read.'
-    expect(translateMessage(`The text of ${file} cannot be shown: Program cannot be read: ${detail}`, {
-      key: 'backend.nmlPanelSource.programReadFailed',
-      params: { file, detail },
-      params_localization: { detail: { key: 'backend.fileSystem.cannotRead', params: {} } },
-    })).toBe('Impossible d’afficher le texte de /home/cnc/part.ngc : Impossible de lire le programme : Impossible de lire le fichier.')
-  })
-
   it('uses a structured key for a timeout without matching its English reason', async () => {
     await setLanguage('de')
     expect(translateResult({ type: 'result', id: 8, outcome: 'timed_out', reason: 'Older fallback.',
@@ -545,6 +534,14 @@ describe('translateMessage', () => {
         params_localization: { detail: { key: 'backend.programStore.outsideDirectory', params: {} } },
       },
     )).toBe('Impossible d’afficher le texte de /home/cnc/outside.ngc : Le chemin est en dehors du dossier de programmes.')
+
+    const file = '/home/cnc/part.ngc'
+    const detail = 'The file cannot be read.'
+    expect(translateMessage(`The text of ${file} cannot be shown: Program cannot be read: ${detail}`, {
+      key: 'backend.nmlPanelSource.programReadFailed',
+      params: { file, detail },
+      params_localization: { detail: { key: 'backend.fileSystem.cannotRead', params: {} } },
+    })).toBe('Impossible d’afficher le texte de /home/cnc/part.ngc : Impossible de lire le programme : Impossible de lire le fichier.')
   })
 
   it('passes unknown text unchanged', async () => {

@@ -574,28 +574,44 @@ void positions_in_mm(const Rig& rig) {
                     after.at("preview_context").dump()));
   // G55 becomes the active system. G54 is now an inactive system: its value comes from the
   // parameter file, and it is current again once the port's synch has written the file.
-  rig.js(R"(
+  const auto g55_click = rig.js(R"(
       const input = __t.find('input[aria-label="MDI command"]');
       input.value = 'G55';
       input.dispatchEvent(new Event('input', { bubbles: true }));
       await new Promise((r) => setTimeout(r, 50));
       return __t.click('section.mdi button[type="submit"]');)");
-  const bool g55 = rig.wait_js("__t.last.status.offsets.wcs === 2 && "
-                               "__t.last.status.offsets.g5x[0] === 0 && "
-                               "__t.last.work_offsets.systems[1].available === true && "
-                               "__t.last.work_offsets.systems[1].current === true && "
-                               "__t.last.work_offsets.systems[1].offset[0] === 0 && "
-                               "__t.last.work_offsets.systems[0].available === true && "
-                               "__t.last.work_offsets.systems[0].current === true && "
-                               // Six decimals in machine units: 0.0000254 mm on an inch machine.
-                               "Math.abs(__t.last.work_offsets.systems[0].offset[0] - 5.4) < 1e-4");
-  // Take the evidence after the wait. C++ may evaluate a check's detail argument first.
-  const auto g55_detail = rig.js(R"(
-    const { offsets, interp } = __t.last.status;
+  // Keep the last failed sample from the same callback that evaluates the predicate. On a
+  // timeout the next evaluation may already see a later status or parameter-file revision.
+  const bool g55 = rig.wait_js(R"((() => {
+    const {status, work_offsets: work} = __t.last;
+    const g54Row = work?.systems?.[0], g55Row = work?.systems?.[1];
+    const met = {
+      wcs: status?.offsets?.wcs === 2,
+      liveX: status?.offsets?.g5x?.[0] === 0,
+      g55Available: g55Row?.available === true,
+      g55Current: g55Row?.current === true,
+      g55X: g55Row?.offset?.[0] === 0,
+      g54Available: g54Row?.available === true,
+      g54Current: g54Row?.current === true,
+      // Six decimals in machine units: 0.0000254 mm on an inch machine.
+      g54X: Math.abs(g54Row?.offset?.[0] - 5.4) < 1e-4
+    };
+    const failed = Object.keys(met).filter((term) => !met[term]);
+    if (failed.length === 0) return true;
+    __t.g55LastFailed = { failed, seq: status?.seq, offsets: status?.offsets,
+                          interp: status?.interp, revision: work?.revision, g54Row, g55Row };
+    return false;
+  })())");
+  auto g55_detail = rig.js(R"(
+    const { offsets, interp, seq } = __t.last.status ?? {};
     const command = __t.sent.findLast((m) => m?.type === 'mdi' && m.text === 'G55');
     const result = command && __t.received.find((m) => m.type === 'result' && m.id === command.id);
-    return { offsets, interp, work: __t.last.work_offsets, command: command ?? null,
-             result: result ?? null, note: __t.text(__t.find('section.mdi .setter-band')) };)");
+    return { offsets, interp, seq, work: __t.last.work_offsets, command: command ?? null,
+             result: result ?? null, lastFailed: __t.g55LastFailed ?? null,
+             note: __t.text(__t.find('section.mdi .setter-band')) };)");
+  g55_detail["click"] = g55_click;
+  if (g55)
+    g55_detail.erase("lastFailed");
   check("active_system_changes_with_g55", g55, g55_detail.dump());
   rig.js(R"(
       const input = __t.find('input[aria-label="MDI command"]');

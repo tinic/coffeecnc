@@ -48,13 +48,15 @@ const entries = [
 ]
 
 // Entry states reached by something other than a control: a touched numeric field opens the
-// keypad; a tapped line number opens the line bar of the code view.
+// keypad; a tap or drag on line numbers opens the line bar of the code view.
 const specials = [
   ['?scene=manual&tab=manual', '@touch:input[inputmode=none]'],
   ['?scene=manual&tab=tools&dialog=tool', '@touch:[role=dialog] input[inputmode=none]'],
   ['?scene=loaded&tab=program&dialog=operation', '@touch:[role=dialog] input[inputmode=none]'],
   ['?scene=loaded&tab=program&layout=text', '@el:.row .number'],
   ['?scene=loaded&tab=program&layout=split', '@el:.row .number'],
+  ['?scene=loaded&tab=program&layout=text', '@range'],
+  ['?scene=loaded&tab=program&layout=split', '@range'],
   ['?scene=paused&tab=program&layout=text', '@el:.row .number'],
 ]
 
@@ -62,7 +64,7 @@ const specials = [
 // checked for outlines and for a hover tone, not for a fill at rest.
 const allowed = [
   ['input[type=checkbox], input[type=radio], input[type=range], input[type=file], input[type=color]', 'native input', 'skip'],
-  ['.nc, .editor', 'code view content: the lines, not the line bar', 'skip'],
+  ['textarea.editor, .editor textarea', 'the program text editor uses its content area as the field', 'skip'],
   ['.axis', 'DRO readout: the coordinate is the touch-off target', 'row'],
   ['.list-row', 'list row: a file, a program run, an MDI history line, a disclosure', 'row'],
   ['.tool-number', 'tool table cell: the whole row takes the hover tone', 'skip'],
@@ -272,6 +274,25 @@ async function cdp(port) {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
+async function selectLineRange(page) {
+  const points = await page.run(() => {
+    const [, line, next] = document.querySelectorAll('.row .number.range-target')
+    if (!line || !next) return null
+    return [line, next].map((el) => {
+      const box = el.getBoundingClientRect()
+      return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+    })
+  })
+  if (!points) throw new Error('Could not find editable program lines')
+  const [first, next] = points
+  await page.call('Input.dispatchMouseEvent', { type: 'mousePressed', button: 'left', buttons: 1, clickCount: 1, ...first })
+  await page.call('Input.dispatchMouseEvent', { type: 'mouseMoved', button: 'left', buttons: 1, ...next })
+  await page.call('Input.dispatchMouseEvent', { type: 'mouseReleased', button: 'left', clickCount: 1, ...next })
+  if (!(await page.run(() => Boolean(document.querySelector('.line-actions .range-label'))))) {
+    throw new Error('Dragging line numbers did not open the multi-selection toolbar')
+  }
+}
+
 async function open(page, base, entry, path) {
   await page.call('Page.navigate', { url: `${base}${entry.startsWith('?') ? entry + '&theme=light&lang=en' : entry}` })
   for (let i = 0; i < 50 && !(await page.run(() => document.querySelector('#app')?.childElementCount > 0)); i++) await sleep(100)
@@ -291,6 +312,8 @@ async function open(page, base, entry, path) {
         return true
       }, step.slice(7))
       if (!touched) return false
+    } else if (step === '@range') {
+      await selectLineRange(page)
     } else if (step.startsWith('@el:')) {
       const clicked = await page.run((selector) => {
         const el = [...document.querySelectorAll(selector)].find((c) => c.checkVisibility())

@@ -800,11 +800,11 @@ auto program_check(const PreviewSettings& settings, const PreviewInputs& inputs,
   if (facts->spindle && settings.max_spindle_rpm > 0 &&
       facts->spindle->max > settings.max_spindle_rpm) {
     const auto requested = std::format("{}", facts->spindle->max);
-    const auto limit = std::format("{}", settings.max_spindle_rpm);
-    check.errors.push_back(
-        {std::format("The program requests {} rpm. The spindle limit is {} rpm.", requested, limit),
-         MessageKey{"backend.previewEngine.spindleLimit",
-                    {{"requested", requested}, {"limit", limit}}}});
+    const auto spindle_limit = std::format("{}", settings.max_spindle_rpm);
+    check.errors.push_back({std::format("The program requests {} rpm. The spindle limit is {} rpm.",
+                                        requested, spindle_limit),
+                            MessageKey{"backend.previewEngine.spindleLimit",
+                                       {{"requested", requested}, {"limit", spindle_limit}}}});
   }
 
   const auto fits = [&](const std::optional<Bounds>& travel) {

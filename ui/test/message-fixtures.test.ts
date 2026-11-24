@@ -1600,6 +1600,16 @@ const examples = [
       "key": "backend.halDiagnostics.notInstalled",
       "params": { "name": "halscope", "path": "/usr/bin:/bin" }
     }
+  },
+  {
+    "type": "result",
+    "id": 55,
+    "outcome": "failed",
+    "reason": "LinuxCNC is not waiting for that tool change any more.",
+    "localization": {
+      "key": "backend.nmlPort.toolChangeGone",
+      "params": {}
+    }
   }
 ] satisfies FromMachine[]
 

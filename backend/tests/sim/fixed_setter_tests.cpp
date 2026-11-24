@@ -659,7 +659,8 @@ void feature_scenarios(NmlPort& port, double scale, const auto& mdi) {
 // the expected point and faces. Applying that measurement must then set the same origin.
 void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& mdi,
                        bool measure = false, const std::string& tool_table = {},
-                       const std::string& programs = {}) {
+                       const std::string& programs = {}, const std::string& runout_file = {},
+                       bool geometry_only = false) {
   // The MDI blocks written since `from` that write an offset or the tool table: G10.
   const auto g10_since = [&](std::size_t from) {
     const auto all = port.writes();
@@ -743,6 +744,110 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
     halcmd("unlinkp coffeecnc.probe-input");
     halcmd(std::format("net {} {} motion.probe-input coffeecnc.probe-input", net, pin));
   };
+
+  // Every other way a measurement goes stale refuses it before writing (one each). `change`
+  // runs between measuring and applying; `at_apply` is the session epoch the apply carries.
+  // Epoch fields: page (a reconnect or a new panel session), datum (E-stop, power, homing),
+  // tool (a tool change, an MDI block, a program run, step or resume, an offset edit), stop.
+  const auto refused_after = [&](std::string_view name, const auto& change, SetterEpoch at_apply,
+                                 std::string_view reason) {
+    at(2, 1);
+    const FixedSetterRequest top{.action = SetterAction::material,
+                                 .tool = 99,
+                                 .start = machine(),
+                                 .direction = ProbeDirection::z_top,
+                                 .measure_only = true};
+    const auto taken = port.fixed_setter(top, epoch, {});
+    if (!taken || !taken->measured)
+      throw std::runtime_error(
+          std::format("{}: {}", name, taken ? "no measurement" : taken.error()));
+    change();
+    const auto before_apply = port.status();
+    const auto writes_before = port.writes().size();
+    const auto table_before = table_text();
+    const auto result = port.fixed_setter({.action = SetterAction::apply_measurement,
+                                           .tool = 99,
+                                           .edge_measurement = taken->measured->id},
+                                          at_apply, {});
+    const auto after = port.status();
+    std::cout << std::format("fact=measure_only action=stale_{} rotation={} refused={} writes={}",
+                             name, degrees, !result, port.writes().size() - writes_before)
+              << std::endl;
+    require(!result && result.error().contains(reason) && port.writes().size() == writes_before &&
+                after.g5x == before_apply.g5x && after.g92 == before_apply.g92 &&
+                after.rotation_xy == before_apply.rotation_xy && table_text() == table_before,
+            result ? std::format("{}: expected a refused measurement", name) : result.error());
+  };
+  if (geometry_only) {
+    probe_input("sim-rot-outer", "sim-rot-solid.and");
+    const auto units = scale == 1 ? "G21 G91" : "G20 G91";
+    mdi(units);
+    // These edits come from another client. Neither the session epoch nor the applied G43
+    // offset changes, so Set must check the table row and correction itself.
+    const auto probe_length = tool_z(table_text(), 99);
+    require(probe_length.has_value(), "T99 has a stored length");
+    const auto write_table = [&](std::string_view text) {
+      std::ofstream output{tool_table};
+      require(static_cast<bool>(output << text << std::flush), "write the simulated tool table");
+    };
+    const auto edit_tool = [&](const Tool& row) {
+      const auto edit = with_tool(table_text(), row, scale);
+      if (!edit)
+        throw std::runtime_error(edit.error().text);
+      write_table(*edit);
+    };
+    const auto original_tool_offset = port.status().tool_offset;
+    const Tool probe_row{99, 99, probe_length.value() * scale, 2, "Ruby probe"};
+    auto updated = probe_row;
+    updated.diameter = 3;
+    refused_after("probe_diameter", [&] { edit_tool(updated); }, epoch, "work frame or tool");
+    edit_tool(probe_row);
+    updated = probe_row;
+    updated.length += 1;
+    refused_after("probe_length", [&] { edit_tool(updated); }, epoch, "work frame or tool");
+    edit_tool(probe_row);
+    const auto table_with_probe = table_text();
+    refused_after(
+        "probe_row_removed",
+        [&] {
+          const auto edited = without_tool(table_with_probe, 99);
+          if (!edited)
+            throw std::runtime_error("T99 cannot be removed from the simulated table");
+          write_table(*edited);
+        },
+        epoch, "work frame or tool");
+    write_table(table_with_probe);
+    require(port.status().tool_offset == original_tool_offset,
+            "editing the saved probe row leaves the applied G43 offset in effect");
+    const ProbeRunout correction{.tool = 99, .table_diameter_mm = 2, .radius_mm = {0.02, -0.03}};
+    const auto save_runout = [&] {
+      std::ofstream output{runout_file};
+      require(static_cast<bool>(output << format_probe_runout(correction) << std::flush),
+              "save a runout correction in the simulation");
+    };
+    refused_after("runout_added", save_runout, epoch, "work frame or tool");
+    refused_after(
+        "runout_removed",
+        [&] { require(std::filesystem::remove(runout_file), "clear the correction"); }, epoch,
+        "work frame or tool");
+    at(2, 1);
+    const auto pending = port.fixed_setter({.action = SetterAction::material,
+                                            .tool = 99,
+                                            .start = machine(),
+                                            .direction = ProbeDirection::z_top,
+                                            .measure_only = true},
+                                           epoch, {});
+    if (!pending || !pending->measured)
+      throw std::runtime_error(pending ? "no measurement" : pending.error());
+    edit_tool({1, 1, 8, 2, "Unrelated cutter"});
+    const auto applied = port.fixed_setter({.action = SetterAction::apply_measurement,
+                                            .tool = 99,
+                                            .edge_measurement = pending->measured->id},
+                                           epoch, {});
+    require(applied && applied->material,
+            applied ? "an unrelated tool edit keeps the measurement usable" : applied.error());
+    return;
+  }
 
   struct Expected {
     std::string_view name;
@@ -966,33 +1071,6 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
     require(!refused && refused.error().contains("work frame") &&
                 port.writes().size() == stale_writes && port.status().g5x == stale_origin,
             "a measurement taken in another work frame is refused before writing");
-    // Every other way a measurement goes stale refuses it before writing (one each). `change`
-    // runs between measuring and applying; `at_apply` is the session epoch the apply carries.
-    // Epoch fields: page (a reconnect or a new panel session), datum (E-stop, power, homing),
-    // tool (a tool change, an MDI block, a program run, step or resume, an offset edit), stop.
-    const auto refused_after = [&](std::string_view name, const auto& change, SetterEpoch at_apply,
-                                   std::string_view reason) {
-      at(2, 1);
-      top.start = machine();
-      const auto taken = port.fixed_setter(top, epoch, {});
-      if (!taken || !taken->measured)
-        throw std::runtime_error(std::format("{}: {}", name, taken ? "no measurement" : taken.error()));
-      change();
-      const auto before_apply = port.status();
-      const auto writes_before = port.writes().size();
-      const auto table_before = table_text();
-      const auto result = port.fixed_setter(
-          {.action = SetterAction::apply_measurement, .tool = 99, .edge_measurement = taken->measured->id},
-          at_apply, {});
-      const auto after = port.status();
-      std::cout << std::format("fact=measure_only action=stale_{} rotation={} refused={} writes={}", name,
-                               degrees, !result, port.writes().size() - writes_before)
-                << std::endl;
-      require(!result && result.error().contains(reason) && port.writes().size() == writes_before &&
-                  after.g5x == before_apply.g5x && after.g92 == before_apply.g92 &&
-                  after.rotation_xy == before_apply.rotation_xy && table_text() == table_before,
-              result ? std::format("{}: expected a refused measurement", name) : result.error());
-    };
     const auto units = scale == 1 ? "G21 G91" : "G20 G91";
     refused_after("tool_offset", [&] { mdi("G43 H98"); }, epoch, "work frame or tool");
     mdi("G43 H99");
@@ -1032,16 +1110,18 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
     const auto forgotten = port.fixed_setter(
         {.action = SetterAction::apply_measurement, .tool = 99, .edge_measurement = first->measured->id},
         epoch, {});
-    const bool forgotten_clean = port.writes().size() == forgotten_writes;
+    const auto forgotten_program_writes = g10_since(forgotten_writes);
     const auto latest = port.fixed_setter(
         {.action = SetterAction::apply_measurement, .tool = 99, .edge_measurement = second->measured->id},
         epoch, {});
-    std::cout << std::format("fact=measure_only action=forgotten rotation={} first_refused={} writes={} "
-                             "second_applied={}",
-                             degrees, !forgotten, forgotten_clean ? 0 : 1, latest.has_value())
+    std::cout << std::format(
+                     "fact=measure_only action=forgotten rotation={} first_refused={} writes={} "
+                     "second_applied={}",
+                     degrees, !forgotten, forgotten_program_writes, latest.has_value())
               << std::endl;
-    require(!forgotten && forgotten.error().contains("Probe the feature again") && forgotten_clean &&
-                latest.has_value() && first->measured->id != second->measured->id,
+    require(!forgotten && forgotten.error().contains("Probe the feature again") &&
+                forgotten_program_writes == 0 && latest.has_value() &&
+                first->measured->id != second->measured->id,
             "a new probe action forgets the measurement before it");
     // An action that always writes is refused as a measurement before anything is sent.
     for (const auto action : {SetterAction::ball, SetterAction::touch_off, SetterAction::check}) {
@@ -2896,7 +2976,8 @@ void run(const std::string& ini, std::string_view scenario) {
   const bool features = scenario == "features";
   const bool runout = scenario == "runout" || scenario == "runout-pin" || scenario == "runout-arc";
   const bool measure = scenario == "measure";
-  const bool rotated = scenario == "rotated" || measure;
+  const bool measure_geometry = scenario == "measure-geometry";
+  const bool rotated = scenario == "rotated" || measure || measure_geometry;
   const bool arc = scenario == "arc" || scenario == "arc-rotated" || scenario == "arc-faults";
   const bool height_map = scenario == "height-map";
   const bool g0759 = std::filesystem::path(ini).filename() == "coffeecnc_g0759.ini";
@@ -2961,7 +3042,7 @@ void run(const std::string& ini, std::string_view scenario) {
   if (rotated) {
     // Millimetres at +7.5°, inches at -30°: each rotated cycle in both units and turns.
     rotated_scenarios(*port, scale, scale == 1 ? 7.5 : -30, mdi, measure, config->tool_table,
-                      config->program_prefix);
+                      config->program_prefix, config->probe_runout_file(), measure_geometry);
     return;
   }
   if (runout) {
@@ -3265,8 +3346,8 @@ auto main(int argc, char** argv) -> int {
   if ((scenario != "" && scenario != "material" && scenario != "edge-rotation" &&
        scenario != "features" && scenario != "rotated" && scenario != "runout" &&
        scenario != "runout-pin" && scenario != "runout-arc" && scenario != "measure" &&
-       scenario != "arc" && scenario != "arc-rotated" && scenario != "arc-faults" &&
-       scenario != "height-map" && scenario != "measure-m6") ||
+       scenario != "measure-geometry" && scenario != "arc" && scenario != "arc-rotated" &&
+       scenario != "arc-faults" && scenario != "height-map" && scenario != "measure-m6") ||
       ini.parent_path() != run_dir ||
       (ini.filename() != "coffeecnc_sim.ini" &&
        !(scenario == "edge-rotation" && ini.filename() == "coffeecnc_g0759.ini")))

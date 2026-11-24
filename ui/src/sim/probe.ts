@@ -212,6 +212,7 @@ export class SimProbe {
   /** Forgets the kept runout correction, as the controller removes its file. */
   clearRunout(modal: Modal): SetterState {
     this.runout = null
+    this.feature = null
     return this.state(modal)
   }
 
@@ -240,6 +241,7 @@ export class SimProbe {
       return { material: { wcs: modal.wcs, axis } }
     }
     const measureOnly = 'measure_only' in command && command.measure_only
+    const featureFrame = (): string => JSON.stringify([frame(modal), tool, state.runout ?? null])
     // Each search's surface point: the ball centre one radius further along the travel.
     const faces = (): ProbedPoint[] => path.contacts.map(({ from, contact }) => {
       const length = Math.hypot(contact[0] - from[0], contact[1] - from[1])
@@ -258,7 +260,7 @@ export class SimProbe {
       const at: Vec3 = axis === 'Z' ? point : [point[0], point[1], touched.at(-1)?.machine[2] ?? point[2]]
       const [x, y, z] = toWork(modal, at)
       const id = ++this.featureId
-      this.feature = { id, point, axis, frame: frame(modal) }
+      this.feature = { id, point, axis, frame: featureFrame() }
       const work: SetterMeasured['work'] = {
         ...(axis.includes('X') ? { x } : {}), ...(axis.includes('Y') ? { y } : {}), ...(axis === 'Z' ? { z } : {}),
       }
@@ -271,7 +273,7 @@ export class SimProbe {
       this.feature = null
       this.angle = null
       if (measurement?.id !== command.measurement_id) return 'Probe the feature again before applying the measurement.'
-      if (measurement.frame !== frame(modal)) return 'The work frame or tool changed. Probe the feature again.'
+      if (measurement.frame !== featureFrame()) return 'The work frame or tool changed. Probe the feature again.'
       return result(() => shift(measurement.point, measurement.axis))
     }
     this.feature = null

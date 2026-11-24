@@ -26,9 +26,11 @@ auto OperatorSettingsArchive::unavailable(std::string reason, MessageKey localiz
 void OperatorSettingsArchive::show(OperatorSettings settings) {
   auto encoded = encode_operator_settings(settings);
   if (!encoded) {
-    settings = unavailable(
-        std::format("Operator settings cannot be shown: {}", encoded.error()),
-        MessageKey{"backend.operatorSettingsStore.cannotShow", {{"detail", encoded.error()}}});
+    const auto& reason = encoded.error();
+    settings = unavailable(std::format("Operator settings cannot be shown: {}", reason.text),
+                           MessageKey{"backend.operatorSettingsStore.cannotShow",
+                                      {{"detail", reason.text}},
+                                      parameter_localization("detail", reason.localization)});
     encoded = encode_operator_settings(settings);
   }
   settings_ = std::move(settings);
@@ -93,9 +95,10 @@ auto OperatorSettingsArchive::read_settings() const -> OperatorSettings {
   const auto saved = decode_operator_settings_file(content->bytes);
   if (!saved)
     return unavailable(
-        std::format("{} is not usable: {} The file was left alone.", file, saved.error()),
+        std::format("{} is not usable: {} The file was left alone.", file, saved.error().text),
         MessageKey{"backend.operatorSettingsStore.notUsable",
-                   {{"file", file}, {"detail", saved.error()}}});
+                   {{"file", file}, {"detail", saved.error().text}},
+                   parameter_localization("detail", saved.error().localization)});
   if (saved->machine_id != location_.machine_id)
     return unavailable(
         std::format("{} belongs to another machine. The file was left alone.", file),
@@ -133,7 +136,7 @@ auto OperatorSettingsArchive::apply(const SetOperatorSettings& command) -> ToolM
   const auto text =
       encode_operator_settings_file({command.machine_id, next.revision, *next.document});
   if (!text)
-    return {CommandOutcome::rejected, text.error(), false};
+    return {CommandOutcome::rejected, text.error().text, false, text.error().localization};
   const bool language_changed =
       settings_.document && settings_.document->language != command.document.language;
   if (const auto step = replace(file_name, temporary_name, *text); !step)
@@ -158,9 +161,8 @@ auto OperatorSettingsArchive::apply(const SetOperatorSettings& command) -> ToolM
   // Only a change of language writes the language file, after the settings file.
   if (language_changed) {
     const auto language = encode_panel_language_file(command.machine_id, command.document.language);
-    const auto step =
-        language ? replace(language_name, language_temporary_name, *language)
-                 : ToolModelFiles::Done{std::unexpected(LocalizedReason{language.error()})};
+    const auto step = language ? replace(language_name, language_temporary_name, *language)
+                               : ToolModelFiles::Done{std::unexpected(language.error())};
     if (!step)
       return uncertain(step.error());
   }

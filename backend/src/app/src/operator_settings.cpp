@@ -298,12 +298,6 @@ auto checked(Read read) -> std::expected<decltype(read()), LocalizedReason> {
     return std::unexpected(LocalizedReason{error.what()});
   }
 }
-
-template <typename Read>
-auto checked_text(Read read) -> std::expected<decltype(read()), std::string> {
-  return checked(read).transform_error(
-      [](LocalizedReason&& reason) -> std::string { return std::move(reason.text); });
-}
 } // namespace
 
 auto operator_preferences_error(const OperatorPreferences& document) -> LocalizedReason {
@@ -366,17 +360,18 @@ auto decode_operator_preferences(std::string_view text)
     -> std::expected<OperatorPreferences, LocalizedReason> {
   return checked([&]() -> OperatorPreferences { return read_document(parse(text), Damaged::refuse); });
 }
-auto encode_operator_settings(const OperatorSettings& settings) -> Encoded {
-  return checked_text([&]() -> std::string {
+auto encode_operator_settings(const OperatorSettings& settings) -> EncodedMessage {
+  return checked([&]() -> std::string {
     const bool available = settings.availability == ToolModelAvailability::available;
     if (settings.revision > max_tool_model_revision ||
         (settings.machine_id && !valid_machine_id(*settings.machine_id)) ||
         (available && (!settings.document || !settings.machine_id)) ||
         (!available && (settings.document || settings.revision != 0)))
-      throw std::runtime_error("Invalid settings snapshot.");
+      throw InvalidSettings(
+          {"Invalid settings snapshot.", MessageKey{"backend.operatorSettings.invalidSnapshot"}});
     if (settings.document)
       if (auto error = operator_preferences_error(*settings.document); !error.empty())
-        throw std::runtime_error(error.text);
+        throw InvalidSettings(std::move(error));
     Json snapshot{
         {"type", "operator_settings"},
         {"machine_id", settings.machine_id ? Json(*settings.machine_id) : Json(nullptr)},
@@ -392,54 +387,61 @@ auto encode_operator_settings(const OperatorSettings& settings) -> Encoded {
     return snapshot.dump();
   });
 }
-auto encode_operator_settings_file(const OperatorSettingsFile& file) -> Encoded {
-  return checked_text([&]() -> std::string {
+auto encode_operator_settings_file(const OperatorSettingsFile& file) -> EncodedMessage {
+  return checked([&]() -> std::string {
     if (!valid_machine_id(file.machine_id) || file.revision == 0 ||
         file.revision > max_tool_model_revision)
-      throw std::runtime_error("Invalid settings file identity or revision.");
+      throw InvalidSettings({"Invalid settings file identity or revision.",
+                             MessageKey{"backend.operatorSettings.invalidFileIdentity"}});
     if (auto error = operator_preferences_error(file.document); !error.empty())
-      throw std::runtime_error(error.text);
+      throw InvalidSettings(std::move(error));
     // The reader takes at most 16 KiB: a longer file would leave the settings unavailable.
     auto text = Json{{"machine_id", file.machine_id},
                      {"revision", file.revision},
                      {"document", document_json(file.document, Language::leave_out)}}
                     .dump();
     if (text.size() > max_operator_settings_bytes)
-      throw std::runtime_error("Settings exceed 16 KiB.");
+      throw InvalidSettings(
+          {"Settings exceed 16 KiB.", MessageKey{"backend.operatorSettings.tooLarge"}});
     return text;
   });
 }
 auto decode_operator_settings_file(std::string_view text)
-    -> std::expected<OperatorSettingsFile, std::string> {
-  return checked_text([&]() -> OperatorSettingsFile {
+    -> std::expected<OperatorSettingsFile, LocalizedReason> {
+  return checked([&]() -> OperatorSettingsFile {
     const auto file = parse(text);
     exact(file, {"machine_id", "revision", "document"});
     const auto machine = file.at("machine_id").get<std::string>();
     const auto revision = tool_model_json::revision(file.at("revision"));
     if (!valid_machine_id(machine) || !revision || *revision == 0)
-      throw std::runtime_error("Invalid settings file identity or revision.");
+      throw InvalidSettings({"Invalid settings file identity or revision.",
+                             MessageKey{"backend.operatorSettings.invalidFileIdentity"}});
     return {machine, *revision, read_document(file.at("document"), Damaged::fall_back)};
   });
 }
-auto encode_panel_language_file(std::string_view machine_id, PanelLanguage language) -> Encoded {
-  return checked_text([&]() -> std::string {
+auto encode_panel_language_file(std::string_view machine_id, PanelLanguage language)
+    -> EncodedMessage {
+  return checked([&]() -> std::string {
     if (!valid_machine_id(machine_id) || language_name(language).empty())
-      throw std::runtime_error("Invalid panel presentation.");
+      throw InvalidSettings({"Invalid panel presentation.",
+                             MessageKey{"backend.operatorSettings.invalidPresentation"}});
     return Json{{"machine_id", machine_id}, {"language", language_name(language)}}.dump();
   });
 }
 auto decode_panel_language_file(std::string_view text, std::string_view machine_id)
-    -> std::expected<PanelLanguage, std::string> {
-  return checked_text([&]() -> PanelLanguage {
+    -> std::expected<PanelLanguage, LocalizedReason> {
+  return checked([&]() -> PanelLanguage {
     const auto file = parse(text);
     exact(file, {"machine_id", "language"});
     if (file.at("machine_id") != machine_id)
-      throw std::runtime_error("Invalid settings file identity or revision.");
+      throw InvalidSettings({"Invalid settings file identity or revision.",
+                             MessageKey{"backend.operatorSettings.invalidFileIdentity"}});
     const auto known = std::ranges::find_if(language_names, [&](const auto& entry) -> bool {
       return file.at("language").is_string() && file.at("language") == entry.second;
     });
     if (known == language_names.end())
-      throw std::runtime_error("Invalid panel presentation.");
+      throw InvalidSettings({"Invalid panel presentation.",
+                             MessageKey{"backend.operatorSettings.invalidPresentation"}});
     return known->first;
   });
 }

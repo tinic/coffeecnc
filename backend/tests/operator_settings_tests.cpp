@@ -270,7 +270,9 @@ void bounded_files() {
   require(operator_settings_command_error(requested, limits).empty(),
           "Eight long recent programs are valid preferences");
   const auto encoded = encode_operator_settings_file({"G0759", 1, requested.document});
-  require(!encoded, "A file over 16 KiB is not encoded");
+  const MessageKey too_large{"backend.operatorSettings.tooLarge"};
+  require(!encoded && encoded.error() == LocalizedReason{"Settings exceed 16 KiB.", too_large},
+          "The codec reports the keyed reason when a valid document exceeds the file limit");
   FakeDisk disk;
   FakeToolModelFiles files{disk};
   ToolModelArchive owner{files, location};
@@ -280,9 +282,11 @@ void bounded_files() {
   require(archive.apply(command()).outcome == CommandOutcome::accepted, "Initial file saved");
   const auto saved = disk.files.at(file);
   requested.base_revision = 1;
-  require(archive.apply(requested).outcome == CommandOutcome::rejected &&
+  const auto refused = archive.apply(requested);
+  require(refused.outcome == CommandOutcome::rejected &&
+              refused.reason == "Settings exceed 16 KiB." && refused.localization == too_large &&
               disk.files.at(file) == saved && archive.settings().revision == 1,
-          "A save over 16 KiB is refused and the saved file is unchanged");
+          "The save keeps the codec key and leaves the file and revision alone");
   OperatorSettingsArchive restarted{files, limits};
   restarted.open(owner.shared_location());
   require(restarted.settings().availability == ToolModelAvailability::available &&
@@ -335,8 +339,10 @@ void archive_and_restart() {
           corrupt_snapshot.at("reason").get<std::string>().starts_with(file + " is not usable:") &&
           localization.at("key") == "backend.operatorSettingsStore.notUsable" &&
           localization.at("params").at("file") == file &&
-          !localization.at("params").at("detail").get<std::string>().empty(),
-      "Corrupt storage sends both its English reason and a key with the original path");
+          localization.at("params").at("detail") == "Invalid settings JSON or field type." &&
+          localization.at("params_localization").at("detail").at("key") ==
+              "backend.operatorSettings.invalidJson",
+      "Corrupt storage sends its original path, parser key and English fallback");
   // The common directory is usable even if the independent tool-model file is corrupt.
   require(owner.shared_location().availability == ToolModelAvailability::available,
           "One shared directory lock");

@@ -6372,7 +6372,7 @@ void diagnostics_view(Rig& rig) {
           .read = [&]() -> Diagnostics {
             return {read_diagnostics(rows, lookup, wiring), launcher.states()};
           },
-          .launch = [&](HalTool tool) -> std::optional<std::string> {
+          .launch = [&](HalTool tool) -> std::optional<LocalizedReason> {
             return launcher.launch(tool);
           }},
       [&](PageToken, const std::vector<std::string>& messages) -> void {

@@ -233,17 +233,21 @@ void HalToolLauncher::reap() {
   }
 }
 
-auto HalToolLauncher::launch(HalTool tool) -> std::optional<std::string> {
+auto HalToolLauncher::launch(HalTool tool) -> std::optional<LocalizedReason> {
   const auto name = hal_tool_name(tool);
   const auto path = program(tool);
   if (!path)
-    return std::format("{} is not installed: it is not in the search path ({}).", name,
-                       search_path_);
+    return LocalizedReason{
+        std::format("{} is not installed: it is not in the search path ({}).", name, search_path_),
+        MessageKey{"backend.halDiagnostics.notInstalled",
+                   {{"name", std::string(name)}, {"path", search_path_}}}};
   const std::scoped_lock lock{mutex_};
   reap();
   auto& child = children_.at(static_cast<std::size_t>(tool));
   if (child > 0)
-    return std::format("{} is already open.", name);
+    return LocalizedReason{
+        std::format("{} is already open.", name),
+        MessageKey{"backend.halDiagnostics.alreadyOpen", {{"name", std::string(name)}}}};
 
   std::string program_path = *path;
   std::array<char*, 2> argv{program_path.data(), nullptr};
@@ -258,10 +262,14 @@ auto HalToolLauncher::launch(HalTool tool) -> std::optional<std::string> {
   posix_spawn_file_actions_t actions;
   posix_spawnattr_t attributes;
   if (posix_spawn_file_actions_init(&actions) != 0)
-    return std::format("{} could not be started.", name);
+    return LocalizedReason{
+        std::format("{} could not be started.", name),
+        MessageKey{"backend.halDiagnostics.notStarted", {{"name", std::string(name)}}}};
   if (posix_spawnattr_init(&attributes) != 0) {
     posix_spawn_file_actions_destroy(&actions);
-    return std::format("{} could not be started.", name);
+    return LocalizedReason{
+        std::format("{} could not be started.", name),
+        MessageKey{"backend.halDiagnostics.notStarted", {{"name", std::string(name)}}}};
   }
   int error = posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0);
   if (error == 0)
@@ -275,9 +283,12 @@ auto HalToolLauncher::launch(HalTool tool) -> std::optional<std::string> {
                         envp.data());
   posix_spawnattr_destroy(&attributes);
   posix_spawn_file_actions_destroy(&actions);
-  if (error != 0)
-    return std::format("{} could not be started: {}.", name,
-                       std::generic_category().message(error));
+  if (error != 0) {
+    const auto detail = std::generic_category().message(error);
+    return LocalizedReason{std::format("{} could not be started: {}.", name, detail),
+                           MessageKey{"backend.halDiagnostics.notStartedBecause",
+                                      {{"name", std::string(name)}, {"error", detail}}}};
+  }
   child = started;
   return {};
 }

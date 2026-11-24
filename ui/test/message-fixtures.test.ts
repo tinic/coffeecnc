@@ -1456,6 +1456,16 @@ const examples = [
       { "tool": "halmeter", "available": true, "open": true },
       { "tool": "halscope", "available": false, "open": false }
     ]
+  },
+  {
+    "type": "result",
+    "id": 50,
+    "outcome": "rejected",
+    "reason": "halscope is not installed: it is not in the search path (/usr/bin:/bin).",
+    "refusal": {
+      "key": "backend.halDiagnostics.notInstalled",
+      "params": { "name": "halscope", "path": "/usr/bin:/bin" }
+    }
   }
 ] satisfies FromMachine[]
 

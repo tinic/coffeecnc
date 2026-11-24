@@ -659,9 +659,9 @@ public:
   std::vector<std::pair<std::uint64_t, bool>> watches;
   std::vector<HalTool> launched;
   std::vector<std::uint64_t> ended;
-  std::optional<std::string> refusal;
+  std::optional<LocalizedReason> refusal;
   void watch(PageToken page, bool on) override { watches.emplace_back(page.value, on); }
-  auto launch(HalTool tool) -> std::optional<std::string> override {
+  auto launch(HalTool tool) -> std::optional<LocalizedReason> override {
     launched.push_back(tool);
     return refusal;
   }
@@ -695,13 +695,16 @@ void diagnostics_go_to_their_service() {
               diagnostics.watches == std::vector<std::pair<std::uint64_t, bool>>{{page.value, true}},
           "The watch is accepted at once, in E-stop with the link down");
   answer = send(page, R"("type":"launch_hal_tool","tool":"halscope")");
-  require(answer.at("outcome") == "accepted" &&
+  require(answer.at("outcome") == "accepted" && !answer.contains("refusal") &&
               diagnostics.launched == std::vector<HalTool>{HalTool::halscope},
           "A HAL tool is started by the service");
-  diagnostics.refusal = "halscope is already open.";
+  const MessageKey already_open{"backend.halDiagnostics.alreadyOpen", {{"name", "halscope"}}};
+  diagnostics.refusal = LocalizedReason{"halscope is already open.", already_open};
   answer = send(page, R"("type":"launch_hal_tool","tool":"halscope")");
-  require(answer.at("outcome") == "rejected" && answer.at("reason") == "halscope is already open.",
-          "The service's refusal is the result");
+  require(
+      answer.at("outcome") == "rejected" && answer.at("reason") == "halscope is already open." &&
+          answer.at("refusal") == Json{{"key", already_open.key}, {"params", already_open.params}},
+      "The refusal carries the service's key, name, and original reason");
   answer = send(page, R"("type":"watch_diagnostics","on":false)");
   require(answer.at("outcome") == "accepted" && diagnostics.watches.back() ==
                                                     std::pair<std::uint64_t, bool>{page.value, false},

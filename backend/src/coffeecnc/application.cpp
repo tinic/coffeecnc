@@ -730,7 +730,7 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
             .read = [&]() -> Diagnostics {
               return {read_diagnostics(diagnostic_rows, hal_lookup, wiring), launcher.states()};
             },
-            .launch = [&launcher](HalTool tool) -> std::optional<std::string> {
+            .launch = [&launcher](HalTool tool) -> std::optional<LocalizedReason> {
               return launcher.launch(tool);
             }},
         post);

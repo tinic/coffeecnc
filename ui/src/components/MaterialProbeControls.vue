@@ -600,6 +600,9 @@ onBeforeUnmount(() => {
 <style scoped>
 .probe-status { height: 48px; margin-bottom: 0; }
 .rotation-action { flex: none; min-height: 44px; padding-inline: 8px; font-size: 12px; }
+/* Stop takes the danger tones, as a stop button does elsewhere; the band's busy accent on the
+   control fill is under 4.5:1 in the light theme. */
+.btn.stop-map:not(:disabled, [aria-disabled='true']) { background: var(--stop-soft); color: var(--stop); }
 .rotation-effect { margin: 0; line-height: 1.5; }
 .material-probe { min-width: 0; container-type: inline-size; }
 .probe-layout { display: grid; grid-template-columns: 1fr minmax(186px, 0.96fr); align-items: stretch; gap: 12px; }

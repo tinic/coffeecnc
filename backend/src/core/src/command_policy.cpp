@@ -103,12 +103,13 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s,
         // A backup only reads the machine's files and writes an archive elsewhere.
         if constexpr (std::is_same_v<T, Backup>) {
           if (!valid_text(c.directory, 4096) || !c.directory.starts_with('/'))
-            return reject("Choose a folder for the backup.");
+            return reject("Choose a folder for the backup.",
+                          RefusalMessage{"messages.policy.backupFolder"});
           return allow();
         }
         if constexpr (std::is_same_v<T, CheckRestore> || std::is_same_v<T, RestoreBackup>) {
           if (!valid_text(c.path, 4096) || !c.path.starts_with('/'))
-            return reject("Choose a backup file.");
+            return reject("Choose a backup file.", RefusalMessage{"messages.policy.backupFile"});
         }
         if constexpr (std::is_same_v<T, ManageProgramFile>)
           return allow();
@@ -210,9 +211,11 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s,
         // off until it has started again with them.
         if constexpr (std::is_same_v<T, CheckRestore> || std::is_same_v<T, RestoreBackup>) {
           if (s.machine == MachineState::on)
-            return reject("Switch the machine off or press E-stop before a restore.");
+            return reject("Switch the machine off or press E-stop before a restore.",
+                          RefusalMessage{"messages.policy.restoreMachineOn"});
           if (s.interp != InterpState::idle || homing(s))
-            return reject("Stop the program before a restore.");
+            return reject("Stop the program before a restore.",
+                          RefusalMessage{"messages.policy.restoreProgram"});
           return allow();
         }
 

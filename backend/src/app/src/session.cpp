@@ -1767,7 +1767,8 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
                 });
           }
           Stage step;
-          step.reply = {done.outcome, std::move(done.reason)};
+          step.reply.outcome = done.outcome;
+          step.reply.reason = std::move(done.reason);
           step.produced = std::move(done.messages);
           step.quit = done.quit;
           return step;

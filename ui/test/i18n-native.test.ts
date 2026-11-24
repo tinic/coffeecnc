@@ -28,6 +28,8 @@ const adapter = import.meta.glob<string>([
   '../../backend/src/app/src/tool_model_store.cpp',
   '../../backend/src/app/src/tool_model_json.hpp',
   '../../backend/src/app/include/coffeecnc/app/tool_model_store.hpp',
+  '../../backend/src/app/src/program_store.cpp',
+  '../../backend/src/app/src/program_edit.cpp',
 ], { query: '?raw', import: 'default', eager: true })
 /** Panel modules whose English reaches the operator as run-time text (a result reason, an import error). */
 const modules = import.meta.glob<string>(['../src/bridge.ts', '../src/step.worker.ts', '../src/step-model.ts'],

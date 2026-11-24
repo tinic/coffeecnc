@@ -71,14 +71,18 @@ void replaces_one_line_durably(const fs::path& base) {
   ProgramWriter writer{programs, writes};
 
   const auto written = writer.replace_line(part.string(), 2, "G1 X10 F600", "G1 X10 F450");
-  require(written.has_value(), "The feed is replaced: " + (written ? std::string{} : written.error()));
+  require(written.has_value(),
+          "The feed is replaced: " + (written ? std::string{} : written.error().text));
   require(read(part) == "G21\r\nG1 X10 F450\r\nS1500 M3\nM30", "Only that number changes; line ends are kept");
   require(!fs::exists(root / ".part.ngc.coffeecnc-edit"), "No temporary file is left");
 
-  require(writer.replace_line(part.string(), 4, "M30", "M30").error().starts_with("Only the number"),
+  require(writer.replace_line(part.string(), 4, "M30", "M30")
+              .error()
+              .text.starts_with("Only the number"),
           "Anything but a feed or speed is refused");
   const auto stale = writer.replace_line(part.string(), 2, "G1 X10 F600", "G1 X10 F300");
-  require(!stale && stale.error().starts_with("The program changed"), "A line that changed is refused");
+  require(!stale && stale.error().text.starts_with("The program changed"),
+          "A line that changed is refused");
   require(read(part) == "G21\r\nG1 X10 F450\r\nS1500 M3\nM30", "A refused edit writes nothing");
   require(!writer.replace_line(part.string(), 9, "S1500 M3", "S900 M3"), "A line that does not exist");
   require(writer.replace_line(part.string(), 3, "S1500 M3", "S900 M3").has_value(), "The last-but-one line");
@@ -101,14 +105,15 @@ void creates_new_programs(const fs::path& base) {
 
   const auto made = writer.create("facing.ngc", text, false);
   require(made && *made == fs::canonical(root).string() + "/facing.ngc",
-          "A new program is written in the program directory: " + made.error_or(""));
+          "A new program is written in the program directory: " +
+              made.error_or(LocalizedReason{}).text);
   require(read(root / "facing.ngc") == text, "The text is written exactly");
   require(!fs::exists(root / ".facing.ngc.coffeecnc-new"), "No temporary file is left");
   require((fs::status(root / "facing.ngc").permissions() & fs::perms::others_all) == fs::perms::none,
           "Only its owner can read it");
 
   const auto again = writer.create("facing.ngc", "M2\n", false);
-  require(!again && again.error() == "A program named facing.ngc exists already.",
+  require(!again && again.error().text == "A program named facing.ngc exists already.",
           "An existing program is not written over");
   require(read(root / "facing.ngc") == text, "It keeps its text");
   require(writer.create("facing.ngc", "M30\n", true).has_value() && read(root / "facing.ngc") == "M30\n",
@@ -122,7 +127,7 @@ void creates_new_programs(const fs::path& base) {
   // A dangling link already occupies this name.
   fs::create_symlink(root / "nowhere" / "target.ngc", root / "dangling.ngc");
   const auto through = writer.create("dangling.ngc", text, false);
-  require(!through && through.error().find("exists already") != std::string::npos &&
+  require(!through && through.error().text.find("exists already") != std::string::npos &&
               fs::is_symlink(root / "dangling.ngc") && !fs::exists(root / "nowhere"),
           "A dangling link blocks non-replacing saves at the existence check");
   require(!fs::exists(root / ".dangling.ngc.coffeecnc-new"), "Nor is a temporary file left");
@@ -154,14 +159,14 @@ void saves_over_a_program_with_its_stamp(const fs::path& base) {
   const std::string after = "G21\nG1 X12 F450\nG1 Y5\nM2\n";
   const auto saved = writer.replace(part.string(), after, shown->stamp);
   require(saved && *saved == fs::canonical(part).string(),
-          "The edited text is saved over the program: " + saved.error_or(""));
+          "The edited text is saved over the program: " + saved.error_or(LocalizedReason{}).text);
   require(read(part) == after, "The new text is written exactly");
   require(read(root / "kept.ngc") == before,
           "The old file is replaced by a rename, never rewritten in place");
   require(!fs::exists(root / ".part.ngc.coffeecnc-edit"), "No temporary file is left");
 
   const auto stale = writer.replace(part.string(), "M2\n", shown->stamp);
-  require(!stale && stale.error() ==
+  require(!stale && stale.error().text ==
                         "The program file changed since it was opened. Open it again to edit it.",
           "The stamp of the text before the save no longer matches");
   require(read(part) == after, "A refused save writes nothing");
@@ -175,7 +180,7 @@ void saves_over_a_program_with_its_stamp(const fs::path& base) {
 
   const std::string cap(max_saved_program_bytes + 1, 'G');
   const auto large = writer.replace(part.string(), cap, program_stamp(read(part)));
-  require(!large && large.error() == "The program text is longer than 512 KiB.",
+  require(!large && large.error().text == "The program text is longer than 512 KiB.",
           "A text above 512 KiB is refused");
   require(writer.replace(part.string(), std::string(max_saved_program_bytes, ';'),
                          program_stamp(read(part)))
@@ -218,7 +223,7 @@ void keeps_external_changes_during_sync() {
   };
   ProgramWriter writer{programs, writes};
   const auto save = writer.replace(path, "G0 X2\nM2\n", program_stamp(before));
-  require(!save && save.error().starts_with("The program file changed"),
+  require(!save && save.error().text.starts_with("The program file changed"),
           "The original is checked once more after the temporary file is synced");
   require(disk.files.at(path) == external && writes.count("rename") == 0,
           "The external writer's text remains on disk");
@@ -240,18 +245,20 @@ void a_failed_save_keeps_the_program() {
     ProgramWriter writer{programs, writes};
     const auto saved = writer.replace(path, "G0 X2\nM2\n", program_stamp(before));
     if (step == "sync_directory") {
-      require(!saved && saved.error().starts_with("The program was replaced"),
+      require(!saved && saved.error().text.starts_with("The program was replaced"),
               "A directory sync failure reports that replacement already happened");
       require(disk.files.at(path) == "G0 X2\nM2\n", "The new text is visible after the rename");
       FakeToolModelFiles upload_writes{disk};
       upload_writes.failures.emplace(step, 1);
       ProgramWriter upload_writer{programs, upload_writes};
       const auto uploaded = upload_writer.receive("part.ngc", "M30\n", true, {});
-      require(!uploaded && uploaded.error().starts_with("Saved on disk. Directory synchronization failed.") &&
+      require(!uploaded &&
+                  uploaded.error().text.starts_with(
+                      "Saved on disk. Directory synchronization failed.") &&
                   disk.files.at(path) == "M30\n",
               "An upload reports a directory sync failure separately from publication");
     } else {
-      require(!saved && saved.error().starts_with("The program could not be saved."),
+      require(!saved && saved.error().text.starts_with("The program could not be saved."),
               "A failed " + step + " is reported");
       require(disk.files.at(path) == before, "A failed " + step + " keeps the program");
     }
@@ -316,7 +323,9 @@ void manages_program_files(const fs::path& base) {
           return saved;
         return std::unexpected("Saved on disk, but not reopened. LinuxCNC refused the open.");
       });
-  require(!reopened && reopened.error() == "Saved on disk, but not reopened. LinuxCNC refused the open." &&
+  require(!reopened &&
+              reopened.error().text ==
+                  "Saved on disk, but not reopened. LinuxCNC refused the open." &&
               read(programs / "part.ngc") == bytes,
           "A failed reopen preserves the published file and reports the failure accurately");
   fs::remove_all(root);

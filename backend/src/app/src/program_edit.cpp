@@ -21,8 +21,12 @@
 namespace coffeecnc {
 namespace {
 
-constexpr auto changed_program = "The program file changed since it was opened. Open it again to edit it.";
 constexpr std::size_t max_copy_bytes = 32uz * 1024 * 1024;
+
+auto changed_program() -> LocalizedReason {
+  return {"The program file changed since it was opened. Open it again to edit it.",
+          MessageKey{"backend.programEdit.changedSinceOpened"}};
+}
 
 auto incoming_temporary_name() -> std::string {
   static std::atomic<unsigned long> sequence{};
@@ -127,20 +131,23 @@ ProgramWriter::ProgramWriter(const ProgramStore& programs, ToolModelFiles& files
 
 auto ProgramWriter::replace_line(std::string_view path, int line, std::string_view before,
                                  std::string_view after)
-    -> std::expected<std::string, std::string> {
+    -> std::expected<std::string, LocalizedReason> {
   auto resolved = programs_.resolve_program(path);
   if (!resolved)
     return std::unexpected(resolved.error());
   if (!feed_or_speed_edit(before, after))
-    return std::unexpected("Only the number of one F or S word can be changed.");
+    return std::unexpected(LocalizedReason{"Only the number of one F or S word can be changed.",
+                                           MessageKey{"backend.programEdit.oneWord"}});
   const auto content = files_.read(*resolved, ProgramStore::max_program_bytes);
   if (!content)
-    return std::unexpected(content.error());
+    return std::unexpected(LocalizedReason{content.error()});
   const auto& file = *content;
   if (!file)
-    return std::unexpected("The program no longer exists.");
+    return std::unexpected(LocalizedReason{"The program no longer exists.",
+                                           MessageKey{"backend.programEdit.noLongerExists"}});
   if (file->more)
-    return std::unexpected("The program is too large to edit here.");
+    return std::unexpected(LocalizedReason{"The program is too large to edit here.",
+                                           MessageKey{"backend.programEdit.tooLarge"}});
   const std::string& bytes = file->bytes;
 
   // Where line `line` starts and ends, without its line end (\n, \r\n or \r).
@@ -148,16 +155,21 @@ auto ProgramWriter::replace_line(std::string_view path, int line, std::string_vi
   for (int number = 1; number < line; ++number) {
     const auto end = bytes.find_first_of("\r\n", start);
     if (end == std::string::npos)
-      return std::unexpected(std::format("The program has no line {}.", line));
+      return std::unexpected(LocalizedReason{
+          std::format("The program has no line {}.", line),
+          MessageKey{"backend.programEdit.noLine", {{"line", std::to_string(line)}}}});
     start = end + (bytes.compare(end, 2, "\r\n") == 0 ? 2 : 1);
   }
   if (line < 1 || start >= bytes.size())
-    return std::unexpected(std::format("The program has no line {}.", line));
+    return std::unexpected(LocalizedReason{
+        std::format("The program has no line {}.", line),
+        MessageKey{"backend.programEdit.noLine", {{"line", std::to_string(line)}}}});
   auto stop = bytes.find_first_of("\r\n", start);
   if (stop == std::string::npos)
     stop = bytes.size();
   if (std::string_view{bytes}.substr(start, stop - start) != before)
-    return std::unexpected("The program changed since it was shown. Open it again.");
+    return std::unexpected(LocalizedReason{"The program changed since it was shown. Open it again.",
+                                           MessageKey{"backend.programEdit.changedSinceShown"}});
 
   const std::string replaced = bytes.substr(0, start) + std::string{after} + bytes.substr(stop);
   if (auto written = write_over(*resolved, replaced, ".coffeecnc-edit"); !written)
@@ -167,8 +179,8 @@ auto ProgramWriter::replace_line(std::string_view path, int line, std::string_vi
 
 auto ProgramWriter::write_over(const std::string& resolved, std::string_view bytes,
                                std::string_view suffix, std::optional<std::string_view> previous,
-                               const std::function<std::string()>& check_controller)
-    -> std::expected<void, std::string> {
+                               const std::function<LocalizedReason()>& check_controller)
+    -> std::expected<void, LocalizedReason> {
   const auto slash = resolved.rfind('/');
   const std::string directory = resolved.substr(0, slash);
   const std::string temporary =
@@ -188,44 +200,50 @@ auto ProgramWriter::write_over(const std::string& resolved, std::string_view byt
     const auto current = files_.read(resolved, previous->size() + 1);
     if (!current) {
       files_.discard(temporary);
-      return std::unexpected(current.error());
+      return std::unexpected(LocalizedReason{current.error()});
     }
     const auto& file = *current;
     if (!file || file->more || file->bytes != *previous) {
       files_.discard(temporary);
-      return std::unexpected(std::string{changed_program});
+      return std::unexpected(changed_program());
     }
   }
   if (step)
     step = files_.rename(temporary, resolved);
   if (!step) {
     files_.discard(temporary);
-    return std::unexpected("The program could not be saved. " + step.error());
+    return std::unexpected(LocalizedReason{
+        std::format("The program could not be saved. {}", step.error()),
+        MessageKey{"backend.programEdit.notSavedDetail", {{"detail", step.error()}}}});
   }
   if (auto durable = files_.sync_directory(directory.empty() ? "/" : directory); !durable)
-    return std::unexpected("The program was replaced, but its directory could not be synchronized. " +
-                           durable.error());
+    return std::unexpected(LocalizedReason{
+        std::format("The program was replaced, but its directory could not be synchronized. {}",
+                    durable.error()),
+        MessageKey{"backend.programEdit.notSynchronized", {{"detail", durable.error()}}}});
   return {};
 }
 
 auto ProgramWriter::replace(std::string_view path, std::string_view text, std::string_view stamp,
-                            const std::function<std::string()>& check_controller)
-    -> std::expected<std::string, std::string> {
+                            const std::function<LocalizedReason()>& check_controller)
+    -> std::expected<std::string, LocalizedReason> {
   auto resolved = programs_.resolve_program(path);
   if (!resolved)
     return std::unexpected(resolved.error());
   if (text.size() > max_saved_program_bytes)
-    return std::unexpected(std::string("The program text is longer than 512 KiB."));
+    return std::unexpected(LocalizedReason{"The program text is longer than 512 KiB.",
+                                           MessageKey{"backend.programEdit.textTooLong"}});
   // As read_program reads it, so that the stamps compare the same bytes.
   const auto content = files_.read(*resolved, ProgramStore::max_program_bytes + 1);
   if (!content)
-    return std::unexpected(content.error());
+    return std::unexpected(LocalizedReason{content.error()});
   const auto& file = *content;
   if (!file)
-    return std::unexpected("The program no longer exists.");
+    return std::unexpected(LocalizedReason{"The program no longer exists.",
+                                           MessageKey{"backend.programEdit.noLongerExists"}});
   const std::string& bytes = file->bytes;
   if (file->more || program_stamp(bytes) != stamp)
-    return std::unexpected(changed_program);
+    return std::unexpected(changed_program());
   const auto end = bytes.find_first_of("\r\n");
   const bool windows = end != std::string::npos && bytes.compare(end, 2, "\r\n") == 0;
   std::string converted;
@@ -239,7 +257,9 @@ auto ProgramWriter::replace(std::string_view path, std::string_view text, std::s
   }
   const std::string_view saved = windows ? std::string_view{converted} : text;
   if (saved.size() > max_saved_program_bytes)
-    return std::unexpected("The program text with its line endings is longer than 512 KiB.");
+    return std::unexpected(
+        LocalizedReason{"The program text with its line endings is longer than 512 KiB.",
+                        MessageKey{"backend.programEdit.textWithEndingsTooLong"}});
   if (auto written = write_over(*resolved, saved, ".coffeecnc-edit", bytes, check_controller);
       !written)
     return std::unexpected(written.error());
@@ -247,36 +267,42 @@ auto ProgramWriter::replace(std::string_view path, std::string_view text, std::s
 }
 
 auto ProgramWriter::create(std::string_view path, std::string_view text, bool replace)
-    -> std::expected<std::string, std::string> {
+    -> std::expected<std::string, LocalizedReason> {
   auto target = programs_.resolve_new_program(path);
   if (!target)
     return std::unexpected(target.error());
   const auto slash = target->path.rfind('/');
   const std::string name = target->path.substr(slash + 1);
   if (target->exists && !replace)
-    return std::unexpected(std::format("A program named {} exists already.", name));
+    return std::unexpected(
+        LocalizedReason{std::format("A program named {} exists already.", name),
+                        MessageKey{"backend.programEdit.exists", {{"name", name}}}});
   if (text.size() > max_saved_program_bytes)
-    return std::unexpected(std::string("The program text is longer than 512 KiB."));
+    return std::unexpected(LocalizedReason{"The program text is longer than 512 KiB.",
+                                           MessageKey{"backend.programEdit.textTooLong"}});
   return write_new(std::move(*target), text, replace, std::format(".{}.coffeecnc-new", name), {});
 }
 
 auto ProgramWriter::receive(std::string_view path, std::string_view bytes, bool replace,
-                            const Publish& publish) -> std::expected<std::string, std::string> {
+                            const Publish& publish) -> std::expected<std::string, LocalizedReason> {
   if (bytes.size() > ProgramStore::max_program_bytes)
-    return std::unexpected(std::string("The program is longer than 16 MiB."));
+    return std::unexpected(LocalizedReason{"The program is longer than 16 MiB.",
+                                           MessageKey{"backend.programFiles.size"}});
   auto target = programs_.resolve_new_program(path);
   if (!target)
     return std::unexpected(target.error());
   return write_new(std::move(*target), bytes, replace, incoming_temporary_name(), publish);
 }
 
-auto ProgramWriter::write_new(ProgramStore::NewProgram target, std::string_view bytes,
-                              bool replace, std::string temporary_name, const Publish& publish)
-    -> std::expected<std::string, std::string> {
+auto ProgramWriter::write_new(ProgramStore::NewProgram target, std::string_view bytes, bool replace,
+                              std::string temporary_name, const Publish& publish)
+    -> std::expected<std::string, LocalizedReason> {
   const auto slash = target.path.rfind('/');
   const std::string name = target.path.substr(slash + 1);
   if (target.exists && !replace)
-    return std::unexpected(std::format("A program named {} exists already.", name));
+    return std::unexpected(
+        LocalizedReason{std::format("A program named {} exists already.", name),
+                        MessageKey{"backend.programEdit.exists", {{"name", name}}}});
   const std::string directory = slash == 0 ? "/" : target.path.substr(0, slash);
   const std::string temporary = std::format("{}/{}", directory, temporary_name);
   bool committed = false;
@@ -294,22 +320,27 @@ auto ProgramWriter::write_new(ProgramStore::NewProgram target, std::string_view 
     step = publish ? publish(target.path, commit) : commit();
   if (!step && !committed) {
     files_.discard(temporary);
-    return std::unexpected("The program could not be saved: " + step.error());
+    return std::unexpected(
+        LocalizedReason{std::format("The program could not be saved: {}", step.error()),
+                        MessageKey{"backend.programEdit.notSaved", {{"detail", step.error()}}}});
   }
   if (!replace)
     files_.discard(temporary);
   auto synced = files_.sync_directory(directory);
   if (!step)
-    return std::unexpected(std::move(step.error()));
+    return std::unexpected(LocalizedReason{std::move(step.error())});
   if (!synced)
-    return std::unexpected("Saved on disk. Directory synchronization failed. " + synced.error());
+    return std::unexpected(LocalizedReason{
+        std::format("Saved on disk. Directory synchronization failed. {}", synced.error()),
+        MessageKey{"backend.programFiles.directorySync", {{"detail", synced.error()}}}});
   return std::move(target.path);
 }
 
 auto ProgramWriter::manage(const ManageProgramFile& command, std::string_view loaded)
-    -> std::expected<void, std::string> {
+    -> std::expected<void, LocalizedReason> {
   if (!programs_.has_program_directory())
-    return std::unexpected("No program directory is configured.");
+    return std::unexpected(LocalizedReason{"No program directory is configured.",
+                                           MessageKey{"backend.programStore.noDirectory"}});
   if (command.operation == ProgramFileOperation::copy) {
     const auto source = programs_.resolve_program(command.path);
     if (!source)
@@ -320,12 +351,14 @@ auto ProgramWriter::manage(const ManageProgramFile& command, std::string_view lo
       return std::unexpected(target.error());
     const auto content = files_.read(*source, max_copy_bytes);
     if (!content)
-      return std::unexpected(content.error());
+      return std::unexpected(LocalizedReason{content.error()});
     const auto& file = *content;
     if (!file)
-      return std::unexpected("The file or folder no longer exists.");
+      return std::unexpected(LocalizedReason{"The file or folder no longer exists.",
+                                             MessageKey{"backend.programFiles.missing"}});
     if (file->more)
-      return std::unexpected("The file is longer than 32 MiB.");
+      return std::unexpected(LocalizedReason{"The file is longer than 32 MiB.",
+                                             MessageKey{"backend.programFiles.copySize"}});
     const auto copied = write_new(*target, file->bytes, false, incoming_temporary_name(), {});
     if (!copied)
       return std::unexpected(copied.error());
@@ -340,31 +373,39 @@ auto ProgramWriter::manage(const ManageProgramFile& command, std::string_view lo
   if (command.operation == ProgramFileOperation::create_folder) {
     const auto folder = files_.make_directory(entry->path);
     if (!folder)
-      return std::unexpected(folder.error());
+      return std::unexpected(LocalizedReason{folder.error()});
     if (!folder->created)
-      return std::unexpected("A file or folder already has that name.");
-    return files_.sync_directory(directory);
+      return std::unexpected(LocalizedReason{"A file or folder already has that name.",
+                                             MessageKey{"backend.programFiles.nameTaken"}});
+    return files_.sync_directory(directory).transform_error(
+        [](std::string reason) { return LocalizedReason{std::move(reason)}; });
   }
   if (!entry->exists)
-    return std::unexpected("The file or folder no longer exists.");
+    return std::unexpected(LocalizedReason{"The file or folder no longer exists.",
+                                           MessageKey{"backend.programFiles.missing"}});
   const auto contains = [&](std::string_view path) -> bool {
     return path == entry->path || path.starts_with(entry->path + "/");
   };
   if (contains(loaded) || contains(programs_.resolve_program(loaded).value_or("")))
-    return std::unexpected("Open a different program before moving or deleting this item.");
+    return std::unexpected(
+        LocalizedReason{"Open a different program before moving or deleting this item.",
+                        MessageKey{"backend.programFiles.loaded"}});
   if (command.operation == ProgramFileOperation::remove) {
     if (::remove(entry->path.c_str()) != 0)
-      return std::unexpected(std::error_code(errno, std::generic_category()).message());
+      return std::unexpected(
+          LocalizedReason{std::error_code(errno, std::generic_category()).message()});
   } else {
     if (command.name.find_first_of("/\\") != std::string::npos)
-      return std::unexpected("Use a single file or folder name.");
+      return std::unexpected(LocalizedReason{"Use a single file or folder name.",
+                                             MessageKey{"backend.programFiles.oneName"}});
     const auto target = programs_.resolve_new_program(entry->path.substr(0, slash + 1) + command.name);
     if (!target)
       return std::unexpected(target.error());
     if (auto moved = rename_file(entry->path, target->path); !moved)
-      return std::unexpected(moved.error());
+      return std::unexpected(LocalizedReason{moved.error()});
   }
-  return files_.sync_directory(directory);
+  return files_.sync_directory(directory).transform_error(
+      [](std::string reason) { return LocalizedReason{std::move(reason)}; });
 }
 
 } // namespace coffeecnc

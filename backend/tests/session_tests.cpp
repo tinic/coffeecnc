@@ -1152,8 +1152,13 @@ void directory_listing() {
              "Path is not available: No such file or directory");
   rig.expect(R"("type":"list_directory","path":"part.ngc")", "rejected",
              "Path is not a directory.");
-  rig.expect(R"("type":"list_directory","path":"locked")", "rejected",
-             "Directory cannot be read: Permission denied");
+  const auto denied = results(rig.send(R"("type":"list_directory","path":"locked")"));
+  require(denied.size() == 1 && denied.front().at("outcome") == "rejected" &&
+              denied.front().at("reason") == "Directory cannot be read: Permission denied" &&
+              denied.front().at("localization") ==
+                  Json{{"key", "backend.programStore.folderUnreadable"},
+                       {"params", {{"detail", "Permission denied"}}}},
+          "A directory error carries the original detail and its catalog key");
   rig.acted({}, "A refused listing is not a controller action either");
 
   // The listing does not need the machine.
@@ -2935,7 +2940,8 @@ void editor_saves_over_the_loaded_program() {
   const auto stale = send(save(part, program_stamp("G0 X0\nM2\n")));
   require(stale.at("outcome") == "failed" &&
               stale.at("reason") ==
-                  "The program file changed since it was opened. Open it again to edit it.",
+                  "The program file changed since it was opened. Open it again to edit it." &&
+              stale.at("localization").at("key") == "backend.programEdit.changedSinceOpened",
           "A file changed since it was opened is not written over: " + stale.dump());
   require(disk.files.at(part) == before && port.calls.empty(),
           "Nothing is written and nothing opened while refused");
@@ -2947,8 +2953,10 @@ void editor_saves_over_the_loaded_program() {
   const auto started = send(save(part, stamp));
   require(started.at("outcome") == "failed" &&
               started.at("reason") == "Stop the program before saving it." &&
+              started.at("localization").at("key") == "messages.policy.stopBeforeSave" &&
               disk.files.at(part) == before && port.calls.empty(),
-          "A program that starts during the temporary-file sync prevents replacement: " + started.dump());
+          "A program that starts during the temporary-file sync prevents replacement: " +
+              started.dump());
   writes.during = {};
   port.state.interp = InterpState::idle;
 
@@ -2964,6 +2972,9 @@ void editor_saves_over_the_loaded_program() {
   require(refused_reopen.at("outcome") == "failed" &&
               refused_reopen.at("reason") ==
                   "Saved on disk, but not reopened. LinuxCNC refused the open." &&
+              refused_reopen.at("localization") ==
+                  Json{{"key", "messages.session.savedNotReopened"},
+                       {"params", {{"detail", "LinuxCNC refused the open."}}}} &&
               disk.files.at(part) == "G0 X2\nM2\n",
           "A reopen failure reports the disk save separately: " + refused_reopen.dump());
 }

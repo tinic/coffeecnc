@@ -80,7 +80,7 @@ void listing() {
   const ProgramStore store{files, root};
 
   const auto top = store.list(std::nullopt);
-  require(top.has_value(), "The program directory lists: " + top.error_or(""));
+  require(top.has_value(), "The program directory lists: " + top.error_or(LocalizedReason{}).text);
   if (!top)
     return;
   require(top->path == root && !top->parent, "A null path is the root, which has no parent");
@@ -164,7 +164,7 @@ void listing_refusals() {
   };
   for (const auto& [path, reason] : rows) {
     const auto refused = store.list(path);
-    require(!refused.has_value() && refused.error_or("") == reason,
+    require(!refused.has_value() && refused.error_or(LocalizedReason{}).text == reason,
             std::format("Listing \"{}\" is refused with \"{}\" but got \"{}\"", path, reason,
                         refused.error_or("a listing")));
   }
@@ -175,16 +175,20 @@ void listing_refusals() {
 
 void roots() {
   auto files = shop();
-  require(ProgramStore{files, ""}.list(std::nullopt).error_or("") ==
+  require(ProgramStore{files, ""}.list(std::nullopt).error_or(LocalizedReason{}).text ==
                   "No program directory is configured." &&
-              ProgramStore{files, ""}.resolve_program(in_root("part.ngc")).error_or("") ==
-                  "No program directory is configured.",
+              ProgramStore{files, ""}
+                      .resolve_program(in_root("part.ngc"))
+                      .error_or(LocalizedReason{})
+                      .text == "No program directory is configured.",
           "Without a configured directory everything is refused");
-  require(ProgramStore{files, "/gone"}.list(std::nullopt).error_or("") ==
+  require(ProgramStore{files, "/gone"}.list(std::nullopt).error_or(LocalizedReason{}).text ==
               "The program directory is not available: No such file or directory",
           "A root that does not exist refuses everything");
-  require(ProgramStore{files, in_root("part.ngc")}.list(std::nullopt).error_or("") ==
-              "Path is not a directory.",
+  require(ProgramStore{files, in_root("part.ngc")}
+                  .list(std::nullopt)
+                  .error_or(LocalizedReason{})
+                  .text == "Path is not a directory.",
           "A root that is a file lists nothing");
 
   files.link("/nc", root);
@@ -194,7 +198,7 @@ void roots() {
   require(linked.resolve_program("/nc/part.ngc") == in_root("part.ngc") &&
               linked.resolve_program(in_root("part.ngc")) == in_root("part.ngc"),
           "Below a linked root, both spellings resolve to the target");
-  require(linked.list(std::string("/home/cnc")).error_or("") == outside_reason,
+  require(linked.list(std::string("/home/cnc")).error_or(LocalizedReason{}).text == outside_reason,
           "The linked root's real parent is outside");
 
   const ProgramStore whole{files, "/"};
@@ -207,12 +211,14 @@ void roots() {
 
   // The root's own name is not UTF-8: the panel could not name anything below it.
   files.file("/caf\xE9/part.ngc", "M2\n");
-  require(ProgramStore{files, "/caf\xE9"}.list(std::nullopt).error_or("") ==
+  require(ProgramStore{files, "/caf\xE9"}.list(std::nullopt).error_or(LocalizedReason{}).text ==
               "Path is not UTF-8 text.",
           "A resolved path that is not UTF-8 is refused");
   files.link(in_root("latin"), "/caf\xE9");
-  require(ProgramStore{files, "/"}.resolve_program(in_root("latin/part.ngc")).error_or("") ==
-              "Path is not UTF-8 text.",
+  require(ProgramStore{files, "/"}
+                  .resolve_program(in_root("latin/part.ngc"))
+                  .error_or(LocalizedReason{})
+                  .text == "Path is not UTF-8 text.",
           "Also when a UTF-8 request resolves to it through a link");
 }
 
@@ -287,9 +293,9 @@ void open_rules() {
   };
   for (const auto& [path, reason] : rows) {
     const auto refused = store.resolve_program(path);
-    require(!refused.has_value() && refused.error_or("") == reason,
+    require(!refused.has_value() && refused.error_or(LocalizedReason{}).text == reason,
             std::format("Opening \"{}\" is refused with \"{}\" but got \"{}\"", path, reason,
-                        refused.error_or("a path")));
+                        refused.error_or(LocalizedReason{"a path"}).text));
     const auto unread = store.read_program(path, 1);
     require(!unread.has_value() && unread.error_or("") == reason,
             "Reading \"" + path + "\" is refused the same way");
@@ -310,7 +316,8 @@ void open_rules() {
   require(longest.size() == 254 && store.resolve_program(longest) == longest,
           "A resolved path of 254 bytes is accepted");
   for (const auto& path : std::vector<std::string>{longest + 'x', "short"})
-    require(store.resolve_program(path).error_or("") == "Program path is longer than 254 bytes.",
+    require(store.resolve_program(path).error_or(LocalizedReason{}).text ==
+                "Program path is longer than 254 bytes.",
             "A resolved path of 255 bytes is refused: " + path);
   const auto listed = store.list(std::string("long"));
   require(listed && listed->entries.size() == 2,
@@ -351,9 +358,9 @@ void new_program_rules() {
   };
   for (const auto& [path, reason] : rows) {
     const auto refused = store.resolve_new_program(path);
-    require(!refused && refused.error_or("") == reason,
+    require(!refused && refused.error_or(LocalizedReason{}).text == reason,
             std::format("Saving \"{}\" is refused with \"{}\" but got \"{}\"", path, reason,
-                        refused ? refused->path : refused.error()));
+                        refused ? refused->path : refused.error().text));
   }
   require(!ProgramStore{files, ""}.resolve_new_program("x.ngc"), "No program directory, no saving");
 }
@@ -364,7 +371,7 @@ void program_text() {
   const auto read = [&files, &store](std::string content) -> ProgramText {
     files.file(in_root("p.ngc"), std::move(content));
     const auto program = store.read_program("p.ngc", 9);
-    require(program.has_value(), "The program reads: " + program.error_or(""));
+    require(program.has_value(), "The program reads: " + program.error_or(LocalizedReason{}).text);
     return program ? *program : ProgramText{};
   };
 
@@ -478,7 +485,8 @@ void on_the_host(const std::filesystem::path& scratch) {
   const ProgramStore store{files, (base / "root").string()};
 
   const auto listed = store.list(std::nullopt);
-  require(listed.has_value(), "The host directory lists: " + listed.error_or(""));
+  require(listed.has_value(),
+          "The host directory lists: " + listed.error_or(LocalizedReason{}).text);
   if (listed) {
     require(listed->path == top && !listed->parent, "The root is reported resolved");
     require(names(*listed) == Lines{"sub", "Apple.ngc", "inside-link", "part.ngc"},
@@ -497,13 +505,13 @@ void on_the_host(const std::filesystem::path& scratch) {
   for (const auto& path :
        std::vector<std::string>{"..", "sub/../..", outside, "/", "escape-dir", "escape-absolute",
                                 top + "/escape-dir", top + "/../outside"})
-    require(store.list(path).error_or("") == outside_reason,
+    require(store.list(path).error_or(LocalizedReason{}).text == outside_reason,
             "Listing outside the root is refused: " + path);
   for (const auto& path : std::vector<std::string>{
            "../outside/secret.ngc", outside + "/secret.ngc", "escape-file", "escape-dir/secret.ngc",
            "escape-absolute/secret.ngc", top + "/escape-absolute/secret.ngc",
            "sub/../../outside/secret.ngc", "/etc/hosts"}) {
-    require(store.resolve_program(path).error_or("") == outside_reason,
+    require(store.resolve_program(path).error_or(LocalizedReason{}).text == outside_reason,
             "Opening outside the root is refused: " + path);
     require(store.read_program(path, 1).error_or("") == outside_reason,
             "Reading outside the root is refused: " + path);
@@ -528,7 +536,8 @@ void on_the_host(const std::filesystem::path& scratch) {
   const auto through = linked.list(std::nullopt);
   require(through && through->path == top && !through->parent,
           "A root given as a link is its target");
-  require(linked.list(fs::canonical(base).string()).error_or("") == outside_reason,
+  require(linked.list(fs::canonical(base).string()).error_or(LocalizedReason{}).text ==
+              outside_reason,
           "And its real parent is outside");
 
   // The adapter itself.

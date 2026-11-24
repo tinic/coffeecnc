@@ -314,6 +314,9 @@ auto encoded_messages() -> std::vector<Encoded> {
   messages.emplace_back(encode_result(44, CommandOutcome::timed_out, "LinuxCNC did not answer."));
   messages.emplace_back(encode_result(47, CommandOutcome::timed_out, "LinuxCNC did not answer.", {},
                                       {}, {}, MessageKey{"messages.session.linuxcncNoAnswer"}));
+  messages.emplace_back(
+      encode_result(48, CommandOutcome::failed, "A program named part.ngc exists already.", {}, {},
+                    {}, MessageKey{"backend.programEdit.exists", {{"name", "part.ngc"}}}));
   const RestartPoint restart{.line = 25,
                              .tool = 98,
                              .h = 98,

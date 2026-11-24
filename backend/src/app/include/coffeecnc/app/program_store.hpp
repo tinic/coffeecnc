@@ -2,6 +2,7 @@
 #define COFFEECNC_APP_PROGRAM_STORE_HPP
 
 #include <coffeecnc/app/file_system.hpp>
+#include <coffeecnc/core/message_key.hpp>
 #include <coffeecnc/core/panel_messages.hpp>
 
 #include <cstddef>
@@ -54,12 +55,12 @@ public:
   // a dot and hold no control character. Directories first, then by name without regard to the
   // case of ASCII letters, then by name.
   [[nodiscard]] auto list(const std::optional<std::string>& path) const
-      -> std::expected<Directory, std::string>;
+      -> std::expected<Directory, LocalizedReason>;
 
   // The resolved path to hand to LinuxCNC for `open_program`: a regular file inside the root, at
   // most max_program_path_bytes long.
   [[nodiscard]] auto resolve_program(std::string_view path) const
-      -> std::expected<std::string, std::string>;
+      -> std::expected<std::string, LocalizedReason>;
 
   // Where `save_program` may write a program named by `path`: absolute, or relative to the
   // program directory (`start`, the root without one). Its directory must resolve to the
@@ -70,7 +71,7 @@ public:
     bool exists{};
   };
   [[nodiscard]] auto resolve_new_program(std::string_view path) const
-      -> std::expected<NewProgram, std::string>;
+      -> std::expected<NewProgram, LocalizedReason>;
 
   // The text of a program under the same rules, for the `program` message. Lines end at `\n`,
   // `\r\n` or `\r`; a line end at the end of the file does not start another line. Every byte
@@ -84,7 +85,8 @@ private:
     std::string root;
     std::string path;
   };
-  [[nodiscard]] auto resolve(std::string_view path) const -> std::expected<Resolved, std::string>;
+  [[nodiscard]] auto resolve(std::string_view path) const
+      -> std::expected<Resolved, LocalizedReason>;
 
   const FileSystem& files_;
   std::string root_;

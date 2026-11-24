@@ -936,6 +936,25 @@ const examples = [
   },
   {
     "type": "preview",
+    "context": 4821343,
+    "state": "failed",
+    "error": {
+      "line": 3,
+      "text": "The preview ends at line 3: M199 runs a program of the machine's own: what it does is not known to the preview.",
+      "localization": {
+        "key": "backend.previewEngine.endsAtLine",
+        "params": { "line": "3", "detail": "M199 runs a program of the machine's own: what it does is not known to the preview" },
+        "params_localization": {
+          "detail": { "key": "backend.previewEngine.stopMachineMCode", "params": { "code": "199" } }
+        }
+      }
+    },
+    "segments": [],
+    "bounds": null,
+    "dwells": []
+  },
+  {
+    "type": "preview",
     "context": 4821337,
     "state": "pending",
     "error": null,

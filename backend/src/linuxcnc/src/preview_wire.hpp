@@ -85,7 +85,7 @@ struct HelperRequest {
 //                                                       coordinates, mm
 //   error <line> <text>     the interpreter's error; nothing follows but `end`
 //   stop <line> <text>      the path after this line depends on the machine
-//   stop_known <line> <id>  the same stop with an opted-in CoffeeCNC reason code
+//   stop_known <line> <id> [number]  a CoffeeCNC stop code, optionally with a number (v2)
 //   cut <line> <text>       a limit was reached
 //   restart_refused <id>   a CoffeeCNC restart refusal; old helpers send restart_blocked <text>
 //   end ok|error|stop|cut   the last line of a helper that ended by itself
@@ -132,11 +132,16 @@ enum class KnownPreviewStop : std::uint8_t {
   tool_change_g30 = 5,
   saved_g28 = 6,
   saved_g30 = 7,
+  unknown_work_system = 8,
+  machine_m_code = 9,
 };
+// Version 1 supports fixed reasons; version 2 adds the numbered reasons.
 inline constexpr char preview_stop_codes_env[] = "COFFEECNC_PREVIEW_STOP_CODES";
+inline constexpr std::string_view preview_stop_codes_version = "2";
 
 [[nodiscard]] auto write_preview_stop(int line, KnownPreviewStop reason,
-                                      std::string_view source_prefix, bool coded) -> std::string;
+                                      std::string_view source_prefix, std::string_view version,
+                                      std::optional<int> argument = {}) -> std::string;
 
 struct HelperOutput {
   std::vector<PreviewSegment> segments;

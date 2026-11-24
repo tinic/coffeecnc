@@ -628,6 +628,8 @@
       "rotary": "L’aperçu du programme et la reprise à la ligne ne sont pas disponibles sur les configurations rotatives.",
       "iniUnreadable": "Impossible de lire le fichier INI de la machine pour l’aperçu.",
       "stopUnknownSystem": "se déplace dans {wcs}, dont les décalages ne figurent pas dans le fichier de paramètres de la machine",
+      "stopOtherSystem": "se déplace dans un autre système de coordonnées pièce dont les décalages sont absents du fichier de paramètres de la machine",
+      "stopMachineMCode": "M{code} exécute un programme propre à la machine dont l’effet est inconnu de l’aperçu",
       "stopG30ToolChange": "un changement d’outil qui va à la position G30 ([EMCIO] TOOL_CHANGE_AT_G30), absente du fichier de paramètres de la machine",
       "stopUndefinedParameter": "lit {name}, que le programme ne définit pas : sa valeur issue d’un programme ou d’un bloc MDI antérieur n’est pas connue de l’aperçu",
       "stopRemapped": "{code} est remappé sur cette machine ([RS274NGC] REMAP) : l’aperçu ne sait pas ce qu’il fait",

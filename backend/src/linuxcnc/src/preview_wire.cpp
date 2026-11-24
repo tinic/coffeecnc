@@ -59,7 +59,14 @@ auto rest(std::string_view text) -> std::string {
   return std::string(text);
 }
 
-auto preview_stop_message(KnownPreviewStop reason) -> LocalizedReason {
+auto stop_takes_number(KnownPreviewStop reason) -> bool {
+  return reason == KnownPreviewStop::unknown_work_system ||
+         reason == KnownPreviewStop::machine_m_code;
+}
+
+auto preview_stop_message(KnownPreviewStop reason, std::optional<int> argument) -> LocalizedReason {
+  if (argument.has_value() != stop_takes_number(reason))
+    return {};
   switch (reason) {
   case KnownPreviewStop::nurbs:
     return {"a NURBS move (G5.2, G5.3): not computed by the preview",
@@ -84,8 +91,47 @@ auto preview_stop_message(KnownPreviewStop reason) -> LocalizedReason {
         std::format("G{} moves to a position that is not in the machine's parameter file", code),
         MessageKey{"backend.previewEngine.stopSavedPosition", {{"code", code}}}};
   }
+  case KnownPreviewStop::unknown_work_system: {
+    constexpr std::array names{"G54", "G55", "G56", "G57", "G58", "G59", "G59.1", "G59.2", "G59.3"};
+    const int index = argument.value_or(-1);
+    if (index == 0)
+      return {"moves in another work system, whose offsets are not in the machine's parameter file",
+              MessageKey{"backend.previewEngine.stopOtherSystem"}};
+    if (index < 1 || index > static_cast<int>(names.size()))
+      return {};
+    const std::string wcs = names.at(static_cast<std::size_t>(index - 1));
+    return {std::format("moves in {}, whose offsets are not in the machine's parameter file", wcs),
+            MessageKey{"backend.previewEngine.stopUnknownSystem", {{"wcs", wcs}}}};
+  }
+  case KnownPreviewStop::machine_m_code: {
+    const int code_number = argument.value_or(-1);
+    if (code_number < 100 || code_number > 199)
+      return {};
+    const auto code = std::to_string(code_number);
+    return {std::format("M{} runs a program of the machine's own: what it does is not known to "
+                        "the preview",
+                        code),
+            MessageKey{"backend.previewEngine.stopMachineMCode", {{"code", code}}}};
+  }
   }
   return {};
+}
+
+auto read_preview_stop(std::string_view line) -> LocalizedReason {
+  unsigned id = 0;
+  if (!number(line, id) || !std::in_range<std::uint8_t>(id))
+    return {};
+  const auto reason = static_cast<KnownPreviewStop>(id);
+  std::optional<int> argument;
+  if (stop_takes_number(reason)) {
+    int value = 0;
+    if (!number(line, value))
+      return {};
+    argument = value;
+  }
+  if (!word(line).empty())
+    return {};
+  return preview_stop_message(reason, argument);
 }
 
 auto restart_refusal_message(RestartRefusal reason) -> LocalizedReason {
@@ -402,10 +448,15 @@ auto write_restart_refusal(RestartRefusal reason, bool coded) -> std::string {
 }
 
 auto write_preview_stop(int line, KnownPreviewStop reason, std::string_view source_prefix,
-                        bool coded) -> std::string {
-  if (coded && source_prefix.empty())
-    return std::format("stop_known {} {}\n", line, static_cast<unsigned>(reason));
-  return std::format("stop {} {}{}\n", line, source_prefix, preview_stop_message(reason).text);
+                        std::string_view version, std::optional<int> argument) -> std::string {
+  const auto id = static_cast<unsigned>(reason);
+  if (source_prefix.empty() && version == preview_stop_codes_version && argument)
+    return std::format("stop_known {} {} {}\n", line, id, *argument);
+  if (source_prefix.empty() && !argument &&
+      (version == "1" || version == preview_stop_codes_version))
+    return std::format("stop_known {} {}\n", line, id);
+  return std::format("stop {} {}{}\n", line, source_prefix,
+                     preview_stop_message(reason, argument).text);
 }
 
 auto parse_output(std::string_view text, const OutputLimits& limits) -> HelperOutput {
@@ -490,10 +541,7 @@ auto parse_output(std::string_view text, const OutputLimits& limits) -> HelperOu
         return defect("a record with a line that is none of the program",
                       MessageKey{"backend.previewWire.recordLine"});
       if (key == "stop_known") {
-        unsigned id = 0;
-        LocalizedReason parsed;
-        if (number(line, id) && word(line).empty() && std::in_range<std::uint8_t>(id))
-          parsed = preview_stop_message(static_cast<KnownPreviewStop>(id));
+        auto parsed = read_preview_stop(line);
         if (parsed.empty())
           return defect("an invalid preview stop code",
                         MessageKey{"backend.previewWire.invalidStopCode"});

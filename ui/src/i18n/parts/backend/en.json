@@ -628,6 +628,8 @@
       "rotary": "Program preview and line restart are unavailable on rotary configurations.",
       "iniUnreadable": "The machine's INI file cannot be read for the preview.",
       "stopUnknownSystem": "moves in {wcs}, whose offsets are not in the machine's parameter file",
+      "stopOtherSystem": "moves in another work system, whose offsets are not in the machine's parameter file",
+      "stopMachineMCode": "M{code} runs a program of the machine's own: what it does is not known to the preview",
       "stopG30ToolChange": "a tool change that moves to the G30 position ([EMCIO] TOOL_CHANGE_AT_G30), which is not in the machine's parameter file",
       "stopUndefinedParameter": "reads {name}, which the program does not set: its value from an earlier program or MDI block is not known to the preview",
       "stopRemapped": "{code} is remapped on this machine ([RS274NGC] REMAP): what it does is not known to the preview",

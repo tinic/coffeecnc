@@ -628,6 +628,8 @@
       "rotary": "La vista previa del programa y el reinicio en la línea no están disponibles en configuraciones con ejes rotativos.",
       "iniUnreadable": "No se puede leer el archivo INI de la máquina para la vista previa.",
       "stopUnknownSystem": "se mueve en {wcs}, cuyos desplazamientos no están en el archivo de parámetros de la máquina",
+      "stopOtherSystem": "se mueve en otro sistema de coordenadas de trabajo cuyos desplazamientos no están en el archivo de parámetros de la máquina",
+      "stopMachineMCode": "M{code} ejecuta un programa propio de la máquina cuyo efecto la vista previa desconoce",
       "stopG30ToolChange": "un cambio de herramienta que va a la posición G30 ([EMCIO] TOOL_CHANGE_AT_G30), que no está en el archivo de parámetros de la máquina",
       "stopUndefinedParameter": "lee {name}, que el programa no asigna: la vista previa no conoce su valor de un programa o bloque MDI anterior",
       "stopRemapped": "{code} está reasignado en esta máquina ([RS274NGC] REMAP): la vista previa no sabe lo que hace",

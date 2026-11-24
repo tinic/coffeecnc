@@ -89,20 +89,75 @@ void wire_formats() {
 void preview_stop_codes() {
   const auto probe = KnownPreviewStop::probe_move;
   const std::string fallback = "a probe move (G38): where it ends depends on the machine";
-  require(write_preview_stop(3, probe, "", true) == "stop_known 3 2\n",
+  require(write_preview_stop(3, probe, "", "1") == "stop_known 3 2\n",
           "A caller can opt into the stable probe stop code");
   const auto known = parse_output("stop_known 3 2\nend stop\n");
   require(known.end == HelperEnd::stop &&
               known.problem ==
                   PreviewError{3, fallback, MessageKey{"backend.previewEngine.stopProbe"}},
           "The coded stop has the same fallback and a localization key");
-  const auto old = write_preview_stop(3, probe, "", false);
+  const auto old = write_preview_stop(3, probe, "", "");
   require(old == "stop 3 " + fallback + '\n' &&
               parse_output(old + "end stop\n").problem == PreviewError{3, fallback},
           "The unnegotiated helper keeps the original format");
-  const auto source = write_preview_stop(3, probe, "edge.ngc line 5: ", true);
+  const auto source = write_preview_stop(3, probe, "edge.ngc line 5: ", "2");
   require(source == "stop 3 edge.ngc line 5: " + fallback + '\n',
           "A stop in a subroutine still includes the exact source location");
+  const auto wcs = KnownPreviewStop::unknown_work_system;
+  const std::string wcs_text =
+      "moves in G59.3, whose offsets are not in the machine's parameter file";
+  struct NumberedStop {
+    KnownPreviewStop reason;
+    unsigned id;
+    int argument;
+    std::string text;
+    MessageKey key;
+  };
+  const std::array numbered{
+      NumberedStop{
+          wcs,
+          8,
+          0,
+          "moves in another work system, whose offsets are not in the machine's parameter file",
+          {"backend.previewEngine.stopOtherSystem"}},
+      NumberedStop{wcs,
+                   8,
+                   1,
+                   "moves in G54, whose offsets are not in the machine's parameter file",
+                   {"backend.previewEngine.stopUnknownSystem", {{"wcs", "G54"}}}},
+      NumberedStop{
+          wcs, 8, 9, wcs_text, {"backend.previewEngine.stopUnknownSystem", {{"wcs", "G59.3"}}}},
+      NumberedStop{
+          KnownPreviewStop::machine_m_code,
+          9,
+          100,
+          "M100 runs a program of the machine's own: what it does is not known to the preview",
+          {"backend.previewEngine.stopMachineMCode", {{"code", "100"}}}},
+      NumberedStop{
+          KnownPreviewStop::machine_m_code,
+          9,
+          199,
+          "M199 runs a program of the machine's own: what it does is not known to the preview",
+          {"backend.previewEngine.stopMachineMCode", {{"code", "199"}}}}};
+  for (const auto& row : numbered) {
+    const auto wire = std::format("stop_known 4 {} {}\n", row.id, row.argument);
+    require(write_preview_stop(4, row.reason, "", "2", row.argument) == wire,
+            std::format("Stop {} preserves its ID and number {}", row.id, row.argument));
+    const auto parsed = parse_output(wire + "end stop\n");
+    require(parsed.defect.empty() && parsed.end == HelperEnd::stop &&
+                parsed.problem == PreviewError{4, row.text, row.key},
+            std::format("Stop {} with number {} keeps its text and key", row.id, row.argument));
+  }
+  require(
+      write_preview_stop(4, wcs, "", "1", 9) == "stop 4 " + wcs_text + '\n' &&
+          write_preview_stop(4, wcs, "", "3", 9) == "stop 4 " + wcs_text + '\n' &&
+          write_preview_stop(3, probe, "", "2") == "stop_known 3 2\n",
+      "Older or unknown versions get text for the numbered stop, and version 2 keeps fixed codes");
+  require(!parse_output("stop_known 3 8 10\nend stop\n").defect.empty() &&
+              !parse_output("stop_known 3 9 99\nend stop\n").defect.empty() &&
+              !parse_output("stop_known 3 9 200\nend stop\n").defect.empty() &&
+              !parse_output("stop_known 3 8\nend stop\n").defect.empty(),
+          "Codes that require a number reject missing or out-of-range values");
   const std::string kept = "seg 2 r 0 0 0 0 1 2 3\n";
   const auto unknown = parse_output(kept + "stop_known 3 99\nend stop\n");
   require(unknown.defect.localization == MessageKey{"backend.previewWire.invalidStopCode"} &&
@@ -149,7 +204,7 @@ void fixed_preview_stop_code_ids() {
            {"backend.previewEngine.stopSavedPosition", {{"code", "30"}}}}};
   for (const auto& row : cases) {
     const auto wire = std::format("stop_known 3 {}\n", row.id);
-    require(write_preview_stop(3, row.reason, "", true) == wire,
+    require(write_preview_stop(3, row.reason, "", "1") == wire,
             std::format("Stop reason {} keeps its wire ID", row.id));
     const auto parsed = parse_output(wire + "end stop\n");
     require(parsed.defect.empty() && parsed.end == HelperEnd::stop &&

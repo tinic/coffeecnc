@@ -247,7 +247,7 @@
     "guideDialog": {
       "checkCircle": "Verify with an extra contact",
       "checkAngle": "Check angle (°)",
-      "shortArcCheck": "If only a short arc is available, turn off the extra contact and use Measure only to inspect the result.",
+      "shortArcCheck": "Verification needs contacts over about 240° of the circle. On a shorter arc, turn off the extra contact and use Measure only to inspect the result.",
       "checkAngleRange": "Use an angle at least {separation}° from the other contacts.",
       "previous": "Previous move",
       "pause": "Pause",

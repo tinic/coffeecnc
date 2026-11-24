@@ -247,7 +247,7 @@
     "guideDialog": {
       "checkCircle": "Mit zusätzlichem Kontakt prüfen",
       "checkAngle": "Prüfwinkel (°)",
-      "shortArcCheck": "Wenn nur ein kurzer Kreisbogen verfügbar ist, schalten Sie den zusätzlichen Kontakt aus und prüfen Sie das Ergebnis mit Nur messen.",
+      "shortArcCheck": "Die Prüfung benötigt Kontakte über etwa 240° des Kreises. Bei einem kürzeren Bogen schalten Sie den zusätzlichen Kontakt aus und prüfen das Ergebnis mit Nur messen.",
       "checkAngleRange": "Wählen Sie mindestens {separation}° Abstand zu den anderen Kontakten.",
       "previous": "Vorherige Bewegung",
       "pause": "Pause",

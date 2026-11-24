@@ -247,7 +247,7 @@
     "guideDialog": {
       "checkCircle": "接触点を追加して検証",
       "checkAngle": "検証角度 (°)",
-      "shortArcCheck": "短い円弧しか使えない場合は追加の接触を無効にし、測定のみで結果を確認してください。",
+      "shortArcCheck": "検証には円周の約240°にわたる接触点が必要です。円弧が短い場合は追加の接触を無効にし、測定のみで結果を確認してください。",
       "checkAngleRange": "他の接触点から {separation}° 以上離れた角度を指定してください。",
       "previous": "前の動作",
       "pause": "一時停止",

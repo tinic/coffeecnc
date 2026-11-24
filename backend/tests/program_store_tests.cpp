@@ -166,7 +166,7 @@ void listing_refusals() {
     const auto refused = store.list(path);
     require(!refused.has_value() && refused.error_or(LocalizedReason{}).text == reason,
             std::format("Listing \"{}\" is refused with \"{}\" but got \"{}\"", path, reason,
-                        refused.error_or("a listing")));
+                        refused.error_or(LocalizedReason{"a listing"}).text));
   }
   for (const auto& call : files.calls)
     require(!call.starts_with("names /etc") && !call.starts_with("names /home/cnc/nc_files_other"),
@@ -371,7 +371,7 @@ void program_text() {
   const auto read = [&files, &store](std::string content) -> ProgramText {
     files.file(in_root("p.ngc"), std::move(content));
     const auto program = store.read_program("p.ngc", 9);
-    require(program.has_value(), "The program reads: " + program.error_or(LocalizedReason{}).text);
+    require(program.has_value(), "The program reads: " + program.error_or(""));
     return program ? *program : ProgramText{};
   };
 

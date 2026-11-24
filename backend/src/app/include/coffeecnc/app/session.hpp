@@ -418,7 +418,8 @@ private:
                                          const ControllerState& state,
                                          const CheckedPreview& check) const
       -> std::optional<ProgramCheckIssue>;
-  [[nodiscard]] auto probe_block(const Command& command, const ControllerState& state) const -> std::string;
+  [[nodiscard]] auto probe_block(const Command& command, const ControllerState& state) const
+      -> LocalizedReason;
   [[nodiscard]] auto plan_restart(Queued& request, PlanRestart command,
                                   const ControllerState& state) -> Stage;
   [[nodiscard]] auto start_restart(const Queued& request, StartRestart command) -> Stage;

@@ -124,10 +124,24 @@ constexpr auto probe_loaded_reason = "A touch probe is loaded";
 constexpr std::string_view probe_code_unknown =
     "A touch probe is loaded. CoffeeCNC could not verify that the code leaves the spindle off.";
 
+enum class ProbeRefusal : std::uint8_t { none, loaded, unverifiable };
+
+auto probe_reason(ProbeRefusal refusal) -> LocalizedReason {
+  switch (refusal) {
+  case ProbeRefusal::loaded:
+    return {probe_loaded_reason, MessageKey{"messages.session.probeLoaded"}};
+  case ProbeRefusal::unverifiable:
+    return {std::string(probe_code_unknown), MessageKey{"messages.session.probeCodeUnknown"}};
+  case ProbeRefusal::none:
+    return {};
+  }
+  return {};
+}
+
 // Check the accepted subset of RS274 before dispatch. LinuxCNC ignores case and spaces between
 // digits. O-words, indirect M-codes, state restore and custom M-codes can hide spindle actions.
 struct ProbeCode {
-  std::string_view refusal;
+  ProbeRefusal refusal{};
   bool changes_tool{};
   bool relabels_tool{};
   bool stops_program{};
@@ -144,7 +158,7 @@ auto inspect_probe_code(std::string_view line) -> ProbeCode {
   };
   for (char c : line) {
     if (c == '\0' || c == '\r' || c == '\n')
-      return {probe_code_unknown};
+      return {ProbeRefusal::unverifiable};
     if (c >= 'A' && c <= 'Z')
       c = static_cast<char>(c - 'A' + 'a');
     if (c == ' ' || c == '\t' || c == '\v' || c == '\f')
@@ -155,13 +169,13 @@ auto inspect_probe_code(std::string_view line) -> ProbeCode {
     }
     if (inside) {
       if (c == '(')
-        return {probe_code_unknown};
+        return {ProbeRefusal::unverifiable};
       if (c != ')') {
         comment += c;
         continue;
       }
       if (active_comment())
-        return {probe_code_unknown};
+        return {ProbeRefusal::unverifiable};
       comment.clear();
       inside = false;
     } else if (c == ';') {
@@ -174,10 +188,10 @@ auto inspect_probe_code(std::string_view line) -> ProbeCode {
     }
   }
   if (inside || active_comment())
-    return {probe_code_unknown};
+    return {ProbeRefusal::unverifiable};
   ProbeCode result;
   if (code.find_first_of("o#[]<>") != std::string::npos)
-    result.refusal = probe_code_unknown;
+    result.refusal = ProbeRefusal::unverifiable;
   for (std::size_t pos = code.find('g'); pos != std::string::npos; pos = code.find('g', pos + 1)) {
     const char* first = code.data() + pos + 1;
     const char* last = code.data() + code.size();
@@ -186,14 +200,14 @@ auto inspect_probe_code(std::string_view line) -> ProbeCode {
     double value = 0;
     const auto [end, error] = std::from_chars(first, last, value, std::chars_format::fixed);
     if (error != std::errc{} || end == first || !std::isfinite(value) || value < 0 || value > 999) {
-      result.refusal = probe_code_unknown;
+      result.refusal = ProbeRefusal::unverifiable;
       continue;
     }
     const auto number = static_cast<int>(std::round(value * 10));
     // Spindle-synchronized, tapping and boring motion requires a cutting tool.
     constexpr std::array spindle_cycles{330, 331, 740, 760, 840, 842, 843, 860, 880};
-    if (std::ranges::contains(spindle_cycles, number) && result.refusal.empty())
-      result.refusal = probe_loaded_reason;
+    if (std::ranges::contains(spindle_cycles, number) && result.refusal == ProbeRefusal::none)
+      result.refusal = ProbeRefusal::loaded;
   }
   constexpr std::array ordinary_m_codes{0, 1, 2, 5, 6, 7, 8, 9, 30, 48, 49, 50, 51, 52, 53,
                                        60, 62, 63, 64, 65, 66, 67, 68, 70, 71};
@@ -205,7 +219,7 @@ auto inspect_probe_code(std::string_view line) -> ProbeCode {
     double value = 0;
     const auto [end, error] = std::from_chars(first, last, value, std::chars_format::fixed);
     if (error != std::errc{} || end == first || !std::isfinite(value) || value < 0 || value > 199) {
-      result.refusal = probe_code_unknown;
+      result.refusal = ProbeRefusal::unverifiable;
       continue;
     }
     const auto number = static_cast<int>(std::round(value));
@@ -218,18 +232,18 @@ auto inspect_probe_code(std::string_view line) -> ProbeCode {
     if (value == number && (number == 0 || number == 1 || number == 60))
       result.stops_program = true;
     if (number == 3 || number == 4 || number == 19) {
-      if (result.refusal.empty())
-        result.refusal = probe_loaded_reason;
+      if (result.refusal == ProbeRefusal::none)
+        result.refusal = ProbeRefusal::loaded;
     } else if (value != number || !std::ranges::contains(ordinary_m_codes, number)) {
-      result.refusal = probe_code_unknown;
+      result.refusal = ProbeRefusal::unverifiable;
     }
   }
   return result;
 }
 
-auto probe_code_block(std::string_view line) -> std::string_view {
+auto probe_code_block(std::string_view line) -> ProbeRefusal {
   const auto block = inspect_probe_code(line);
-  return block.relabels_tool ? probe_loaded_reason : block.refusal;
+  return block.relabels_tool ? ProbeRefusal::loaded : block.refusal;
 }
 
 auto program_line(std::string_view& remaining) -> std::string_view {
@@ -1219,7 +1233,7 @@ auto Session::execute(Queued& request, const Clock& clock) -> Stage {
   }
   if (decision.allowed) {
     if (auto reason = probe_block(command, state); !reason.empty())
-      decision = {false, {}, std::move(reason), {}};
+      decision = {false, {}, std::move(reason.text), {}, std::move(reason.localization)};
   }
   if (decision.allowed && decision.required_mode && *decision.required_mode != state.mode) {
     // No jog survives a mode change; none is left running if the change fails either.
@@ -1244,7 +1258,7 @@ auto Session::execute(Queued& request, const Clock& clock) -> Stage {
     decision = policy_.evaluate(command, state);
     if (decision.allowed) {
       if (auto reason = probe_block(command, state); !reason.empty())
-        decision = {false, {}, std::move(reason), {}};
+        decision = {false, {}, std::move(reason.text), {}, std::move(reason.localization)};
     }
     if (decision.allowed && decision.required_mode && *decision.required_mode != state.mode) {
       forget_press(request);
@@ -1290,12 +1304,19 @@ auto Session::execute(Queued& request, const Clock& clock) -> Stage {
       return cancelled();
     if (now.program_file != state.program_file || now.tool_in_spindle != state.tool_in_spindle ||
         now.spindle_active)
-      return answer({CommandOutcome::failed, std::string(probe_code_unknown)});
+      return answer({CommandOutcome::failed,
+                     std::string(probe_code_unknown),
+                     {},
+                     MessageKey{"messages.session.probeCodeUnknown"}});
     if (auto reason = probe_block(command, now); !reason.empty())
-      return answer({CommandOutcome::failed, std::move(reason)});
+      return answer(
+          {CommandOutcome::failed, std::move(reason.text), {}, std::move(reason.localization)});
     const auto recheck = policy_.evaluate(command, now);
     if (!recheck.allowed || now.mode != state.mode)
-      return answer({CommandOutcome::failed, "Machine state changed during the spindle check."});
+      return answer({CommandOutcome::failed,
+                     "Machine state changed during the spindle check.",
+                     {},
+                     MessageKey{"messages.session.stateChangedSpindleCheck"}});
     state = now;
   }
   auto result = perform(request, decision, state, clock, verified);
@@ -1543,13 +1564,13 @@ auto Session::measure_tool_change(Queued& request, const ControllerState& state)
     static_cast<void>(program_line(remaining));
   const auto exchange = inspect_probe_code(program_line(remaining));
   if (!exchange.changes_tool || exchange.relabels_tool || exchange.stops_program ||
-      !exchange.refusal.empty())
+      exchange.refusal != ProbeRefusal::none)
     return refuse("The original M6 block could not be verified.",
                   RefusalMessage{"backend.toolChangeMeasurement.notVerifiedM6"});
   for (int index = line + 1; index < target->line; ++index) {
     const auto block = inspect_probe_code(program_line(remaining));
     if (block.changes_tool || block.relabels_tool || block.stops_program ||
-        block.refusal == probe_code_unknown)
+        block.refusal == ProbeRefusal::unverifiable)
       return refuse("Restart would skip a tool change, stop, or unsupported block.",
                     RefusalMessage{"backend.toolChangeMeasurement.skipUnsupported"});
   }
@@ -1723,7 +1744,8 @@ auto Session::measure_tool_change(Queued& request, const ControllerState& state)
   return result;
 }
 
-auto Session::probe_block(const Command& command, const ControllerState& state) const -> std::string {
+auto Session::probe_block(const Command& command, const ControllerState& state) const
+    -> LocalizedReason {
   const auto* spindle = std::get_if<SetSpindle>(&command);
   const auto* mdi_command = std::get_if<Mdi>(&command);
   const auto* setter = std::get_if<FixedSetterRequest>(&command);
@@ -1737,51 +1759,58 @@ auto Session::probe_block(const Command& command, const ControllerState& state) 
     return {};
   if (mdi_command) {
     const auto block = inspect_probe_code(mdi_command->text);
-    if (block.relabels_tool && (block.changes_tool || !block.refusal.empty()))
-      return "Separate M61 from tool changes and spindle commands.";
+    if (block.relabels_tool && (block.changes_tool || block.refusal != ProbeRefusal::none))
+      return {"Separate M61 from tool changes and spindle commands.",
+              MessageKey{"messages.session.separateM61"}};
   }
   const auto loaded = tool_models_->touch_probe_loaded(
       confirms_probe_candidate ? *state.requested_tool : state.tool_in_spindle);
   if (!loaded)
-    return "Cannot verify the loaded tool type. Check tool model storage.";
+    return {"Cannot verify the loaded tool type. Check tool model storage.",
+            MessageKey{"messages.session.toolTypeUnknown"}};
   if (!*loaded)
     return {};
   if (confirms_probe_candidate) {
     if (state.spindle_active)
-      return probe_loaded_reason;
+      return probe_reason(ProbeRefusal::loaded);
     if (state.mode == TaskMode::mdi) {
       const auto block = inspect_probe_code(state.active_mdi);
-      if (block.changes_tool && !block.relabels_tool && block.refusal.empty() && !state.mdi_queued)
+      if (block.changes_tool && !block.relabels_tool && block.refusal == ProbeRefusal::none &&
+          !state.mdi_queued)
         return {};
-      return "Press Stop, then load the touch probe with a separate tool change.";
+      return {"Press Stop, then load the touch probe with a separate tool change.",
+              MessageKey{"messages.session.probeSeparateToolChange"}};
     }
     if (state.mode != TaskMode::automatic || state.program_file.empty() ||
         state.program_file != verified_probe_program_)
-      return "Stop the program and load the touch probe from Tools before running.";
+      return {"Stop the program and load the touch probe from Tools before running.",
+              MessageKey{"messages.session.probeFromTools"}};
   }
   if (check_tool)
-    return "Load a cutting tool before checking its length.";
+    return {"Load a cutting tool before checking its length.",
+            MessageKey{"messages.session.loadCuttingTool"}};
   if (mdi_command != nullptr)
-    return std::string(probe_code_block(mdi_command->text));
+    return probe_reason(probe_code_block(mdi_command->text));
   if (spindle != nullptr || state.spindle_active)
-    return probe_loaded_reason;
+    return probe_reason(ProbeRefusal::loaded);
   if (std::holds_alternative<Resume>(command) && state.mode != TaskMode::automatic)
-    return std::string(probe_code_unknown);
+    return probe_reason(ProbeRefusal::unverifiable);
   if (state.interp != InterpState::idle && state.program_file != verified_probe_program_)
-    return std::string(probe_code_unknown);
+    return probe_reason(ProbeRefusal::unverifiable);
   const auto text = programs_.read_program(state.program_file, 0);
   if (!text || text->truncated)
-    return std::string(probe_code_unknown);
+    return probe_reason(ProbeRefusal::unverifiable);
   for (const auto& line : text->lines)
-    if (const auto reason = probe_code_block(line); !reason.empty())
-      return std::string(reason);
+    if (const auto reason = probe_code_block(line); reason != ProbeRefusal::none)
+      return probe_reason(reason);
   // The source can have changed while being read through a different controller client.
   const auto now = port_.snapshot();
   if (now.link != Link::live || now.program_file != state.program_file ||
       now.tool_in_spindle != state.tool_in_spindle || now.spindle_active ||
       (confirms_probe_candidate && (now.tool_request != state.tool_request ||
                                     now.requested_tool != state.requested_tool)))
-    return "A touch probe is loaded. Machine state changed during the spindle check.";
+    return {"A touch probe is loaded. Machine state changed during the spindle check.",
+            MessageKey{"messages.session.probeStateChanged"}};
   return {};
 }
 

@@ -417,6 +417,9 @@ auto encoded_messages() -> std::vector<Encoded> {
   messages.emplace_back(encode_result(
       53, CommandOutcome::rejected, "Default jog speed exceeds the configured machine limit.", {},
       {}, RefusalMessage{"backend.operatorSettings.jogSpeedLimit"}));
+  messages.emplace_back(
+      encode_result(54, CommandOutcome::rejected, "Invalid panel presentation.", {}, {},
+                    RefusalMessage{"backend.operatorSettings.invalidPresentation"}));
 
   OffsetHistory history{4, true, "", {}};
   const auto change = [](HistoryField field, std::optional<double> before,

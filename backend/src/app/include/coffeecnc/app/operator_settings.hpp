@@ -12,7 +12,7 @@ inline constexpr std::size_t max_operator_settings_bytes = 16384;
 [[nodiscard]] auto operator_settings_command_error(const SetOperatorSettings& command,
                                                    const Limits& limits) -> LocalizedReason;
 [[nodiscard]] auto decode_operator_preferences(std::string_view text)
-    -> std::expected<OperatorPreferences, std::string>;
+    -> std::expected<OperatorPreferences, LocalizedReason>;
 [[nodiscard]] auto encode_operator_settings(const OperatorSettings& settings) -> Encoded;
 
 struct OperatorSettingsFile {

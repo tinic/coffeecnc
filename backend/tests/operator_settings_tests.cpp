@@ -259,7 +259,8 @@ void damaged_requests() {
     auto invalid = document;
     invalid[field] = damaged;
     const auto decoded = decode_operator_preferences(invalid.dump());
-    require(!decoded, "A save request with a damaged " + field + " is refused");
+    require(!decoded && decoded.error().localization.has_value(),
+            "A save request with a damaged " + field + " receives a keyed refusal");
   }
 }
 // The writer never writes a file the reader refuses: that would leave the settings unavailable.

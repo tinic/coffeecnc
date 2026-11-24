@@ -2479,6 +2479,12 @@ void arc_scenarios(NmlPort& port, double scale, double degrees, const auto& mdi,
               outside.error().text.contains("outside the configured travel") &&
               port.writes().size() == writes && still && port.status().g5x == origin,
           outside ? "expected a travel refusal" : outside.error().text);
+  const auto& travel_failure = outside.error().localization;
+  require(travel_failure && travel_failure->key == "backend.nmlPort.arcContact" &&
+              travel_failure->params.at("n") == "3" &&
+              travel_failure->params_localization.at("error").key ==
+                  "backend.nmlPort.probeOutsideTravel",
+          "The travel refusal identifies the contact and the configured travel check");
   mdi(std::format("G21 G90 G53 G0 X0 Y{} Z20", edge_y / 2));
   mdi("G21 G90 G53 G0 X0 Y0 Z20");
   mdi("G54");

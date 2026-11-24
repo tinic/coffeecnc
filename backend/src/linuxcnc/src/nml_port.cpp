@@ -2669,9 +2669,12 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     }
     if (!runout_travel_reaches(request.outside, diameter, outside, radius,
                                limits->material_travel_mm))
-      return setter_failure(request.outside
-                                ? "The material probe travel is too short to probe beside the work."
-                                : "The material probe travel is shorter than the ring radius.");
+      return request.outside
+                 ? setter_failure(
+                       "The material probe travel is too short to probe beside the work.",
+                       MessageKey{"backend.nmlPort.besideTravel"})
+                 : setter_failure("The material probe travel is shorter than the ring radius.",
+                                  MessageKey{"backend.nmlPort.runoutRingTravel"});
     // The ball centre contact along `direction`, aimed through `through` (machine XY).
     const auto touch = [&](ProbeDirection direction, std::array<double, 2> through)
         -> std::expected<std::array<double, 2>, LocalizedReason> {
@@ -3003,7 +3006,7 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
   const auto arc_searches_in_travel =
       [&](const std::array<std::optional<std::array<double, 3>>, 5>& approaches,
           double heading_turn,
-          std::optional<double> clearance) -> std::expected<void, std::string> {
+          std::optional<double> clearance) -> std::expected<void, LocalizedReason> {
     auto from = request.start;
     for (std::size_t i = 0; i < directions.size(); ++i) {
       const double heading = directions[i];
@@ -3016,9 +3019,15 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
                          *clearance >= search_start[2] &&
                          arc_in_travel({from[0], from[1], *clearance}) &&
                          arc_in_travel({search_start[0], search_start[1], *clearance}));
-      if (!arc_in_travel(search_start) || !arc_in_travel(endpoint) || !lift_ok)
-        return std::unexpected(std::format("Contact {} at {:.1f}°: {}", i + 1, heading,
-                                           "The probe move is outside the configured travel."));
+      if (!arc_in_travel(search_start) || !arc_in_travel(endpoint) || !lift_ok) {
+        const std::string detail = "The probe move is outside the configured travel.";
+        return setter_failure(std::format("Contact {} at {:.1f}°: {}", i + 1, heading, detail),
+                              MessageKey{"backend.nmlPort.arcContact",
+                                         {{"n", std::to_string(i + 1)},
+                                          {"angle", std::format("{:.1f}", heading)},
+                                          {"error", detail}},
+                                         {{"error", {"backend.nmlPort.probeOutsideTravel"}}}});
+      }
       // A boss search lifts to clearance on its approach; the next one starts there.
       if (clearance)
         from = {search_start[0], search_start[1], *clearance};
@@ -3410,7 +3419,7 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
       return setter_failure("Set the probe ball diameter in the tool table first.",
                             MessageKey{"backend.nmlPort.setBallDiameter"});
     if (auto travel = arc_searches_in_travel({}, 0, std::nullopt); !travel)
-      return setter_failure(travel.error());
+      return std::unexpected(std::move(travel.error()));
     std::array<std::array<double, 2>, 5> contacts{};
     std::array<double, 5> spreads{};
     for (std::size_t i = 0; i < directions.size(); ++i) {
@@ -3535,7 +3544,7 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
                                        depth});
       }
       if (auto travel = arc_searches_in_travel(approaches, 180, clearance); !travel)
-        return setter_failure(travel.error());
+        return std::unexpected(std::move(travel.error()));
       std::array<std::array<double, 2>, 5> contacts{};
       std::array<double, 5> spreads{};
       for (std::size_t i = 0; i < directions.size(); ++i) {

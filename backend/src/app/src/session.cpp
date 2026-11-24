@@ -543,9 +543,10 @@ auto Session::submit(PageToken page, std::string_view json, Instant now,
       report(outcome, now.unix_time);
       lock.unlock();
       const auto refused = diagnostics_->launch(std::get<LaunchHalTool>(request.command).tool);
-      outcome.messages.push_back(encode_result(
-          request.id, refused ? CommandOutcome::rejected : CommandOutcome::accepted,
-          refused.value_or("")));
+      outcome.messages.push_back(refused
+                                     ? encode_result(request.id, CommandOutcome::rejected,
+                                                     refused->text, {}, {}, refused->localization)
+                                     : encode_result(request.id, CommandOutcome::accepted, ""));
     }
     return outcome;
   }

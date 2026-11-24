@@ -493,6 +493,11 @@ auto encoded_messages() -> std::vector<Encoded> {
                        {HalTool::halmeter, true, true},
                        {HalTool::halscope, false, false}};
   messages.push_back(encode_diagnostics(diagnostics));
+  messages.emplace_back(encode_result(
+      50, CommandOutcome::rejected,
+      "halscope is not installed: it is not in the search path (/usr/bin:/bin).", {}, {},
+      RefusalMessage{"backend.halDiagnostics.notInstalled",
+                     {{"name", "halscope"}, {"path", "/usr/bin:/bin"}}}));
   return messages;
 }
 

@@ -34,9 +34,10 @@ void DiagnosticsFeed::watch(PageToken page, bool on) {
   changed_.notify_all();
 }
 
-auto DiagnosticsFeed::launch(HalTool tool) -> std::optional<std::string> {
+auto DiagnosticsFeed::launch(HalTool tool) -> std::optional<LocalizedReason> {
   if (!source_.launch)
-    return std::string("HAL tools cannot be started here.");
+    return LocalizedReason{"HAL tools cannot be started here.",
+                           MessageKey{"backend.halDiagnostics.cannotStart"}};
   return source_.launch(tool);
 }
 

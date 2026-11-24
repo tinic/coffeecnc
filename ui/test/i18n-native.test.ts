@@ -23,6 +23,8 @@ const adapter = import.meta.glob<string>([
   '../../backend/src/core/include/coffeecnc/core/jog_stop_report.hpp',
   '../../backend/src/linuxcnc/src/nml_port.cpp',
   '../../backend/src/linuxcnc/src/nml_panel_source.cpp',
+  '../../backend/src/linuxcnc/src/hal_diagnostics.cpp',
+  '../../backend/src/app/src/diagnostics_feed.cpp',
   '../../backend/src/linuxcnc/src/preview_engine.cpp',
   '../../backend/src/app/src/machine_data.cpp',
   '../../backend/src/app/src/backup_archive.cpp',
@@ -399,6 +401,17 @@ describe('translateMessage', () => {
     expect(translateMessage('the directory two cannot be made: Permission denied'))
       .toBe('impossible de créer le dossier two\u202f: Permission denied')
     expect(translateMessage("Can't open home: no such file")).not.toContain('Référencement')
+  })
+
+  it('keeps operating system errors in HAL launch refusals verbatim', async () => {
+    await setLanguage('de')
+    const systemError = 'a value is not a finite number'
+    expect(translateMessage(systemError)).not.toBe(systemError)
+    const reason = `halscope could not be started: ${systemError}.`
+    const expected = `halscope konnte nicht gestartet werden: ${systemError}.`
+    expect(translateResult({ type: 'result', id: 50, outcome: 'rejected', reason,
+      refusal: { key: 'backend.halDiagnostics.notStartedBecause', params: { name: 'halscope', system_error: systemError } } })).toBe(expected)
+    expect(translateMessage(reason)).toBe(expected)
   })
 
   it('translates a nested reason', async () => {

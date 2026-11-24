@@ -543,6 +543,22 @@ void subroutines() {
               o.error->text.find("inner.ngc line 3: ") != std::string::npos,
           "A refused block in a subroutine file likewise: " + text_of(o));
 
+  write(rig.root / "subs" / "inner.ngc",
+        "o<inner> sub\nG91 G1 Y1 F100\nG38.2 X5 F10\no<inner> endsub\nM2\n");
+  o = rig.preview("G21 G90\nG0 X0 Y0\n\n\no<outer> call\nG1 X9\nM2\n");
+  const std::string detail = "a probe move (G38): where it ends depends on the machine";
+  require(o.state == PreviewState::failed && o.segments.size() == 2 && o.segments[1].line == 5 &&
+              near(o.segments[1].points.back(), {1, 1, 0}) &&
+              o.error ==
+                  PreviewError{5, "The preview ends at line 5: inner.ngc line 3: " + detail + '.',
+                               MessageKey{"backend.previewEngine.endsAtSubroutineLine",
+                                          {{"line", "5"},
+                                           {"file", "inner.ngc"},
+                                           {"sourceLine", "3"},
+                                           {"detail", detail}},
+                                          {{"detail", {"backend.previewEngine.stopProbe"}}}}},
+          "A known stop retains both source lines, the reason and the path: " + text_of(o));
+
   // A subroutine that is not found is the interpreter's error, at the call.
   o = rig.preview("G21 G90\nG1 X1 F100\no<nowhere> call\nM2\n");
   require(o.state == PreviewState::failed && o.error && o.error->line == 3 &&

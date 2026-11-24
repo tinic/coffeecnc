@@ -94,6 +94,7 @@
 using coffeecnc::Bounds;
 using coffeecnc::HelperRequest;
 using coffeecnc::KnownPreviewStop;
+using coffeecnc::PreviewStopSource;
 using coffeecnc::ProgramFrameCheck;
 using coffeecnc::ProgramRange;
 using coffeecnc::RestartPoint;
@@ -121,7 +122,7 @@ struct Canon {
   double path_tolerance{}; // mm
   double naivecam_tolerance{}; // mm
   std::array<CANON_TOOL_TABLE, CANON_POCKETS_MAX> tools{};
-  std::string elsewhere; // "name.ngc line 12: ", empty in the program itself
+  std::optional<PreviewStopSource> stop_source; // empty in the main program
   double open_rate{}; // mm/min of the run being collected; 0 for rapids and unknown feeds
   std::vector<Vec3> points;
   std::size_t written{};
@@ -140,7 +141,7 @@ struct Canon {
   int last_index{};
   // The line of the program (the file the request names) being executed: the line the
   // interpreter is at while it reads that file, and while it is in a subroutine file the line
-  // of the program that called out of it. `elsewhere` then says where it really is.
+  // of the program that called out of it. `stop_source` then says where it really is.
   int line{};
   int open_line{};
   int open_tool{};
@@ -202,15 +203,18 @@ void halt(Halt how, const std::string& text) {
     return;
   std::string clean = text;
   std::ranges::replace_if(clean, [](char c) { return c == '\n' || c == '\r'; }, ' ');
-  put(std::format("{} {} {}{}\n", how == Halt::error ? "error" : how == Halt::stop ? "stop" : "cut",
-                  canon.line, canon.elsewhere, clean));
+  put(std::format("{} {} {}{}\n",
+                  how == Halt::error  ? "error"
+                  : how == Halt::stop ? "stop"
+                                      : "cut",
+                  canon.line, coffeecnc::preview_stop_prefix(canon.stop_source), clean));
 }
 
 void halt(KnownPreviewStop reason, std::optional<int> argument = {}) {
   if (!begin_halt(Halt::stop))
     return;
   const char* codes = std::getenv(coffeecnc::preview_stop_codes_env);
-  put(coffeecnc::write_preview_stop(canon.line, reason, canon.elsewhere, codes ? codes : "",
+  put(coffeecnc::write_preview_stop(canon.line, reason, canon.stop_source, codes ? codes : "",
                                     argument));
 }
 
@@ -1152,7 +1156,7 @@ auto run(const HelperRequest& request) -> int {
       if (file == request.program)
         canon.line = found->line;
       else
-        canon.elsewhere = std::format("{} line {}: ", file.filename().string(), found->line);
+        canon.stop_source = PreviewStopSource{file.filename().string(), found->line};
       halt(Halt::stop, found->reason.text);
       put("end stop\n");
       std::fflush(sink);
@@ -1216,9 +1220,9 @@ auto run(const HelperRequest& request) -> int {
       // A line that cannot be read. The interpreter has already left every subroutine, so
       // where it was is taken from the line before: the next line of that file, unless that
       // line was an O word, after which the interpreter may be anywhere.
-      if (!canon.elsewhere.empty())
-        canon.elsewhere = after_o_word ? std::string("in a subroutine file: ")
-                                       : std::format("{} line {}: ", sub_file, sub_line + 1);
+      if (canon.stop_source)
+        canon.stop_source =
+            after_o_word ? PreviewStopSource{} : PreviewStopSource{sub_file, sub_line + 1};
       else if (!after_o_word)
         canon.line = interp->line();
       // The interpreter, in G80, refuses at reading a block that would move by a mode this
@@ -1255,12 +1259,12 @@ auto run(const HelperRequest& request) -> int {
     interp->file_name(file.data(), file.size() - 1);
     if (request.program == file.data()) {
       canon.line = interp->line();
-      canon.elsewhere.clear();
+      canon.stop_source.reset();
     } else {
       const std::string_view path{file.data()};
       sub_file = path.substr(path.rfind('/') + 1);
       sub_line = interp->line();
-      canon.elsewhere = std::format("{} line {}: ", sub_file, sub_line);
+      canon.stop_source = PreviewStopSource{sub_file, sub_line};
     }
     if (result == INTERP_ENDFILE)
       break;
@@ -1331,7 +1335,7 @@ auto run(const HelperRequest& request) -> int {
         use.word == "endsub")
       definition.reset();
     canon.tags = 0;
-    const bool target = request.restart_line == canon.line && canon.elsewhere.empty();
+    const bool target = request.restart_line == canon.line && !canon.stop_source;
     GCodes before{};
     if (target) {
       before = modal_g_codes(*interp);

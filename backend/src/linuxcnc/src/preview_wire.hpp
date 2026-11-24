@@ -85,7 +85,8 @@ struct HelperRequest {
 //                                                       coordinates, mm
 //   error <line> <text>     the interpreter's error; nothing follows but `end`
 //   stop <line> <text>      the path after this line depends on the machine
-//   stop_known <line> <id> [number]  a CoffeeCNC stop code, optionally with a number (v2)
+//   stop_known <line> <id> [number] [source-line file]
+//                          a stop code, with its argument from v2 and source from v3
 //   cut <line> <text>       a limit was reached
 //   restart_refused <id>   a CoffeeCNC restart refusal; old helpers send restart_blocked <text>
 //   end ok|error|stop|cut   the last line of a helper that ended by itself
@@ -135,17 +136,28 @@ enum class KnownPreviewStop : std::uint8_t {
   unknown_work_system = 8,
   machine_m_code = 9,
 };
-// Version 1 supports fixed reasons; version 2 adds the numbered reasons.
+// Version 1 supports fixed reasons, version 2 adds their numbers, and version 3 adds a source.
 inline constexpr char preview_stop_codes_env[] = "COFFEECNC_PREVIEW_STOP_CODES";
-inline constexpr std::string_view preview_stop_codes_version = "2";
+inline constexpr std::string_view preview_stop_codes_version = "3";
 
+struct PreviewStopSource {
+  std::string file;
+  int line{};
+  friend auto operator==(const PreviewStopSource&, const PreviewStopSource&) -> bool = default;
+};
+
+// No source means the main program. An empty file is a subroutine whose location is unknown.
+[[nodiscard]] auto preview_stop_prefix(const std::optional<PreviewStopSource>& source)
+    -> std::string;
 [[nodiscard]] auto write_preview_stop(int line, KnownPreviewStop reason,
-                                      std::string_view source_prefix, std::string_view version,
-                                      std::optional<int> argument = {}) -> std::string;
+                                      const std::optional<PreviewStopSource>& source,
+                                      std::string_view version, std::optional<int> argument = {})
+    -> std::string;
 
 struct HelperOutput {
   std::vector<PreviewSegment> segments;
   std::optional<PreviewError> problem; // of error, stop or cut
+  std::optional<PreviewStopSource> stop_source; // present for a coded stop in a subroutine
   HelperEnd end{HelperEnd::missing};
   // Why the reading ended before an `end` that fits the records: the text is not what a
   // helper writes. Empty for a result that is whole, and for one that only stops short (a

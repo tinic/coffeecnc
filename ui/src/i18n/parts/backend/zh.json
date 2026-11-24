@@ -587,6 +587,7 @@
       "rigidTapRestart": "从头运行攻丝程序以设定主轴转速倍率状态。",
       "cannotRead": "无法读取程序以生成预览，或程序大于 {size}。",
       "endsAtLine": "预览在第 {line} 行结束：{detail}。",
+      "endsAtSubroutineLine": "预览在第 {line} 行结束：{file} 第 {sourceLine} 行：{detail}。",
       "tooManySubroutines": "程序调用的不同子程序超过 {limit} 个：无预览。",
       "tooManyFiles": "程序使用的文件超过 {limit} 个：无预览。",
       "subroutinesUnreadable": "无法读取程序及其子程序文件，或其总大小超过 {size}：无预览。",

@@ -587,6 +587,7 @@
       "rigidTapRestart": "主軸オーバーライドの状態を設定するため、タッピングプログラムを先頭から実行してください。",
       "cannotRead": "プレビュー用にプログラムを読み込めないか、プログラムが {size} を超えています。",
       "endsAtLine": "プレビューは {line} 行目で終了しています：{detail}。",
+      "endsAtSubroutineLine": "プレビューは {line} 行目で終了しています：{file} の {sourceLine} 行目：{detail}。",
       "tooManySubroutines": "プログラムが {limit} 種類を超えるサブルーチンを呼び出しています。プレビューはありません。",
       "tooManyFiles": "プログラムが {limit} 個を超えるファイルを使用しています。プレビューはありません。",
       "subroutinesUnreadable": "プログラムとサブルーチンファイルを読み込めないか、合計が {size} を超えています。プレビューはありません。",

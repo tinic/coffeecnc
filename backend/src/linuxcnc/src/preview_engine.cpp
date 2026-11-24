@@ -914,6 +914,17 @@ auto outcome_of(const PreviewSettings& settings, const PreviewInputs& inputs, He
           problem.line, std::format("Line {}: {}.", problem.line, problem.text),
           MessageKey{"backend.previewEngine.lineErrorStop",
                      {{"line", std::to_string(problem.line)}, {"detail", problem.text}}}};
+    } else if (const auto& source = output.stop_source) {
+      outcome.error =
+          PreviewError{problem.line,
+                       std::format("The preview ends at line {}: {} line {}: {}.", problem.line,
+                                   source->file, source->line, problem.text),
+                       MessageKey{"backend.previewEngine.endsAtSubroutineLine",
+                                  {{"line", std::to_string(problem.line)},
+                                   {"file", source->file},
+                                   {"sourceLine", std::to_string(source->line)},
+                                   {"detail", problem.text}},
+                                  parameter_localization("detail", problem.localization)}};
     } else {
       outcome.error = PreviewError{
           problem.line, std::format("The preview ends at line {}: {}.", problem.line, problem.text),

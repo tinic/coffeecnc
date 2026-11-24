@@ -587,6 +587,7 @@
       "rigidTapRestart": "Starten Sie das Gewindebohrprogramm von Anfang an, damit die Spindelkorrektur gesetzt wird.",
       "cannotRead": "Das Programm kann für eine Vorschau nicht gelesen werden oder ist größer als {size}.",
       "endsAtLine": "Die Vorschau endet bei Zeile {line}: {detail}.",
+      "endsAtSubroutineLine": "Die Vorschau endet bei Zeile {line}: {file}, Zeile {sourceLine}: {detail}.",
       "tooManySubroutines": "Das Programm ruft mehr als {limit} verschiedene Unterprogramme auf: keine Vorschau.",
       "tooManyFiles": "Das Programm verwendet mehr als {limit} Dateien: keine Vorschau.",
       "subroutinesUnreadable": "Das Programm und seine Unterprogrammdateien können nicht gelesen werden oder sind zusammen größer als {size}: keine Vorschau.",

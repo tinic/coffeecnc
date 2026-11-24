@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, shallowRef } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { translateMessage } from '../i18n/messages'
+import { translateResult } from '../i18n/messages'
 import { onResult, send } from '../machine'
 import type { CommandBody, DirectoryEntry, ManageProgramFile } from '../protocol'
 import ModalDialog from './ModalDialog.vue'
@@ -39,7 +39,7 @@ onBeforeUnmount(onResult((command, result) => {
   request = null
   pending.value = false
   if (result.outcome === 'accepted') emit('done', command.operation)
-  else error.value = (): string => translateMessage(result.reason, result.refusal) || t('common.unavailable')
+  else error.value = (): string => translateResult(result) || t('common.unavailable')
 }))
 </script>
 

@@ -3,7 +3,7 @@
 import { computed, onBeforeUnmount, reactive, ref, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import { translateMessage } from '../i18n/messages'
+import { translateMessage, translateResult } from '../i18n/messages'
 
 import { onResult, panel, send } from '../machine'
 import { connectionBlock } from '../machine-block'
@@ -184,12 +184,12 @@ const removeListener = onResult((command, result) => {
     if (result.outcome === 'accepted' && panel.directory !== null) {
       directory.value = panel.directory
       feedback.value = null
-    } else feedback.value = (): string => translateMessage(result.reason, result.refusal) || t('operations.dialog.directoryUnreadable')
+    } else feedback.value = (): string => translateResult(result) || t('operations.dialog.directoryUnreadable')
   } else if (command === saveRequest) {
     saveRequest = null
     saving.value = false
     if (result.outcome !== 'accepted') {
-      feedback.value = (): string => translateMessage(result.reason, result.refusal) || t('operations.dialog.notSaved')
+      feedback.value = (): string => translateResult(result) || t('operations.dialog.notSaved')
       return
     }
     // Saved: open it as the current program; Program check and the preview follow.

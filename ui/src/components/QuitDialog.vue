@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { translateMessage } from '../i18n/messages'
+import { translateResult } from '../i18n/messages'
 import { live, onResult, panel, send } from '../machine'
 import type { CommandBody, CommandResult } from '../protocol'
 import ModalDialog from './ModalDialog.vue'
@@ -52,7 +52,7 @@ onBeforeUnmount(() => {
   <ModalDialog :title="t('status.quit.title')" size="small" fresh-gesture @close="close">
     <p class="effect">{{ t('status.quit.effect') }}</p>
     <p v-if="panel.simulated" class="note">{{ t('status.quit.simulatorNote') }}</p>
-    <p v-if="failure" class="failure" role="alert">{{ translateMessage(failure.reason, failure.refusal) || t('status.quit.notConfirmed') }}</p>
+    <p v-if="failure" class="failure" role="alert">{{ translateResult(failure) || t('status.quit.notConfirmed') }}</p>
     <p v-if="accepted" class="feedback" role="status">{{ panel.simulated ? t('status.quit.simulatedDone') : t('status.quit.accepted') }}</p>
     <p v-else-if="request" class="feedback" role="status">{{ t('status.quit.waiting') }}</p>
     <p v-else-if="blocked" class="note" role="status">{{ blocked }}</p>

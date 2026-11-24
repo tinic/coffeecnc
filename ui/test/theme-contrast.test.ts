@@ -20,7 +20,9 @@ describe('theme contrast', () => {
       expect(start).toBeGreaterThanOrEqual(0)
       return css.slice(start, css.indexOf('}', start))
     }
-    for (const selector of ['.btn, .choice', '.btn', '.field']) {
+    expect(rule('.btn, button.choice')).toMatch(/appearance:\s*none/)
+    expect(rule('.btn, button.choice')).toMatch(/border:\s*0\s*;/)
+    for (const selector of ['.btn, .choice', '.btn, button.choice', '.field']) {
       const body = rule(selector)
       expect(body).not.toMatch(/border:\s*1px solid/)
       expect(body).not.toMatch(/box-shadow/)

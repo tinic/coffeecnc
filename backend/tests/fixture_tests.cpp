@@ -312,6 +312,14 @@ auto encoded_messages() -> std::vector<EncodedMessage> {
                    MessageKey{"backend.previewEngine.cutterCompensation", {{"code", "G41"}}}};
   messages.push_back(encode_preview(unavailable));
 
+  messages.emplace_back(encode_message(
+      MessageLevel::error,
+      "The text of /home/cnc/outside.ngc cannot be shown: Path is outside the program directory.",
+      1700000001600ms,
+      MessageKey{
+          "backend.nmlPanelSource.textNotShown",
+          {{"file", "/home/cnc/outside.ngc"}, {"detail", "Path is outside the program directory."}},
+          {{"detail", {"backend.programStore.outsideDirectory"}}}}));
   messages.emplace_back(
       encode_message(MessageLevel::error, "Joint 0 on limit switch error", 1700000000123ms));
   messages.emplace_back(encode_message(MessageLevel::info, "T1 restored in the spindle.",

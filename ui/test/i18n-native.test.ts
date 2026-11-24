@@ -426,6 +426,18 @@ describe('translateMessage', () => {
     expect(translateMessage("Can't open home: no such file")).not.toContain('Référencement')
   })
 
+  it('translates why loaded program text cannot be shown and preserves the path', async () => {
+    await setLanguage('fr')
+    expect(translateMessage(
+      'The text of /home/cnc/outside.ngc cannot be shown: Path is outside the program directory.',
+      {
+        key: 'backend.nmlPanelSource.textNotShown',
+        params: { file: '/home/cnc/outside.ngc', detail: 'Path is outside the program directory.' },
+        params_localization: { detail: { key: 'backend.programStore.outsideDirectory', params: {} } },
+      },
+    )).toBe('Impossible d’afficher le texte de /home/cnc/outside.ngc : Le chemin est en dehors du dossier de programmes.')
+  })
+
   it('keeps operating system errors in HAL launch refusals verbatim', async () => {
     await setLanguage('de')
     const systemError = 'a value is not a finite number'

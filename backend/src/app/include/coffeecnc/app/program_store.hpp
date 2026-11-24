@@ -78,7 +78,7 @@ public:
   // that is not part of a well-formed UTF-8 sequence becomes one U+FFFD. `stamp` is the
   // program_stamp of the bytes read, the whole file unless it is `truncated`.
   [[nodiscard]] auto read_program(std::string_view path, std::uint64_t revision) const
-      -> std::expected<ProgramText, std::string>;
+      -> std::expected<ProgramText, LocalizedReason>;
 
 private:
   struct Resolved {

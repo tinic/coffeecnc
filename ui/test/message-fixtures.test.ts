@@ -1033,6 +1033,19 @@ const examples = [
   {
     "type": "message",
     "level": "error",
+    "text": "The text of /home/cnc/outside.ngc cannot be shown: Path is outside the program directory.",
+    "time": 1700000001600,
+    "localization": {
+      "key": "backend.nmlPanelSource.textNotShown",
+      "params": { "file": "/home/cnc/outside.ngc", "detail": "Path is outside the program directory." },
+      "params_localization": {
+        "detail": { "key": "backend.programStore.outsideDirectory", "params": {} }
+      }
+    }
+  },
+  {
+    "type": "message",
+    "level": "error",
     "text": "Joint 0 on limit switch error",
     "time": 1700000000123
   },

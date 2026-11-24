@@ -297,8 +297,8 @@ void open_rules() {
             std::format("Opening \"{}\" is refused with \"{}\" but got \"{}\"", path, reason,
                         refused.error_or(LocalizedReason{"a path"}).text));
     const auto unread = store.read_program(path, 1);
-    require(!unread.has_value() && unread.error_or("") == reason,
-            "Reading \"" + path + "\" is refused the same way");
+    require(!unread && unread.error() == refused.error(),
+            "Reading \"" + path + "\" is refused with the same reason and key");
   }
   for (const auto& call : files.calls)
     require(!call.starts_with("read "), "A refused program is never read: " + call);
@@ -371,9 +371,18 @@ void program_text() {
   const auto read = [&files, &store](std::string content) -> ProgramText {
     files.file(in_root("p.ngc"), std::move(content));
     const auto program = store.read_program("p.ngc", 9);
-    require(program.has_value(), "The program reads: " + program.error_or(""));
+    require(program.has_value(), "The program reads: " + program.error_or(LocalizedReason{}).text);
     return program ? *program : ProgramText{};
   };
+
+  files.file(in_root("blocked.ngc"), "M2\n");
+  files.unreadable_files.push_back(in_root("blocked.ngc"));
+  const auto blocked = store.read_program("blocked.ngc", 9);
+  require(!blocked &&
+              blocked.error() == LocalizedReason{"Program cannot be read: Permission denied",
+                                                 MessageKey{"backend.programStore.cannotRead",
+                                                            {{"detail", "Permission denied"}}}},
+          "The program read error carries a key and the filesystem detail.");
 
   const auto plain = read("G0 X1\nM2\n");
   require(plain.revision == 9 && plain.file == in_root("p.ngc") && !plain.truncated,
@@ -513,7 +522,7 @@ void on_the_host(const std::filesystem::path& scratch) {
            "sub/../../outside/secret.ngc", "/etc/hosts"}) {
     require(store.resolve_program(path).error_or(LocalizedReason{}).text == outside_reason,
             "Opening outside the root is refused: " + path);
-    require(store.read_program(path, 1).error_or("") == outside_reason,
+    require(store.read_program(path, 1).error_or(LocalizedReason{}).text == outside_reason,
             "Reading outside the root is refused: " + path);
   }
   require(store.resolve_program("part.ngc") == top + "/part.ngc" &&

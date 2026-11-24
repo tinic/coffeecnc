@@ -1016,26 +1016,37 @@ void delayed_start(Rig& rig, Reason reason, std::string_view name) {
   };
   const auto trace_from = rig.port.writes().size();
   RequestId press{};
-  NmlPort::Written start;
+  std::optional<NmlPort::Written> start;
+  std::optional<Result> reply_at_decision;
+  int echo_at_decision{};
+  bool teleop_at_decision{};
   bool written_frozen = false;
   bool low_before_accepted = false;
   Clock::time_point pressed;
   Clock::time_point decided;
-  Clock::time_point raised;
+  std::optional<Clock::time_point> raised;
   Clock::time_point resumed;
   {
     const FrozenTask frozen{rig.config.ini_file};
+    const auto requested = Clock::now();
     press = rig.post(hold_x);
     pressed = Clock::now();
     // Not "no answer yet", which a worker that waits before writing would also show: the write
     // itself, a jog start, while task cannot take it up.
-    while (Clock::now() < pressed + 100ms && start.type != types.jog_start) {
-      if (const auto writes = written_since(rig, trace_from); !writes.empty())
-        start = writes.back();
+    while (Clock::now() < pressed + 100ms && !start) {
+      const auto writes = written_since(rig, trace_from);
+      const auto jog = std::ranges::find_if(writes, [&](const NmlPort::Written& write) -> bool {
+        return write.type == types.jog_start && write.at >= requested;
+      });
+      if (jog != writes.end())
+        start = *jog;
       std::this_thread::sleep_for(200us);
     }
-    written_frozen = start.type == types.jog_start && !rig.result(press).has_value() &&
-                     rig.status().echo_serial - start.serial < 0;
+    reply_at_decision = rig.result(press);
+    const auto status = rig.status();
+    echo_at_decision = status.echo_serial;
+    teleop_at_decision = status.teleop;
+    written_frozen = start && !reply_at_decision && echo_at_decision - start->serial < 0;
     decided = Clock::now();
     if (reason == Reason::page_end)
       rig.runtime->end_page(rig.page);
@@ -1043,9 +1054,15 @@ void delayed_start(Rig& rig, Reason reason, std::string_view name) {
       static_cast<void>(rig.post(release_x));
     else
       decided = pressed + JogLease::timeout; // nothing: the lease runs out by itself
-    while (!rig.probe.jog_stop() && Clock::now() < decided + 1s)
+    for (;;) {
+      if (rig.probe.jog_stop()) {
+        raised = Clock::now();
+        break;
+      }
+      if (Clock::now() >= decided + 1s)
+        break;
       std::this_thread::sleep_for(100us);
-    raised = Clock::now();
+    }
     for (const auto end = pressed + 500ms; Clock::now() < end;) {
       low_before_accepted = low_before_accepted || !rig.probe.jog_stop();
       sample();
@@ -1062,11 +1079,11 @@ void delayed_start(Rig& rig, Reason reason, std::string_view name) {
   for (const auto end = resumed + 10s; Clock::now() < end && !fell;) {
     const auto status = rig.status();
     const auto now = Clock::now();
-    if (!start_echoed && status.echo_serial - start.serial >= 0)
+    if (start && !start_echoed && status.echo_serial - start->serial >= 0)
       start_echoed = now;
-    if (!stop)
+    if (start && !stop)
       for (const auto& written : written_since(rig, trace_from))
-        if (!stop && written.type == types.jog_stop && written.serial - start.serial > 0)
+        if (!stop && written.type == types.jog_stop && written.serial - start->serial > 0)
           stop = written;
     // Done as task reports it, or left behind by a later command of the port.
     if (stop && !stop_accepted &&
@@ -1089,27 +1106,35 @@ void delayed_start(Rig& rig, Reason reason, std::string_view name) {
   };
   // Task resumed while the port still waited for the echo of the start: the start was neither
   // answered nor given up when the reason for it went.
-  const bool waiting = resumed - start.at < NmlPort::echo_timeout;
-  const bool ordered = written_frozen && waiting && start.at <= decided + 1ms &&
-                       decided <= raised && start_echoed && *start_echoed >= resumed && stop &&
+  const bool ordered = start && raised && written_frozen &&
+                       resumed - start->at < NmlPort::echo_timeout && start->at <= decided + 1ms &&
+                       decided <= *raised && start_echoed && *start_echoed >= resumed && stop &&
                        stop->at >= resumed && stop_accepted && *stop_accepted >= stop->at && fell &&
                        *fell >= *stop_accepted;
   const auto answer = reason == Reason::page_end ? std::optional<Result>{} : rig.result(press);
-  check(std::format("delayed_start_{}", name),
-        ordered && !low_before_accepted && moved < 0.001 && milliseconds(raised - decided) < 30,
-        std::format("jog_start_type={} start={}#{} stop={}#{} trace={} ms_after_press: "
-                    "start_written={:.1f} decided={:.1f} level_high={:.1f} task_resumed={:.1f} "
-                    "start_echoed={:.1f} stop_written={:.1f} stop_accepted={:.1f} "
-                    "level_low={:.1f} level_low_before_stop_accepted={} hold_ms={:.1f} "
-                    "moved_mm={:.5f} start_result={}",
-                    types.jog_start, start.type, start.serial, stop ? stop->type : 0,
-                    stop ? stop->serial : 0, trace_text(written_since(rig, trace_from)),
-                    milliseconds(start.at - pressed), milliseconds(decided - pressed),
-                    milliseconds(raised - pressed), milliseconds(resumed - pressed),
-                    ms(start_echoed), stop ? milliseconds(stop->at - pressed) : -1,
-                    ms(stop_accepted), ms(fell), low_before_accepted,
-                    fell ? milliseconds(*fell - raised) : -1, moved,
-                    answer ? answer->text() : std::string("none")));
+  const auto writes = written_since(rig, trace_from);
+  const bool raised_promptly = raised && *raised - decided < 30ms;
+  const bool passed = ordered && raised_promptly && !low_before_accepted && moved < 0.001;
+  auto detail = std::format(
+      "jog_start_type={} start={} stop={} trace={} ms_after_press: "
+      "start_written={:.1f} decided={:.1f} level_high={:.1f} task_resumed={:.1f} "
+      "start_echoed={:.1f} stop_written={:.1f} stop_accepted={:.1f} "
+      "level_low={:.1f} level_low_before_stop_accepted={} hold_ms={:.1f} "
+      "moved_mm={:.5f} start_result={}",
+      types.jog_start, start ? std::format("{}#{}", start->type, start->serial) : "none",
+      stop ? std::format("{}#{}", stop->type, stop->serial) : "none", trace_text(writes),
+      start ? ms(start->at) : -1, milliseconds(decided - pressed), ms(raised), ms(resumed),
+      ms(start_echoed), stop ? ms(stop->at) : -1, ms(stop_accepted), ms(fell),
+      low_before_accepted, fell && raised ? milliseconds(*fell - *raised) : -1, moved,
+      answer ? answer->text() : "none");
+  if (!passed) {
+    detail += std::format(" press={} echo_at_decision={} teleop_at_decision={} reply_at_decision={}",
+                          press, echo_at_decision, teleop_at_decision,
+                          reply_at_decision ? reply_at_decision->text() : "none");
+    for (const auto& write : writes)
+      detail += std::format(" write={}#{}@{:.3f}ms", write.type, write.serial, ms(write.at));
+  }
+  check(std::format("delayed_start_{}", name), passed, detail);
   if (reason == Reason::page_end) {
     check(std::format("delayed_start_{}_not_answered", name), !rig.result(press).has_value());
     rig.new_page();

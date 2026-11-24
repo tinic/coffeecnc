@@ -225,6 +225,15 @@ void strict_shapes() {
        R"({"id":42,"type":"set_tool","tool":{"number":1,"pocket":1,"length":0,"diameter":6}})",
        R"({"id":42,"type":"set_tool","tool":{"number":1,"pocket":1,"length":0,"diameter":6,"comment":"","extra":1}})"})
     rejected(wire, 42);
+
+  const auto preferences = decode_request(
+      R"({"id":42,"type":"set_operator_settings","machine_id":"mill-1","base_revision":0,)"
+      R"("document":{"version":1,"startup_units":"mm","enabled_wcs":[1],)"
+      R"("default_spindle_rpm":1800,"default_jog_velocity":600,"language":"tlh"}})");
+  const auto* invalid = std::get_if<DecodeError>(&preferences);
+  require(invalid && invalid->id == 42 && invalid->reason == "Invalid panel presentation." &&
+              invalid->localization == MessageKey{"backend.operatorSettings.invalidPresentation"},
+          "Malformed operator settings retain the request ID and the decoder's key");
 }
 
 void identity_and_limits() {

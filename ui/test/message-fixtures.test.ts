@@ -1374,6 +1374,16 @@ const examples = [
     }
   },
   {
+    "type": "result",
+    "id": 54,
+    "outcome": "rejected",
+    "reason": "Invalid panel presentation.",
+    "refusal": {
+      "key": "backend.operatorSettings.invalidPresentation",
+      "params": {}
+    }
+  },
+  {
     "type": "offset_history",
     "revision": 4,
     "storage": "saved",

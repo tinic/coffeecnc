@@ -48,7 +48,7 @@ auto encode_result(RequestId id, CommandOutcome outcome, std::string_view reason
       !localization && outcome != CommandOutcome::rejected && outcome != CommandOutcome::accepted
           ? refusal
           : localization;
-  if (key)
+  if (key && (outcome != CommandOutcome::accepted || !reason.empty()))
     message["localization"] = {{"key", key->key}, {"params", key->params}};
   if (setter) {
     auto measurement = Json(nullptr);

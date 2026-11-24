@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { translateMessage } from '../i18n/messages'
+import { translateMessage, translateResult } from '../i18n/messages'
 import { allHomed, homingActive, manualBlock, onResult, panel, send } from '../machine'
 import { homingMessage } from '../machine-block'
 import type { CommandBody, ProbeDirection } from '../protocol'
@@ -223,7 +223,7 @@ const removeListener = onResult((command, result) => {
   if (result.outcome === 'timed_out') send({ type: 'abort' })
   /** The machine's reason in the panel's language, or the fallback when it gave none. */
   const failure = (fallback: () => string): Line => ({
-    text: (): string => result.reason ? translateMessage(result.reason, result.refusal) : fallback(), level: 'blocked',
+    text: (): string => result.reason ? translateResult(result) : fallback(), level: 'blocked',
   })
   if (request.action === 'apply_angle') {
     const degrees = result.setter?.edge_angle

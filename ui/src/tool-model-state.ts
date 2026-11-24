@@ -1,6 +1,6 @@
 import { reactive, shallowRef, watch } from 'vue'
 import { t } from './i18n'
-import { translateMessage } from './i18n/messages'
+import { translateMessage, translateResult } from './i18n/messages'
 import type { CommandBody, Hello, Tool } from './protocol'
 import type { Panel, PanelState } from './store'
 import type { ToolHolder } from './tool-holder'
@@ -134,7 +134,7 @@ export function createToolModelState(panel: PanelState, connection: Pick<Panel, 
       state.uncertain = result.outcome === 'timed_out'
       const reason = (): string => result.outcome === 'timed_out'
         ? t('tools.modelState.noConfirmation')
-        : translateMessage(result.reason, result.refusal) || t('tools.modelState.couldNotSave')
+        : translateResult(result) || t('tools.modelState.couldNotSave')
       finish(fail(reason))
     } else if (panel.hello !== pending.context.hello || state.storage !== 'available' ||
       state.revision === null || state.revision <= pending.command.base_revision) {

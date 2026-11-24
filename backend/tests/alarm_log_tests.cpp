@@ -138,6 +138,33 @@ void records_messages_and_refusals() {
   require(f.lines(file).size() == 6, "Text that is not UTF-8 is recorded");
 }
 
+void localization_survives_reload() {
+  Fixture f;
+  f.message("Joint 0 following error");
+  const MessageKey contact{"backend.jogStop.probeContact"};
+  const RefusalMessage refusal{"messages.policy.jogVelocityAxisLimit",
+                               {{"axis", "Z"}, {"limit", "750"}}};
+  const std::vector messages{
+      encode_message(MessageLevel::info, "Jog stopped: probe contact", epoch, contact),
+      encode_result(1, CommandOutcome::rejected,
+                    "Jog velocity is above the Z axis limit of 750 mm/min.", {}, {}, refusal),
+      std::string{
+          R"({"type":"message","level":"error","text":"Keep this text","localization":{"key":"invalid","params":{"x":7}}})"}};
+  f.log->posted(page, messages, epoch);
+  f.log->settle();
+  f.open();
+  const auto view = f.log->view();
+  require(view.entries.size() == 4 && view.skipped == 0, "Both older and localized records reload");
+  require(!view.entries[0].localization && view.entries[1].localization == contact &&
+              view.entries[2].localization == refusal && !view.entries[3].localization &&
+              view.entries[3].text == "Keep this text",
+          "Known metadata survives reload and invalid metadata does not discard English text");
+  const auto wire = Json::parse(encode_alarm_log(view)).at("entries");
+  require(wire[1].at("localization").at("key") == contact.key &&
+              wire[2].at("localization").at("params").at("axis") == "Z",
+          "The alarm log provides keys and arguments to the next page");
+}
+
 void snapshot_has_what_came_before() {
   Fixture f;
   f.message("before the page");
@@ -545,6 +572,7 @@ void real_files(const std::filesystem::path& root) {
 auto main(int argc, char** argv) -> int {
   try {
     records_messages_and_refusals();
+    localization_survives_reload();
     snapshot_has_what_came_before();
     ordering_across_restarts();
     corruption_tolerance();

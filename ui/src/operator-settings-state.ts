@@ -3,7 +3,7 @@ import type { CommandBody, Hello } from './protocol'
 import type { Panel, PanelState } from './store'
 import { decodeOperatorPreferences, decodeTheme, defaultOperatorPreferences, withRecentProgram, type OperatorPreferences, type PanelTheme, type ProgramLayout } from './operator-settings'
 import { decodeLanguage, t, type Language } from './i18n'
-import { translateMessage } from './i18n/messages'
+import { translateResult } from './i18n/messages'
 import { validMachineId } from './tool-model-settings'
 
 const storageKey = 'coffeecnc.operator-settings.v1'
@@ -152,7 +152,7 @@ export function createOperatorSettingsState(panel: PanelState, connection: Pick<
     if (result.outcome !== 'accepted') {
       state.uncertain = result.outcome === 'timed_out'
       finish(fail(() => result.outcome === 'timed_out' ? t('status.settingsState.noConfirmation')
-        : translateMessage(result.reason, result.refusal) || t('status.settingsState.saveFailed')))
+        : translateResult(result) || t('status.settingsState.saveFailed')))
     } else if (panel.hello !== pending.context.hello || state.storage !== 'available' ||
       state.revision === null || state.revision <= pending.command.base_revision) {
       state.uncertain = true

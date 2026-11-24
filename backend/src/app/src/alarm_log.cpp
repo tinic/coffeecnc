@@ -36,6 +36,26 @@ auto bounded(std::string text, std::size_t limit) -> std::string {
   return text;
 }
 
+// Ignore invalid optional metadata so an older or edited record keeps its English text.
+auto localization_of(const Json& value, std::string_view field) -> std::optional<MessageKey> {
+  const auto metadata = value.find(field);
+  if (metadata == value.end() || !metadata->is_object() ||
+      dump(*metadata).size() > AlarmLog::max_text_bytes)
+    return std::nullopt;
+  const auto key = metadata->find("key");
+  const auto params = metadata->find("params");
+  if (key == metadata->end() || !key->is_string() || key->get<std::string_view>().empty() ||
+      params == metadata->end() || !params->is_object())
+    return std::nullopt;
+  MessageKey message{key->get<std::string>()};
+  for (const auto& [name, arg] : params->items()) {
+    if (!arg.is_string())
+      return std::nullopt;
+    message.params.emplace(name, arg.get<std::string>());
+  }
+  return message;
+}
+
 auto record_json(const AlarmRecord& record) -> Json {
   Json value{{"session", record.session},
              {"time", record.time},
@@ -43,6 +63,9 @@ auto record_json(const AlarmRecord& record) -> Json {
              {"text", record.text},
              {"outcome", record.outcome.empty() ? Json(nullptr) : Json(record.outcome)},
              {"command", nullptr}};
+  if (record.localization)
+    value["localization"] = {{"key", record.localization->key},
+                             {"params", record.localization->params}};
   if (!record.command.empty()) {
     auto command = Json::parse(record.command, nullptr, false);
     if (command.is_object())
@@ -87,6 +110,7 @@ auto record_from(std::string_view line) -> std::optional<AlarmRecord> {
   record.time = time->get<std::int64_t>();
   record.level = level_text == "info" ? MessageLevel::info : MessageLevel::error;
   record.text = bounded(text->get<std::string>(), AlarmLog::max_text_bytes);
+  record.localization = localization_of(value, "localization");
   if (outcome != nullptr && outcome->is_string())
     record.outcome = outcome->get<std::string>();
   if (command != nullptr && command->is_object()) {
@@ -404,6 +428,10 @@ void AlarmLog::posted(PageToken page, std::span<const std::string> messages,
       record.time = unix_time.count();
       record.text = value.value("reason", std::string{});
       record.outcome = outcome;
+      if (outcome == "rejected")
+        record.localization = localization_of(value, "refusal");
+      if (!record.localization && outcome != "accepted")
+        record.localization = localization_of(value, "localization");
       found.emplace_back(id, outcome == "accepted" ? AlarmRecord{} : std::move(record));
     } else if (type == "message") {
       const auto time = value.find("time");
@@ -413,6 +441,7 @@ void AlarmLog::posted(PageToken page, std::span<const std::string> messages,
       record.level =
           value.value("level", std::string{}) == "info" ? MessageLevel::info : MessageLevel::error;
       record.text = value.value("text", std::string{});
+      record.localization = localization_of(value, "localization");
       found.emplace_back(std::nullopt, std::move(record));
     }
   }

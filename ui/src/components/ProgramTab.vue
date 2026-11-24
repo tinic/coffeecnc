@@ -30,7 +30,7 @@ import type { CommandBody } from '../protocol'
 import ProgramCheckDialog from './ProgramCheckDialog.vue'
 import SetterStatusBand from './SetterStatusBand.vue'
 import { machineFeedback } from '../machine-feedback'
-import { translateMessage } from '../i18n/messages'
+import { translateMessage, translateResult } from '../i18n/messages'
 
 const { t } = useI18n()
 
@@ -240,7 +240,7 @@ const removeEditListener = onResult((command, result) => {
   if (command !== editRequest) return
   editRequest = null
   if (result.outcome === 'accepted') editing.value = null
-  else if (editing.value !== null) editing.value.error = (): string => translateMessage(result.reason, result.refusal) || t('program.tab.notSaved')
+  else if (editing.value !== null) editing.value.error = (): string => translateResult(result) || t('program.tab.notSaved')
 })
 onBeforeUnmount(removeEditListener)
 

@@ -943,8 +943,7 @@ void Session::publish_program(ProgramPublication& request, const Clock& clock) {
         "Stop the loaded program before replacing it.", MessageKey{"backend.programFiles.stop"}}));
     return;
   }
-  auto published = request.publish().transform_error(
-      [](std::string error) { return LocalizedReason{std::move(error)}; });
+  auto published = request.publish();
   if (published) {
     const auto now = port_.snapshot();
     if (loaded(now)) {

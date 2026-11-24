@@ -1,10 +1,13 @@
 #ifndef COFFEECNC_CORE_PROBE_MODAL_HPP
 #define COFFEECNC_CORE_PROBE_MODAL_HPP
 
+#include <coffeecnc/core/controller_port.hpp>
+
 #include <cmath>
 #include <format>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace coffeecnc {
 
@@ -65,6 +68,54 @@ inline auto plan_probe_restore(const ProbeModalState& operator_state,
       note(std::format("M52 P{}", left->adaptive_feed ? 1 : 0));
   }
   return plan;
+}
+
+// A new probe cycle while a restore is pending. It takes over the operator's state only while
+// every item is what the stopped cycle left and no command ran since. Otherwise nothing of the
+// stopped cycle is restored, so `report` names every item that cycle changed.
+struct ProbeModalTakeover {
+  bool take_over{};
+  ProbeModalPlan report{};
+};
+
+inline auto plan_probe_takeover(const ProbeModalState& operator_state,
+                                const std::optional<ProbeModalState>& left,
+                                const ProbeModalState& now, bool commands) -> ProbeModalTakeover {
+  auto plan = plan_probe_restore(operator_state, left, now, commands);
+  if (plan.unknown)
+    return {.take_over = false, .report = std::move(plan)};
+  if (plan.changed.empty())
+    return {.take_over = true, .report = {}};
+  // As after a command: every item the cycle changed is named, also one still restorable.
+  return {.take_over = false, .report = plan_probe_restore(operator_state, left, now, true)};
+}
+
+// A stop the port could not confirm keeps the probe guard set until a backend restart, so
+// idle_maintenance never restores: report "not restored" now. Empty for a confirmed stop, where
+// idle_maintenance decides later.
+inline auto plan_probe_stop(bool stop_confirmed) -> std::optional<ProbeModalPlan> {
+  if (stop_confirmed)
+    return std::nullopt;
+  return ProbeModalPlan{.unknown = true};
+}
+
+// The keyed panel messages for what a restore did not do.
+inline auto probe_modal_messages(const ProbeModalPlan& plan) -> std::vector<ControllerMessage> {
+  std::vector<ControllerMessage> messages;
+  if (plan.unknown)
+    messages.push_back(
+        {true,
+         "Could not restore the distance mode and feed controls after the stopped probe cycle. "
+         "Check G90 or G91 and the feed override.",
+         MessageKey{"backend.nmlPort.probeModalNotRestored"}});
+  if (!plan.changed.empty())
+    messages.push_back(
+        {false,
+         std::format("The stopped probe cycle left {}. CoffeeCNC did not restore it: it changed, "
+                     "or a command ran, after the stop.",
+                     plan.changed),
+         MessageKey{"backend.nmlPort.probeModalChanged", {{"items", plan.changed}}}});
+  return messages;
 }
 
 } // namespace coffeecnc

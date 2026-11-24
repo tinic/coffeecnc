@@ -729,6 +729,7 @@ struct NmlPort::Impl {
         ++loads->gcode_writes;
       loads->serials.begin();
     }
+    // Not counted: G-code from halui, a pendant or another NML client; the item comparison catches it.
     if (runs_gcode(message.type))
       ++gcode_commands;
     const int wrote = command.call(
@@ -1096,19 +1097,7 @@ auto NmlPort::probe_modal_now() -> ProbeModalState {
 }
 
 void NmlPort::report_probe_modal(const ProbeModalPlan& plan) {
-  if (plan.unknown)
-    impl_->messages.push_back(
-        {true,
-         "Could not restore the distance mode and feed controls after the stopped probe cycle. "
-         "Check G90 or G91 and the feed override.",
-         MessageKey{"backend.nmlPort.probeModalNotRestored"}});
-  if (!plan.changed.empty())
-    impl_->messages.push_back(
-        {false,
-         std::format("The stopped probe cycle left {}. CoffeeCNC did not restore it: it changed, "
-                     "or a command ran, after the stop.",
-                     plan.changed),
-         MessageKey{"backend.nmlPort.probeModalChanged", {{"items", plan.changed}}}});
+  std::ranges::move(probe_modal_messages(plan), std::back_inserter(impl_->messages));
 }
 
 void NmlPort::restore_probe_modal(const Wanted& wanted) {
@@ -1601,12 +1590,12 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
                                 raw->motion.traj.adaptive_feed_enabled};
   auto modal = at_start;
   if (const auto pending = std::exchange(impl_->probe_modal, std::nullopt)) {
-    const auto plan = plan_probe_restore(pending->operator_state, pending->left, at_start,
-                                         impl_->gcode_commands != pending->commands_at_stop);
-    if (!plan.unknown && plan.changed.empty())
+    const auto takeover = plan_probe_takeover(pending->operator_state, pending->left, at_start,
+                                              impl_->gcode_commands != pending->commands_at_stop);
+    if (takeover.take_over)
       modal = pending->operator_state;
     else
-      report_probe_modal(plan);
+      report_probe_modal(takeover.report);
   }
   const bool restore_feed_override = modal.feed_override;
   const bool restore_adaptive = modal.adaptive_feed;
@@ -1692,7 +1681,11 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
       hal->finish_probe_cycle();
     // What the cycle leaves the operator: a later restore puts the operator's state back only
     // while this is unchanged. Unknown without status: no restore then.
-    if (impl_->probe_modal) {
+    if (const auto now_plan = impl_->probe_modal ? plan_probe_stop(stopped) : std::nullopt) {
+      // The guard stays set, so no restore follows: tell the operator once, here.
+      impl_->probe_modal.reset();
+      report_probe_modal(*now_plan);
+    } else if (impl_->probe_modal) {
       // After the abort has settled: task may run an ON_ABORT_COMMAND that sets modal state.
       const bool settled = stopped && until(std::chrono::milliseconds{1500}, [&]() {
         const auto* s = impl_->stat();

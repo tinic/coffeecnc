@@ -603,32 +603,29 @@ auto encoded_messages() -> std::vector<EncodedMessage> {
     messages.emplace_back(std::move(*localized));
   else
     messages.emplace_back(std::unexpected(LocalizedReason{"Missing tool-model reason"}));
-  const auto settings_message = [](const OperatorSettings& settings) -> EncodedMessage {
-    return encode_operator_settings(settings).transform_error(
-        [](std::string detail) { return LocalizedReason{std::move(detail)}; });
-  };
-  messages.push_back(settings_message({"G0759", 2, ToolModelAvailability::available, "",
-                                       OperatorPreferences{StartupUnits::inch,
-                                                           {1, 2, 3},
-                                                           1800,
-                                                           600,
-                                                           6.35,
-                                                           ProgramLayout::split,
-                                                           PanelTheme::dark,
-                                                           PanelLanguage::ja,
-                                                           {"/home/cnc/nc_files/air/03-pocket.ngc"},
-                                                           {{"Vise jaw", {-120.5, 33.25, -10}}},
-                                                           40.0}}));
-  messages.push_back(settings_message(
-      {{}, 0, ToolModelAvailability::session_only, "No machine identity configured", {}}));
   messages.push_back(
-      settings_message({"G0759",
-                        0,
-                        ToolModelAvailability::unavailable,
-                        "/home/cnc/operator-settings.json exceeds 16 KiB. The file was left alone.",
-                        {},
-                        MessageKey{"backend.operatorSettingsStore.fileTooLarge",
-                                   {{"file", "/home/cnc/operator-settings.json"}}}}));
+      encode_operator_settings({"G0759", 2, ToolModelAvailability::available, "",
+                                OperatorPreferences{StartupUnits::inch,
+                                                    {1, 2, 3},
+                                                    1800,
+                                                    600,
+                                                    6.35,
+                                                    ProgramLayout::split,
+                                                    PanelTheme::dark,
+                                                    PanelLanguage::ja,
+                                                    {"/home/cnc/nc_files/air/03-pocket.ngc"},
+                                                    {{"Vise jaw", {-120.5, 33.25, -10}}},
+                                                    40.0}}));
+  messages.push_back(encode_operator_settings(
+      {{}, 0, ToolModelAvailability::session_only, "No machine identity configured", {}}));
+  messages.push_back(encode_operator_settings(
+      {"G0759",
+       0,
+       ToolModelAvailability::unavailable,
+       "/home/cnc/operator-settings.json exceeds 16 KiB. The file was left alone.",
+       {},
+       MessageKey{"backend.operatorSettingsStore.fileTooLarge",
+                  {{"file", "/home/cnc/operator-settings.json"}}}}));
 
   messages.emplace_back(encode_result(
       53, CommandOutcome::rejected, "Default jog speed exceeds the configured machine limit.", {},

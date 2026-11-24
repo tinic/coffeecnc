@@ -35,9 +35,10 @@ auto io_reason(std::string_view key, std::string_view what, int number) -> Local
 
 auto directory_reason(std::string_view key, std::format_string<const std::string&> what,
                       const std::string& path, int number) -> std::unexpected<LocalizedReason> {
-  auto failure = io_reason(key, std::format(what, path), number);
-  failure.localization->params.emplace("path", path);
-  return std::unexpected(std::move(failure));
+  const auto error = std::generic_category().message(number);
+  return std::unexpected(
+      LocalizedReason{std::format("{}: {}", std::format(what, path), error),
+                      MessageKey{std::string(key), {{"path", path}, {"osError", error}}}});
 }
 
 auto close_descriptor(int& descriptor) -> bool {

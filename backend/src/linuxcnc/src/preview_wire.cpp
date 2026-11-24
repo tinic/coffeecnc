@@ -85,13 +85,13 @@ auto valid_stop_token(std::string_view token) -> bool {
 
 auto preview_stop_message(KnownPreviewStop reason, const PreviewStopArgument& argument)
     -> LocalizedReason {
-  const auto* number = std::get_if<int>(&argument);
+  const auto* numeric_argument = std::get_if<int>(&argument);
   const auto* token = std::get_if<std::string>(&argument);
   const auto kind = stop_argument_kind(reason);
-  if ((kind == StopArgumentKind::number) != (number != nullptr) ||
+  if ((kind == StopArgumentKind::number) != (numeric_argument != nullptr) ||
       (kind == StopArgumentKind::token) != (token != nullptr))
     return {};
-  const int number_value = number ? *number : -1;
+  const int number_value = numeric_argument ? *numeric_argument : -1;
   const std::string text = token ? *token : std::string{};
   switch (reason) {
   case KnownPreviewStop::nurbs:
@@ -554,11 +554,11 @@ auto preview_stop_prefix(const std::optional<PreviewStopSource>& source) -> std:
 auto write_preview_stop(int line, KnownPreviewStop reason,
                         const std::optional<PreviewStopSource>& source, std::string_view version,
                         const PreviewStopArgument& argument) -> std::string {
-  const auto* number = std::get_if<int>(&argument);
+  const auto* numeric_argument = std::get_if<int>(&argument);
   const auto* token = std::get_if<std::string>(&argument);
   const bool earlier =
       reason <= KnownPreviewStop::machine_m_code &&
-      (version == "3" || (!source && (version == "2" || (version == "1" && !number))));
+      (version == "3" || (!source && (version == "2" || (version == "1" && !numeric_argument))));
   const bool coded = version == preview_stop_codes_version || earlier;
   if (!coded || (source && !valid_stop_source(*source)) || (token && !valid_stop_token(*token))) {
     auto text = preview_stop_message(reason, argument).text;
@@ -567,8 +567,8 @@ auto write_preview_stop(int line, KnownPreviewStop reason,
   }
 
   auto out = std::format("stop_known {} {}", line, static_cast<unsigned>(reason));
-  if (number)
-    out += std::format(" {}", *number);
+  if (numeric_argument)
+    out += std::format(" {}", *numeric_argument);
   if (token)
     out += std::format(" {}", *token);
   if (source)

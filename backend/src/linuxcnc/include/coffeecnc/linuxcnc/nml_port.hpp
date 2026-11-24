@@ -4,6 +4,7 @@
 #include <coffeecnc/core/command_policy.hpp>
 #include <coffeecnc/core/controller_port.hpp>
 #include <coffeecnc/core/panel_messages.hpp>
+#include <coffeecnc/core/probe_modal.hpp>
 #include <coffeecnc/linuxcnc/hal_control.hpp>
 #include <coffeecnc/linuxcnc/machine_config.hpp>
 
@@ -39,6 +40,8 @@ struct NmlStatus {
   double velocity{};    // mm/min
   double feed_override{};
   double rapid_override{};
+  bool feed_override_enabled{}; // M50: the feed override applies
+  bool adaptive_feed_enabled{};  // M52
   std::optional<double> velocity_limit{}; // factor of the configured linear trajectory ceiling
   double spindle_rpm{}; // commanded, before override
   double spindle_override{};
@@ -396,6 +399,12 @@ private:
   [[nodiscard]] auto spindle_command(SpindleDirection direction, double rpm, const Wanted& wanted,
                                      bool during_pause) -> ActionResult;
   void recover_paused_spindle(const Wanted& wanted);
+  // From idle_maintenance: the distance mode, feed and M50/M52 state a stopped probe cycle left
+  // changed, once the machine is on and idle.
+  void restore_probe_modal(const Wanted& wanted);
+  [[nodiscard]] auto probe_modal_now() -> ProbeModalState;
+  // The keyed messages for what a restore did not do.
+  void report_probe_modal(const ProbeModalPlan& plan);
   explicit NmlPort(std::unique_ptr<Impl> impl);
   std::unique_ptr<Impl> impl_;
 };

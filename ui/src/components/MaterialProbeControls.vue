@@ -228,7 +228,10 @@ function probe(target: MaterialGuideTarget, size: number, angle: AngleEdge): voi
       break
     }
   }
-  if (measureOnly.value && request.action !== 'ball' && request.action !== 'apply_angle' && request.action !== 'apply_measurement')
+  // Only the actions the controller can run measure-only: a later action writes unless it says so.
+  if (measureOnly.value && (request.action === 'material' || request.action === 'corner' ||
+      request.action === 'inside_corner' || request.action === 'pocket' || request.action === 'slot' ||
+      request.action === 'ridge' || request.action === 'bore' || request.action === 'boss' || request.action === 'angle'))
     request = { ...request, measure_only: true }
   pending.value = request
   line.value = { text: busy, level: 'busy' }

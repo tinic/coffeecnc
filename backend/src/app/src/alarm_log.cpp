@@ -151,19 +151,19 @@ auto command_of(std::string_view json) -> std::optional<std::pair<std::uint64_t,
 auto encode_alarm_log(const AlarmLogView& view) -> std::string {
   auto entries = Json::array();
   std::ranges::transform(view.entries, std::back_inserter(entries), record_json);
-  return dump(Json{{"type", "alarm_log"},
-                   {"storage", view.saved ? "saved" : "session_only"},
-                   {"reason", view.reason},
-                   {"session", view.session},
-                   {"skipped", view.skipped},
-                   {"entries", std::move(entries)}});
+  Json message{{"type", "alarm_log"},     {"storage", view.saved ? "saved" : "session_only"},
+               {"reason", view.reason},   {"session", view.session},
+               {"skipped", view.skipped}, {"entries", std::move(entries)}};
+  if (const auto& key = view.localization)
+    message["localization"] = {{"key", key->key}, {"params", key->params}};
+  return dump(message);
 }
 
-AlarmLog::AlarmLog(ToolModelFiles& files, std::string directory, std::string unsaved_reason,
+AlarmLog::AlarmLog(ToolModelFiles& files, std::string directory, LocalizedReason unsaved_reason,
                    Deliver deliver, Lock lock)
     : files_(files), directory_(std::move(directory)), deliver_(std::move(deliver)),
       lock_(std::move(lock)),
-      reason_(directory_.empty() ? std::move(unsaved_reason) : std::string{}),
+      reason_(directory_.empty() ? std::move(unsaved_reason) : LocalizedReason{}),
       thread_([this] { loop(); }) {}
 
 AlarmLog::~AlarmLog() {
@@ -194,7 +194,9 @@ auto AlarmLog::locked() -> bool {
   if (!problem)
     return true;
   const std::scoped_lock lock{mutex_};
-  reason_ = std::format("The alarm log in {} is kept for this run only: {}", directory_, *problem);
+  reason_ = {
+      std::format("The alarm log in {} is kept for this run only: {}", directory_, *problem),
+      MessageKey{"backend.alarmLog.keptForRun", {{"directory", directory_}, {"detail", *problem}}}};
   directory_.clear();
   pending_.clear();
   return false;
@@ -203,14 +205,17 @@ auto AlarmLog::locked() -> bool {
 void AlarmLog::load() {
   std::vector<AlarmRecord> read;
   std::uint64_t skipped = 0;
-  std::string problem;
+  LocalizedReason problem;
   bool open_line = false;
   std::size_t current_bytes = 0;
   std::set<std::pair<std::uint64_t, std::uint64_t>> written; // session, number
   for (const auto name : {oldest_name, older_name, file_name}) {
-    const auto content = files_.read(path(name), 2 * max_file_bytes);
+    const auto file = path(name);
+    const auto content = files_.read(file, 2 * max_file_bytes);
     if (!content) {
-      problem = "The alarm log " + path(name) + " cannot be read: " + content.error();
+      problem = {
+          std::format("The alarm log {} cannot be read: {}", file, content.error()),
+          MessageKey{"backend.alarmLog.cannotRead", {{"file", file}, {"detail", content.error()}}}};
       continue;
     }
     const auto& found = *content;
@@ -247,7 +252,7 @@ void AlarmLog::load() {
   file_bytes_ = current_bytes;
   needs_line_break_ = open_line;
   if (!problem.empty())
-    reason_ = problem;
+    reason_ = std::move(problem);
   // Before what this run recorded while the files were read; the newest max_entries.
   const auto first = read.size() > max_entries ? read.size() - max_entries : 0;
   std::deque<Recorded> earlier;
@@ -282,7 +287,8 @@ auto AlarmLog::append(const std::vector<AlarmRecord>& batch) -> bool {
       done = files_.sync_directory(directory_);
     if (!done) {
       const std::scoped_lock lock{mutex_};
-      reason_ = "The alarm log could not be rotated: " + done.error();
+      reason_ = {std::format("The alarm log could not be rotated: {}", done.error()),
+                 MessageKey{"backend.alarmLog.notRotated", {{"detail", done.error()}}}};
       return false;
     }
     file_bytes_ = 0;
@@ -298,12 +304,13 @@ auto AlarmLog::append(const std::vector<AlarmRecord>& batch) -> bool {
   if (!done) {
     // Part of it may be in the file: the next append ends that line first. It is not counted.
     needs_line_break_ = true;
-    reason_ = "The alarm log could not be saved: " + done.error();
+    reason_ = {std::format("The alarm log could not be saved: {}", done.error()),
+               MessageKey{"backend.alarmLog.notSaved", {{"detail", done.error()}}}};
     return false;
   }
   file_bytes_ += text.size();
   needs_line_break_ = false;
-  reason_.clear();
+  reason_ = {};
   return true;
 }
 
@@ -354,8 +361,8 @@ void AlarmLog::loop() {
           pending_.clear();
         }
       }
-      if (reason_ != said_) {
-        said_ = reason_;
+      if (reason_.text != said_) {
+        said_ = reason_.text;
         // Not under the mutex: a stderr that blocks must not block the threads that post.
         if (!said_.empty()) {
           const auto text = said_;
@@ -476,9 +483,12 @@ void AlarmLog::send_snapshot(PageToken page) {
 auto AlarmLog::view_before(std::uint64_t order) const -> AlarmLogView {
   AlarmLogView shown;
   shown.saved = !directory_.empty();
-  shown.reason = reason_;
-  if (lost_ > 0 && shown.reason.empty())
-    shown.reason = "Some alarm log entries could not be saved.";
+  auto reason = lost_ > 0 && reason_.empty()
+                    ? LocalizedReason{"Some alarm log entries could not be saved.",
+                                      MessageKey{"backend.alarmLog.entriesLost"}}
+                    : reason_;
+  shown.reason = std::move(reason.text);
+  shown.localization = std::move(reason.localization);
   shown.session = session_;
   shown.skipped = skipped_;
   for (const auto& kept : kept_)

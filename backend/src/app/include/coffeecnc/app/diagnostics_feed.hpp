@@ -31,7 +31,7 @@ public:
     std::function<void()> begin;
     std::function<Diagnostics()> read;
     // DiagnosticsService::launch, on the caller's thread.
-    std::function<std::optional<std::string>(HalTool)> launch;
+    std::function<std::optional<LocalizedReason>(HalTool)> launch;
   };
   using Sink = std::function<void(PageToken, std::vector<std::string>)>;
   // Ten readings a second: a switch is seen as it is pressed, and HAL is asked little.
@@ -46,7 +46,7 @@ public:
   ~DiagnosticsFeed() override;
 
   void watch(PageToken page, bool on) override;
-  [[nodiscard]] auto launch(HalTool tool) -> std::optional<std::string> override;
+  [[nodiscard]] auto launch(HalTool tool) -> std::optional<LocalizedReason> override;
   void page_ended(PageToken page) override;
 
 private:

@@ -45,8 +45,11 @@ auto encode_result(RequestId id, CommandOutcome outcome, std::string_view reason
   if (outcome == CommandOutcome::rejected && refusal)
     message["refusal"] = {{"key", refusal->key}, {"params", refusal->params}};
   // A refusal following a command already sent (for example a mode change) is a failure.
-  const auto& key = !localization && outcome != CommandOutcome::rejected ? refusal : localization;
-  if (outcome != CommandOutcome::accepted && key)
+  const auto& key =
+      !localization && outcome != CommandOutcome::rejected && outcome != CommandOutcome::accepted
+          ? refusal
+          : localization;
+  if (key && (outcome != CommandOutcome::accepted || !reason.empty()))
     message["localization"] = {{"key", key->key}, {"params", key->params}};
   if (setter) {
     auto measurement = Json(nullptr);

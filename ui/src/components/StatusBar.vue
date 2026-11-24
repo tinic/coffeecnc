@@ -89,8 +89,10 @@ const machineMessage = computed(() => {
   const inFooter = panel.tab === 'program' && s?.mode === 'auto' &&
     program?.file === s.program.file && program.revision === s.program.revision
   const pausedText = t('status.machineBlock.programPaused')
-  if (reason === pausedText && panel.tab === 'program' && z?.reason)
-    return inFooter ? translateMessage(z.reason) : `${reason} · ${translateMessage(z.reason)}`
+  if (reason === pausedText && panel.tab === 'program' && z?.reason) {
+    const detail = translateMessage(z.reason, z.localization)
+    return inFooter ? detail : `${reason} · ${detail}`
+  }
   if (inFooter && (reason === pausedText || reason === t('status.machineBlock.programRunning'))) return null
   return reason
 })

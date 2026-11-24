@@ -690,7 +690,7 @@
       "notInstalled": "{name} ist nicht installiert: Es ist nicht im Suchpfad ({path}).",
       "alreadyOpen": "{name} ist bereits geöffnet.",
       "notStarted": "{name} konnte nicht gestartet werden.",
-      "notStartedBecause": "{name} konnte nicht gestartet werden: {error}.",
+      "notStartedBecause": "{name} konnte nicht gestartet werden: {system_error}.",
       "cannotStart": "HAL-Werkzeuge können hier nicht gestartet werden."
     }
   }

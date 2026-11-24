@@ -171,7 +171,8 @@ describe('capability-aware controls', () => {
     expect(wrapper.get('.state-pill').text()).toBe('Program running')
     s.interp = 'paused'
     s.wait = { kind: 'paused' }
-    s.paused_z = { offset: 0, max_lift: 10, displaced: false, reason: 'Stop the spindle before jogging Z.', spindle: 'can_stop' }
+    s.paused_z = { offset: 0, max_lift: 10, displaced: false, reason: 'Older paused-Z instruction.',
+      spindle: 'can_stop', localization: { key: 'backend.nmlStatus.stopSpindle', params: {} } }
     await nextTick()
     expect(wrapper.get('.machine-state').text()).toBe('Stop the spindle before jogging Z.')
     panel.tab = 'manual'
@@ -462,11 +463,13 @@ describe('capability-aware controls', () => {
     panel.status.preview_context = 9
     panel.preview = { type: 'preview', context: 9, state: 'ready', segments: [], bounds: null, dwells: [], error: null,
       check: { tools: [{ tool: 98, length: 'missing' }], frames: [], feed: null, spindle: null,
-        units: ['mm'], travel: 'fits', errors: ['T98 has no verified length.'], warnings: [] } }
+        units: ['mm'], travel: 'fits', errors: ['Older tool-length text.'], warnings: ['Controller advice.'],
+        errors_localization: [{ key: 'backend.previewEngine.noVerifiedLength', params: { tool: '98' } }] } }
     wrapper = mount(RunBar, { global: { stubs: { Teleport: true } } })
     await wrapper.get('.main-action').trigger('click')
     expect(wrapper.get('[role="dialog"]').text()).toContain('Cycle start blocked')
-    expect(wrapper.get('[role="dialog"]').text()).toContain('T98 has no verified length.')
+    expect(wrapper.get('[role="dialog"]').text()).toContain('T98 has no verified length in the tool table.')
+    expect(wrapper.get('[role="dialog"]').text()).toContain('Controller advice.')
     expect(wrapper.findAll('[role="dialog"] button').some((button) => button.text().includes('Run program'))).toBe(false)
     expect(send).not.toHaveBeenCalled()
   })

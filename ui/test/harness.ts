@@ -7,7 +7,7 @@ import type {
   Status,
 } from '../src/protocol'
 import { defaultFiles, programDirectory } from '../src/sim/files'
-import { SimMachine } from '../src/sim/machine'
+import { SimMachine, type SimOptions } from '../src/sim/machine'
 
 export interface Rig {
   sim: SimMachine
@@ -28,7 +28,7 @@ export interface Rig {
 
 export const testProgram = `${programDirectory}/test.ngc`
 
-export function rig(): Rig {
+export function rig(capabilities: NonNullable<SimOptions['capabilities']> = {}): Rig {
   const out: FromMachine[] = []
   const files = defaultFiles()
   const sim = new SimMachine({
@@ -37,6 +37,7 @@ export function rig(): Rig {
     },
     clock: (): number => 0,
     files,
+    capabilities,
   })
   let id = 0
   const send = (command: CommandBody): CommandResult => {

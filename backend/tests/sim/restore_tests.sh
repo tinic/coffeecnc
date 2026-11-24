@@ -58,7 +58,8 @@ check backup_archive_written "$?" "archive=$archive"
 # The next start: what came of it, once.
 report=$("$program" report "$run/coffeecnc_sim.ini" 2>&1)
 echo "$report" | grep -q '^notice_level=info notice=The backup was restored: 2 files were written.' &&
-  echo "$report" | grep -qF "$pre"
+  echo "$report" | grep -qF "$pre" &&
+  echo "$report" | grep -qx 'notice_key=backend.machineData.restored'
 check next_start_reports_the_restore $? "$(echo "$report" | tr ' ' '_')"
 again=$("$program" report "$run/coffeecnc_sim.ini" 2>&1)
 echo "$again" | grep -q '^notice_level=none'

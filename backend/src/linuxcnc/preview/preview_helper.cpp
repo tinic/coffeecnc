@@ -1145,7 +1145,7 @@ auto run(const HelperRequest& request) -> int {
         canon.line = found->line;
       else
         canon.elsewhere = std::format("{} line {}: ", file.filename().string(), found->line);
-      halt(Halt::stop, found->what);
+      halt(Halt::stop, found->reason.text);
       put("end stop\n");
       std::fflush(sink);
       return 0;

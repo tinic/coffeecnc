@@ -2353,71 +2353,78 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
   // machine Z), and verifies the command against the encoder lag. The probe cycle has already
   // returned to clearance.
   const auto set_origin = [&](const std::array<double, 3>& origin,
-                              const std::array<bool, 3>& axes = {true, true, false})
-      -> std::expected<void, std::string> {
-      const auto from = impl_->begin(&wanted);
-      const Impl::Scope scope{*impl_};
-      const auto* current = impl_->stat();
-      if (current == nullptr || impl_->status.link() != Link::live || !impl_->still())
-        return std::unexpected<std::string>("Probing was cancelled before setting the work origin.");
-      const auto after = to_status(*current, impl_->config, impl_->hal, Link::live);
-      if (!ready(*current, after) || after.controller.mode != TaskMode::mdi ||
-          after.controller.tool_in_spindle != tool || frame_of(after) != frame ||
-          after.tool_offset != before.tool_offset ||
-          after.controller.program_units != before.controller.program_units ||
-          impl_->read_tool_table() != table ||
-          (apply_measurement && current_runout(impl_->config, table) != runout))
-        return std::unexpected<std::string>("Machine or tool table changed before setting the work origin.");
-      // G10 L20 applies at the commanded position (see the single faces).
-      const auto& commanded = current->motion.traj.position;
-      const std::array<double, 3> machine_at{commanded.tran.x * machine_scale,
-                                             commanded.tran.y * machine_scale,
-                                             commanded.tran.z * machine_scale};
-      const auto at = to_frame(machine_at);
-      std::array<double, 3> expected{at[0] - origin[0], at[1] - origin[1], at[2] - origin[2]};
-      // In a rotated system one work axis moves the stored origin along both machine axes, as
-      // for a single face: write both, the axis not measured at its commanded work value.
-      const bool xy = axes[0] || axes[1];
-      const std::array written{axes[0] || (rotated && xy), axes[1] || (rotated && xy), axes[2]};
-      const auto commanded_work = work_position(machine_at, after.g5x, after.g92,
-                                                after.tool_offset, after.rotation_xy);
-      for (std::size_t axis = 0; axis < axes.size(); ++axis)
-        if (!axes[axis])
-          expected[axis] = commanded_work[axis];
-      const double scale = after.controller.program_units == LengthUnit::inch ? 25.4 : 1.0;
-      EMC_TASK_PLAN_EXECUTE command;
-      std::string code{"G10 L20 P0"};
-      for (std::size_t axis = 0; axis < written.size(); ++axis)
-        if (written[axis])
-          code += std::format(" {}{:.8f}", "XYZ"[axis], expected[axis] / scale);
-      if (!put(command.command, code))
-        return std::unexpected<std::string>("Could not format the work origin.");
-      const auto result = impl_->run(command, from);
-      if (!accepted(result))
-        return std::unexpected<std::string>(result.reason.empty() ? "LinuxCNC did not set the work origin."
-                                                     : result.reason);
-      if (impl_->loads != nullptr)
-        ++impl_->loads->mdi_blocks;
-      const bool verified = until(settle_timeout, [&] {
-        const auto* applied = impl_->stat();
-        if (applied == nullptr || applied->echo_serial_number != impl_->serial ||
-            applied->status != RCS_DONE || impl_->status.link() != Link::live)
+                              const std::array<bool, 3>& axes = {
+                                  true, true, false}) -> std::expected<void, LocalizedReason> {
+    const auto from = impl_->begin(&wanted);
+    const Impl::Scope scope{*impl_};
+    const auto* current = impl_->stat();
+    if (current == nullptr || impl_->status.link() != Link::live || !impl_->still())
+      return setter_failure("Probing was cancelled before setting the work origin.",
+                            MessageKey{"backend.nmlPort.originCancelled"});
+    const auto after = to_status(*current, impl_->config, impl_->hal, Link::live);
+    if (!ready(*current, after) || after.controller.mode != TaskMode::mdi ||
+        after.controller.tool_in_spindle != tool || frame_of(after) != frame ||
+        after.tool_offset != before.tool_offset ||
+        after.controller.program_units != before.controller.program_units ||
+        impl_->read_tool_table() != table ||
+        (apply_measurement && current_runout(impl_->config, table) != runout))
+      return setter_failure("Machine or tool table changed before setting the work origin.",
+                            MessageKey{"backend.nmlPort.originChanged"});
+    // G10 L20 applies at the commanded position (see the single faces).
+    const auto& commanded = current->motion.traj.position;
+    const std::array<double, 3> machine_at{commanded.tran.x * machine_scale,
+                                           commanded.tran.y * machine_scale,
+                                           commanded.tran.z * machine_scale};
+    const auto at = to_frame(machine_at);
+    std::array<double, 3> expected{at[0] - origin[0], at[1] - origin[1], at[2] - origin[2]};
+    // In a rotated system one work axis moves the stored origin along both machine axes, as
+    // for a single face: write both, the axis not measured at its commanded work value.
+    const bool xy = axes[0] || axes[1];
+    const std::array written{axes[0] || (rotated && xy), axes[1] || (rotated && xy), axes[2]};
+    const auto commanded_work =
+        work_position(machine_at, after.g5x, after.g92, after.tool_offset, after.rotation_xy);
+    for (std::size_t axis = 0; axis < axes.size(); ++axis)
+      if (!axes[axis])
+        expected[axis] = commanded_work[axis];
+    const double scale = after.controller.program_units == LengthUnit::inch ? 25.4 : 1.0;
+    EMC_TASK_PLAN_EXECUTE command;
+    std::string code{"G10 L20 P0"};
+    for (std::size_t axis = 0; axis < written.size(); ++axis)
+      if (written[axis])
+        code += std::format(" {}{:.8f}", "XYZ"[axis], expected[axis] / scale);
+    if (!put(command.command, code))
+      return setter_failure("Could not format the work origin.",
+                            MessageKey{"backend.nmlPort.originFormat"});
+    const auto result = impl_->run(command, from);
+    if (!accepted(result))
+      return result.reason.empty() ? setter_failure("LinuxCNC did not set the work origin.",
+                                                    MessageKey{"backend.nmlPort.originNotSet"})
+                                   : setter_failure(result.reason, result.localization);
+    if (impl_->loads != nullptr)
+      ++impl_->loads->mdi_blocks;
+    const bool verified = until(settle_timeout, [&] {
+      const auto* applied = impl_->stat();
+      if (applied == nullptr || applied->echo_serial_number != impl_->serial ||
+          applied->status != RCS_DONE || impl_->status.link() != Link::live)
+        return false;
+      const auto s = to_status(*applied, impl_->config, impl_->hal, Link::live);
+      const auto& traj = applied->motion.traj;
+      // The encoder lag along the work axes.
+      const auto lag =
+          to_frame({(traj.actualPosition.tran.x - traj.position.tran.x) * machine_scale,
+                    (traj.actualPosition.tran.y - traj.position.tran.y) * machine_scale,
+                    (traj.actualPosition.tran.z - traj.position.tran.z) * machine_scale});
+      for (std::size_t i = 0; i < written.size(); ++i)
+        if (written[i]
+                ? (!std::isfinite(s.work[i]) || std::abs(s.work[i] - lag[i] - expected[i]) > 0.01)
+                : !(std::abs(s.g5x[i] - frame.g5x[i]) <= 1e-6))
           return false;
-        const auto s = to_status(*applied, impl_->config, impl_->hal, Link::live);
-        const auto& traj = applied->motion.traj;
-        // The encoder lag along the work axes.
-        const auto lag = to_frame({(traj.actualPosition.tran.x - traj.position.tran.x) * machine_scale,
-                                   (traj.actualPosition.tran.y - traj.position.tran.y) * machine_scale,
-                                   (traj.actualPosition.tran.z - traj.position.tran.z) * machine_scale});
-        for (std::size_t i = 0; i < written.size(); ++i)
-          if (written[i] ? (!std::isfinite(s.work[i]) || std::abs(s.work[i] - lag[i] - expected[i]) > 0.01)
-                         : !(std::abs(s.g5x[i] - frame.g5x[i]) <= 1e-6))
-            return false;
-        return s.wcs == before.wcs && s.g92 == before.g92 && s.rotation_xy == before.rotation_xy &&
-               s.tool_offset == before.tool_offset;
-      });
-      if (!verified)
-        return std::unexpected<std::string>("Could not verify the work origin. Check the active WCS.");
+      return s.wcs == before.wcs && s.g92 == before.g92 && s.rotation_xy == before.rotation_xy &&
+             s.tool_offset == before.tool_offset;
+    });
+    if (!verified)
+      return setter_failure("Could not verify the work origin. Check the active WCS.",
+                            MessageKey{"backend.nmlPort.originUnverified"});
     return {};
   };
   // A measure-only probe (#247): every probed surface point, and the result that would have been
@@ -2486,7 +2493,7 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
   if (applying) {
     const auto& measurement = *applying;
     if (auto set = set_origin(measurement.origin, measurement.axes); !set)
-      return setter_failure(set.error());
+      return std::unexpected(std::move(set.error()));
     const auto& axes = measurement.axes;
     return SetterState{calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,
                        std::move(current_marks),
@@ -2525,9 +2532,11 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
       if (!std::ranges::contains(current_marks, tool) ||
           std::abs(before.tool_offset[2] - previous_length) > 0.001 ||
           !std::ranges::contains(before.active_codes, "G43"))
-        return setter_failure(std::format(
-            "Touch off T{} and apply its length first: probing beside the work uses Z0 as the top.",
-            tool));
+        return setter_failure(
+            std::format("Touch off T{} and apply its length first: probing beside the work uses Z0 "
+                        "as the top.",
+                        tool),
+            MessageKey{"backend.nmlPort.besideTouchOff", {{"tool", std::format("{}", tool)}}});
       if (!std::isfinite(top) || request.start[2] < top + radius)
         return setter_failure("Start with the probe above the top of the work.",
                               MessageKey{"backend.nmlPort.startAboveWork"});
@@ -2599,10 +2608,14 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     for (std::size_t axis = 0; axis < span.size(); ++axis) {
       const double correction = half - span.at(axis) - radius;
       if (!std::isfinite(correction) || std::abs(correction) > max_runout_mm)
-        return setter_failure(std::format(
-            "The {} trigger radius correction is {:.3f} mm, more than {} mm. Check the diameter "
-            "and the ball calibration.",
-            "XY"[axis], correction, max_runout_mm));
+        return setter_failure(std::format("The {} trigger radius correction is {:.3f} mm, more "
+                                          "than {} mm. Check the diameter "
+                                          "and the ball calibration.",
+                                          "XY"[axis], correction, max_runout_mm),
+                              MessageKey{"backend.nmlPort.runoutTooLarge",
+                                         {{"axis", std::format("{}", "XY"[axis])},
+                                          {"value", std::format("{:.3f}", correction)},
+                                          {"limit", std::format("{}", max_runout_mm)}}});
       calibrated.radius_mm.at(axis) = correction;
     }
     if (!write_sidecar(impl_->config.probe_runout_file(), format_probe_runout(calibrated)))
@@ -2620,15 +2633,20 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
                             MessageKey{"backend.nmlPort.wcsUnavailable"});
     if (!std::ranges::contains(current_marks, tool))
       return setter_failure(
-          std::format("Touch off T{} at the tool setter before probing Z.", tool));
+          std::format("Touch off T{} at the tool setter before probing Z.", tool),
+          MessageKey{"backend.nmlPort.touchOffAtSetter", {{"tool", std::format("{}", tool)}}});
     if (std::abs(before.tool_offset[2] - previous_length) > 0.001 ||
         !std::ranges::contains(before.active_codes, "G43"))
-      return setter_failure(std::format("Apply the measured T{} length before probing Z.", tool));
+      return setter_failure(
+          std::format("Apply the measured T{} length before probing Z.", tool),
+          MessageKey{"backend.nmlPort.applyLength", {{"tool", std::format("{}", tool)}}});
     const auto grid = height_grid(request.grid_mm, request.step_mm);
     if (!grid)
       return setter_failure(
           std::format("Choose a rectangle and a step of 0.5 mm or more for 2 to {} points.",
-                      max_height_map_points));
+                      max_height_map_points),
+          MessageKey{"backend.nmlPort.heightGrid",
+                     {{"max", std::format("{}", max_height_map_points)}}});
     // Work XYZ to machine XYZ: the inverse of the work position.
     const auto machine_of = [&](double x, double y, double z) -> std::array<double, 3> {
       const double gx = x + before.g92[0];
@@ -2671,7 +2689,9 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
             !in_travel({point[0], point[1], lift}))
           return setter_failure(std::format("Grid point {} is outside the configured travel at the "
                                             "clearance or the search depth.",
-                                            where(column, row)));
+                                            where(column, row)),
+                                MessageKey{"backend.nmlPort.heightTravel",
+                                           {{"point", std::format("{}", where(column, row))}}});
       }
     // XY at the slower of X and Y's fastest moves, from the start to the first point and then one
     // step to each next point, in work XY (the same distances in a rotated system).
@@ -2683,9 +2703,15 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
                   .descent_mm = request.start[2] - clearance_z,
                   .xy_rapid_mm_min = std::min(velocity[0], velocity[1])});
     if (!(worst <= max_height_map_seconds))
-      return setter_failure(std::format(
-          "The height map could take up to {} min, more than the {} min limit. Use fewer points.",
-          std::isfinite(worst) ? std::ceil(worst / 60) : 0.0, max_height_map_seconds / 60));
+      return setter_failure(
+          std::format("The height map could take up to {} min, more than the {} min limit. Use "
+                      "fewer points.",
+                      std::isfinite(worst) ? std::ceil(worst / 60) : 0.0,
+                      max_height_map_seconds / 60),
+          MessageKey{
+              "backend.nmlPort.heightTooLong",
+              {{"minutes", std::format("{}", std::isfinite(worst) ? std::ceil(worst / 60) : 0.0)},
+               {"limit", std::format("{}", max_height_map_seconds / 60)}}});
     SetterState::HeightMap map{.wcs = frame.wcs, .columns = grid->columns, .rows = grid->rows,
                                .rotation_deg = before.rotation_xy, .points = {}};
     map.points.resize(static_cast<std::size_t>(grid->columns) * static_cast<std::size_t>(grid->rows));
@@ -2893,10 +2919,12 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     }
     const double span = circle ? measured_span(first_three, circle->centre) : 0;
     if (!circle || !(span >= arc_min_measured_span_deg))
-      return setter_failure(std::format(
-          "The three contacts lie almost on a line: they cover {:.1f}° of a circle. Spread the "
-          "angles further, and check that all three touched the same round wall.",
-          span));
+      return setter_failure(
+          std::format(
+              "The three contacts lie almost on a line: they cover {:.1f}° of a circle. Spread the "
+              "angles further, and check that all three touched the same round wall.",
+              span),
+          MessageKey{"backend.nmlPort.arcCollinear", {{"span", std::format("{:.1f}", span)}}});
     const double surface = circle->radius + ball_offset;
     if (!(surface > 0) || !(std::hypot(start_frame[0] - circle->centre[0],
                                        start_frame[1] - circle->centre[1]) < surface))
@@ -2904,22 +2932,33 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
           "The circle through the contacts does not enclose the confirmed starting point.",
           MessageKey{"backend.nmlPort.arcStartOutside"});
     if (radial_boss && !boss_diameter_plausible(2 * surface, request.gauge_width_mm))
-      return setter_failure(std::format(
-          "The contacts give a boss of Ø {:.3f} mm, which differs from the entered Ø {:.3f} mm "
-          "by more than 0.5 mm or 10 %. Check that all three touched the boss, then probe "
-          "again.",
-          2 * surface, request.gauge_width_mm));
+      return setter_failure(
+          std::format(
+              "The contacts give a boss of Ø {:.3f} mm, which differs from the entered Ø {:.3f} mm "
+              "by more than 0.5 mm or 10 %. Check that all three touched the boss, then probe "
+              "again.",
+              2 * surface, request.gauge_width_mm),
+          MessageKey{"backend.nmlPort.arcBossDiameter",
+                     {{"measured", std::format("{:.3f}", 2 * surface)},
+                      {"entered", std::format("{:.3f}", request.gauge_width_mm)}}});
     const std::array sigma{contact_sigma(latch_spreads[0]), contact_sigma(latch_spreads[1]),
                            contact_sigma(latch_spreads[2])};
     const auto uncertainty = verified ? std::optional{verified->centre_uncertainty_mm}
                                       : arc_centre_uncertainty(first_three, circle->centre, sigma);
     if (!uncertainty || !(*uncertainty <= arc_max_centre_uncertainty_mm))
-      return setter_failure(std::format(
-          "The estimated centre uncertainty from latch repeatability is {:.3f} mm, more than "
-          "0.02 mm: the contacts cover {:.1f}° with a latch spread up to {:.4f} mm. Spread the "
-          "angles further and probe again.",
-          uncertainty.value_or(std::numeric_limits<double>::infinity()), span,
-          std::ranges::max(latch_spreads)));
+      return setter_failure(
+          std::format(
+              "The estimated centre uncertainty from latch repeatability is {:.3f} mm, more than "
+              "0.02 mm: the contacts cover {:.1f}° with a latch spread up to {:.4f} mm. Spread the "
+              "angles further and probe again.",
+              uncertainty.value_or(std::numeric_limits<double>::infinity()), span,
+              std::ranges::max(latch_spreads)),
+          MessageKey{"backend.nmlPort.arcUncertain",
+                     {{"uncertainty",
+                       std::format("{:.3f}",
+                                   uncertainty.value_or(std::numeric_limits<double>::infinity()))},
+                      {"span", std::format("{:.1f}", span)},
+                      {"spread", std::format("{:.4f}", std::ranges::max(latch_spreads))}}});
     SetterState state{calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,
                       std::move(current_marks), SetterState::Material{frame.wcs, 'X', true}};
     state.center_diameter = 2 * surface;
@@ -2929,7 +2968,7 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     if (request.measure_only)
       return measured(std::move(state), origin, {true, true, false});
     if (auto set = set_origin(origin); !set)
-      return setter_failure(set.error());
+      return std::unexpected(std::move(set.error()));
     return state;
   };
   if (inside_corner || pocket || slot || ridge) {
@@ -3035,7 +3074,7 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     if (request.measure_only)
       return measured(std::move(state), {origin[0], origin[1], 0}, {axes[0], axes[1], false});
     if (auto set = set_origin({origin[0], origin[1], 0}, {axes[0], axes[1], false}); !set)
-      return setter_failure(set.error());
+      return std::unexpected(std::move(set.error()));
     return state;
   }
   if (angle) {
@@ -3099,10 +3138,13 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     const double degrees =
         (line.axis == 0 ? -1.0 : 1.0) * std::atan(across / measured_spacing) * 180 / std::numbers::pi;
     if (!std::isfinite(degrees) || std::abs(degrees) > 10)
-      return setter_failure(std::format(
-          "The edge turns {:.2f}° over {:.1f} mm, more than 10°. Check that both points touched "
-          "the same straight edge.",
-          degrees, measured_spacing));
+      return setter_failure(std::format("The edge turns {:.2f}° over {:.1f} mm, more than 10°. "
+                                        "Check that both points touched "
+                                        "the same straight edge.",
+                                        degrees, measured_spacing),
+                            MessageKey{"backend.nmlPort.edgeTurns",
+                                       {{"angle", std::format("{:.2f}", degrees)},
+                                        {"distance", std::format("{:.1f}", measured_spacing)}}});
     SetterState state{calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,
                       std::move(current_marks)};
     const auto* current = impl_->stat();
@@ -3201,7 +3243,7 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     if (request.measure_only)
       return measured(std::move(state), {centre_x, centre_y, 0}, {true, true, false});
     if (auto set = set_origin({centre_x, centre_y}); !set)
-      return setter_failure(set.error());
+      return std::unexpected(std::move(set.error()));
     return state;
   }
   if (radial_bore) {
@@ -3236,7 +3278,11 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
                                  wanted);
       if (!contact)
         return setter_failure(
-            std::format("Contact {} at {:.1f}°: {}", i + 1, heading, contact.error()));
+            std::format("Contact {} at {:.1f}°: {}", i + 1, heading, contact.error()),
+            MessageKey{"backend.nmlPort.arcContact",
+                       {{"n", std::format("{}", i + 1)},
+                        {"angle", std::format("{:.1f}", heading)},
+                        {"error", std::format("{}", contact.error())}}});
       const auto at = to_frame(contact->machine);
       contacts.at(i) = {at[0], at[1]};
       spreads.at(i) = contact->latch_spread_mm;
@@ -3272,9 +3318,11 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     if (!std::ranges::contains(current_marks, tool) ||
         std::abs(before.tool_offset[2] - previous_length) > 0.001 ||
         !std::ranges::contains(before.active_codes, "G43"))
-      return setter_failure(std::format(
-          "Touch off T{} and apply its length first: probing beside the work uses Z0 as the top.",
-          tool));
+      return setter_failure(
+          std::format("Touch off T{} and apply its length first: probing beside the work uses Z0 "
+                      "as the top.",
+                      tool),
+          MessageKey{"backend.nmlPort.besideTouchOff", {{"tool", std::format("{}", tool)}}});
     const double radius = tool_diameter(*table, tool).value_or(0) * machine_scale / 2;
     if (!std::isfinite(radius) || radius <= 0)
       return setter_failure("Set the probe ball diameter in the tool table first.",
@@ -3353,7 +3401,11 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
                                    wanted);
         if (!contact)
           return setter_failure(
-              std::format("Contact {} at {:.1f}°: {}", i + 1, heading, contact.error()));
+              std::format("Contact {} at {:.1f}°: {}", i + 1, heading, contact.error()),
+              MessageKey{"backend.nmlPort.arcContact",
+                         {{"n", std::format("{}", i + 1)},
+                          {"angle", std::format("{:.1f}", heading)},
+                          {"error", std::format("{}", contact.error())}}});
         const auto at = to_frame(contact->machine);
         contacts.at(i) = {at[0], at[1]};
         spreads.at(i) = contact->latch_spread_mm;
@@ -3409,7 +3461,7 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
       if (request.measure_only)
         return measured(std::move(state), {centre_x, centre_y, 0}, {true, true, false});
       if (auto set = set_origin({centre_x, centre_y}); !set)
-        return setter_failure(set.error());
+        return std::unexpected(std::move(set.error()));
       return state;
     }
     if (ball) {
@@ -3429,10 +3481,14 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
       const double centres = (*right + radius) - (*left - radius);
       const double diameter = centres - request.gauge_width_mm;
       if (!std::isfinite(diameter) || diameter <= 0 || std::abs(diameter - 2 * radius) > 0.5)
-        return setter_failure(std::format(
-            "Measured ball diameter {:.3f} mm is more than 0.5 mm from the table's {:.3f} mm. "
-            "Check the gauge width and that the probe started over the gauge.",
-            diameter, 2 * radius));
+        return setter_failure(
+            std::format(
+                "Measured ball diameter {:.3f} mm is more than 0.5 mm from the table's {:.3f} mm. "
+                "Check the gauge width and that the probe started over the gauge.",
+                diameter, 2 * radius),
+            MessageKey{"backend.nmlPort.ballDiameterOff",
+                       {{"measured", std::format("{:.3f}", diameter)},
+                        {"table", std::format("{:.3f}", 2 * radius)}}});
       const auto from = impl_->begin(&wanted);
       const Impl::Scope scope{*impl_};
       const auto* current = impl_->stat();
@@ -3450,8 +3506,9 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
         return setter_failure("Could not format the ball diameter.",
                               MessageKey{"backend.nmlPort.ballFormat"});
       if (const auto result = impl_->run(write, from); !accepted(result))
-        return setter_failure(result.reason.empty() ? "LinuxCNC did not write the ball diameter."
-                                                    : result.reason);
+        return result.reason.empty() ? setter_failure("LinuxCNC did not write the ball diameter.",
+                                                      MessageKey{"backend.nmlPort.ballNotWritten"})
+                                     : setter_failure(result.reason, result.localization);
       if (impl_->loads != nullptr)
         ++impl_->loads->mdi_blocks;
       const bool written = until(settle_timeout, [&] {
@@ -3483,7 +3540,7 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     if (request.measure_only)
       return measured(std::move(state), {*x_face, *y_face, 0}, {true, true, false});
     if (auto set = set_origin({*x_face, *y_face}); !set)
-      return setter_failure(set.error());
+      return std::unexpected(std::move(set.error()));
     return state;
   }
   if (material) {
@@ -3495,10 +3552,13 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     if (line.axis == 2) {
       if (!std::ranges::contains(current_marks, tool))
         return setter_failure(
-            std::format("Touch off T{} at the tool setter before probing Z.", tool));
+            std::format("Touch off T{} at the tool setter before probing Z.", tool),
+            MessageKey{"backend.nmlPort.touchOffAtSetter", {{"tool", std::format("{}", tool)}}});
       if (std::abs(before.tool_offset[2] - previous_length) > 0.001 ||
           !std::ranges::contains(before.active_codes, "G43"))
-        return setter_failure(std::format("Apply the measured T{} length before probing Z.", tool));
+        return setter_failure(
+            std::format("Apply the measured T{} length before probing Z.", tool),
+            MessageKey{"backend.nmlPort.applyLength", {{"tool", std::format("{}", tool)}}});
     } else {
       radius = tool_diameter(*table, tool).value_or(0) * machine_scale / 2;
       if (!std::isfinite(radius) || radius <= 0)
@@ -3561,8 +3621,9 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
                             MessageKey{"backend.nmlPort.materialOriginFormat"});
     const auto result = impl_->run(command, from);
     if (!accepted(result))
-      return setter_failure(result.reason.empty() ? "LinuxCNC did not set the work origin."
-                                                  : result.reason);
+      return result.reason.empty() ? setter_failure("LinuxCNC did not set the work origin.",
+                                                    MessageKey{"backend.nmlPort.originNotSet"})
+                                   : setter_failure(result.reason, result.localization);
     if (impl_->loads != nullptr)
       ++impl_->loads->mdi_blocks;
     const bool verified = until(settle_timeout, [&] {
@@ -3621,11 +3682,19 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
   if (checking) {
     const double difference = value - previous_length;
     if (std::abs(difference) > limits->check_tolerance_mm)
-      return setter_failure(std::format(
-          "T{} check failed. Tool is {:.4f} mm {} (measured {:.4f} mm, table {:.4f} mm, "
-          "tolerance {} mm). Inspect the tool.",
-          tool, std::abs(difference), difference < 0 ? "shorter" : "longer", value, previous_length,
-          limits->check_tolerance_mm));
+      return setter_failure(
+          std::format(
+              "T{} check failed. Tool is {:.4f} mm {} (measured {:.4f} mm, table {:.4f} mm, "
+              "tolerance {} mm). Inspect the tool.",
+              tool, std::abs(difference), difference < 0 ? "shorter" : "longer", value,
+              previous_length, limits->check_tolerance_mm),
+          MessageKey{"backend.nmlPort.checkFailed",
+                     {{"tool", std::format("{}", tool)},
+                      {"difference", std::format("{:.4f}", std::abs(difference))},
+                      {"direction", std::format("{}", difference < 0 ? "shorter" : "longer")},
+                      {"measured", std::format("{:.4f}", value)},
+                      {"table", std::format("{:.4f}", previous_length)},
+                      {"tolerance", std::format("{}", limits->check_tolerance_mm)}}});
     return SetterState{calibration->plane, measurement, std::move(current_marks)};
   }
   if (teaching) {
@@ -3675,9 +3744,12 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
   const double scale = before.controller.program_units == LengthUnit::inch ? 25.4 : 1.0;
   if (!block(std::format("G10 L1 P{} Z{:.8f}", tool, value / scale))) {
     auto error = impl_->take_errors(from);
-    return setter_failure(error.empty() ? "LinuxCNC did not confirm the tool table write. Check "
-                                          "the tool table before retrying."
-                                        : std::move(error));
+    return error.empty()
+               ? setter_failure(
+                     "LinuxCNC did not confirm the tool table write. Check the tool table "
+                     "before retrying.",
+                     MessageKey{"backend.nmlPort.tableWriteUnconfirmed"})
+               : setter_failure(std::move(error));
   }
   const auto changed = impl_->read_tool_table();
   const auto saved = changed ? tool_z(*changed, tool) : std::nullopt;
@@ -3688,9 +3760,12 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
         MessageKey{"backend.nmlPort.lengthUnverified"});
   if (!block(std::format("G43 H{}", tool))) {
     const auto error = impl_->take_errors(from);
-    return setter_failure(error.empty()
-                              ? "Length saved. LinuxCNC did not confirm applying compensation."
-                              : "Length saved. Compensation failed. " + error);
+    return error.empty()
+               ? setter_failure("Length saved. LinuxCNC did not confirm applying compensation.",
+                                MessageKey{"backend.nmlPort.compensationUnconfirmed"})
+               : setter_failure(
+                     std::format("Length saved. Compensation failed. {}", error),
+                     MessageKey{"backend.nmlPort.compensationFailed", {{"detail", error}}});
   }
   const auto* applied = impl_->stat();
   if (applied == nullptr || impl_->status.link() != Link::live ||

@@ -59,7 +59,7 @@ onBeforeUnmount(removeListener)
       {{ t('probe.heightMap.summary', { wcs: wcsName(map.wcs), count: measured, low: length(range.low), high: length(range.high), spread: length(range.high - range.low), unit }) }}
     </p>
     <p v-if="map.partial !== undefined" class="partial" role="status">
-      {{ t('probe.heightMap.partialSummary', { count: measured, total: map.points.length, reason: translateMessage(map.partial) }) }}
+      {{ t('probe.heightMap.partialSummary', { count: measured, total: map.points.length, reason: translateMessage(map.partial, map.partial_localization) }) }}
     </p>
     <table class="heights mono" :aria-label="t('probe.heightMap.heights')">
       <tbody>

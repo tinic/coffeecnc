@@ -468,6 +468,7 @@ struct SetterState {
     };
     std::vector<Point> points;
     std::optional<std::string> partial{};
+    std::optional<MessageKey> partial_localization{};
   };
   std::optional<HeightMap> height_map{};
   // A point on a probed surface: the ball-centre contact moved one ball radius along the travel.

@@ -96,6 +96,15 @@ void command_results() {
   require(partial.at("outcome") == "failed" && stopped.at("partial") == "The height map was stopped." &&
               stopped.at("points").at(0).at("work").at(2) == 0.01 && stopped.at("points").at(1).is_null(),
           "A partial height map fails with the points measured so far and null for the rest");
+  require(!stopped.contains("partial_localization"), "An older partial map needs no message key");
+  mapped.height_map->partial_localization = MessageKey{"backend.nmlPort.heightStopped"};
+  const auto localized =
+      Json::parse(encode_result(42, CommandOutcome::failed, "The height map was stopped.", mapped));
+  const auto& localized_map = localized.at("setter").at("height_map");
+  require(localized_map.at("partial") == stopped.at("partial") &&
+              localized_map.at("partial_localization") ==
+                  Json{{"key", "backend.nmlPort.heightStopped"}, {"params", Json::object()}},
+          "The partial map keeps its text and exposes the named failure to the result dialog");
   SetterState arc{};
   arc.material = SetterState::Material{2, 'X', true};
   arc.center_diameter = 16;

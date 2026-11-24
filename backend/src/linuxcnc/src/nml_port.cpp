@@ -290,6 +290,22 @@ auto setter_failure(std::string text, std::optional<MessageKey> localization = {
   return std::unexpected(LocalizedReason{std::move(text), std::move(localization)});
 }
 
+auto probe_face_failure(std::string_view direction, const LocalizedReason& reason)
+    -> std::unexpected<LocalizedReason> {
+  return setter_failure(std::format("{} face: {}", direction, reason.text),
+                        MessageKey{"backend.nmlPort.face",
+                                   {{"direction", std::string(direction)}, {"detail", reason.text}},
+                                   parameter_localization("detail", reason.localization)});
+}
+
+auto probe_wall_failure(std::string_view direction, const LocalizedReason& reason)
+    -> std::unexpected<LocalizedReason> {
+  return setter_failure(std::format("{} wall: {}", direction, reason.text),
+                        MessageKey{"backend.nmlPort.wall",
+                                   {{"direction", std::string(direction)}, {"detail", reason.text}},
+                                   parameter_localization("detail", reason.localization)});
+}
+
 } // namespace
 
 struct NmlPort::Impl {
@@ -1493,14 +1509,15 @@ auto NmlPort::mdi(std::string_view text, const Wanted& wanted) -> ActionResult {
 }
 
 auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& wanted)
-    -> std::expected<FixedSetterContact, std::string> {
-  using Contact = std::expected<FixedSetterContact, std::string>;
+    -> std::expected<FixedSetterContact, LocalizedReason> {
+  using Contact = std::expected<FixedSetterContact, LocalizedReason>;
   // Position checks: a hobby mill with encoder feedback, backlash and step resolution.
   constexpr double tolerance_mm = 0.1;
   const auto limits = impl_->config.fixed_setter;
   auto* hal = impl_->hal;
   if (!limits || hal == nullptr)
-    return std::unexpected("The fixed setter is not configured.");
+    return setter_failure("The fixed setter is not configured.",
+                          MessageKey{"backend.nmlPort.setterNotConfigured"});
   const bool material = move.material.has_value();
   const double max_travel = material ? limits->material_travel_mm : limits->travel_mm;
   if (move.tool <= 0 || !std::isfinite(move.travel_mm) || move.travel_mm <= 0 ||
@@ -1508,17 +1525,20 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
       move.feed_mm_min > limits->feed_mm_min ||
       !std::ranges::all_of(move.start, [](double value) { return std::isfinite(value); }) ||
       (move.heading_deg && (!material || !std::isfinite(*move.heading_deg))))
-    return std::unexpected("The confirmed probe move exceeds the fixed setter limits.");
+    return setter_failure("The confirmed probe move exceeds the fixed setter limits.",
+                          MessageKey{"backend.nmlPort.probeExceedsSetter"});
   const double move_seconds = move.travel_mm / move.feed_mm_min * seconds_per_minute;
   if (move_seconds > 180)
-    return std::unexpected("The probe move would take more than three minutes.");
+    return setter_failure("The probe move would take more than three minutes.",
+                          MessageKey{"backend.nmlPort.probeTooSlow"});
   const auto move_timeout = std::chrono::milliseconds{static_cast<int>((move_seconds + 3) * 1000)};
 
   const auto from = impl_->begin(&wanted);
   const Impl::Scope scope{*impl_};
   const auto* raw = impl_->stat();
   if (raw == nullptr || impl_->status.link() != Link::live || !impl_->still())
-    return std::unexpected("The probe requires a live controller and an active request.");
+    return setter_failure("The probe requires a live controller and an active request.",
+                          MessageKey{"backend.nmlPort.probeNeedsLive"});
   const auto before = to_status(*raw, impl_->config, hal, Link::live);
   const auto normal_mode = [](const NmlStatus& status) {
     const auto& c = status.controller;
@@ -1555,15 +1575,19 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   if (!normal_mode(before) || !raw->motion.traj.enabled || raw->motion.external_offsets_applied ||
       c.interp != InterpState::idle || !c.in_position || before.queued_mdi != 0 ||
       c.tool_in_spindle != move.tool)
-    return std::unexpected("The probe requires a stopped spindle, stopped axes and idle MDI.");
+    return setter_failure("The probe requires a stopped spindle, stopped axes and idle MDI.",
+                          MessageKey{"backend.nmlPort.probeNeedsStopped"});
   if (!std::ranges::contains(before.active_codes, "G40"))
-    return std::unexpected("The probe requires cutter compensation off (G40).");
+    return setter_failure("The probe requires cutter compensation off (G40).",
+                          MessageKey{"backend.nmlPort.probeNeedsG40"});
   if (before.feed_mode != FeedMode::per_minute || !std::isfinite(before.programmed_feed) ||
       !std::isfinite(before.rotation_xy))
-    return std::unexpected("The probe requires feed per minute (G94).");
+    return setter_failure("The probe requires feed per minute (G94).",
+                          MessageKey{"backend.nmlPort.probeNeedsG94"});
   for (std::size_t axis = 0; axis < move.start.size(); ++axis)
     if (!near(c.axes[axis].machine, move.start[axis]))
-      return std::unexpected("The machine moved after the probe was confirmed.");
+      return setter_failure("The machine moved after the probe was confirmed.",
+                            MessageKey{"backend.nmlPort.movedAfterConfirm"});
   // The height the approach traverses at: never below the start or the search start.
   const double lift_z = move.clearance_z.value_or(search_start[2]);
   const bool descends = move.approach && move.clearance_z && search_start[2] < lift_z;
@@ -1573,7 +1597,8 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
                             lift_z < search_start[2] ||
                             !in_travel({move.start[0], move.start[1], lift_z}) ||
                             !in_travel({search_start[0], search_start[1], lift_z}))))
-    return std::unexpected("The probe move is outside the configured travel.");
+    return setter_failure("The probe move is outside the configured travel.",
+                          MessageKey{"backend.nmlPort.probeOutsideTravel"});
 
   // What the cycle restores at its end, or idle_maintenance after a stop: the state before this
   // cycle, or before an earlier one that stopped and is not restored yet, when that is still
@@ -1659,8 +1684,10 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   // 2 mm of stylus deflection before the setter switched), so it touches off on its own input.
   const bool own_probe = impl_->config.touch_probe_tool == move.tool;
   if ((material && !own_probe) || !hal->begin_probe_cycle(Clock::now(), !own_probe))
-    return std::unexpected("The probe interlock could not be armed.");
-  const auto interrupt = [&](std::string_view reason) -> Contact {
+    return setter_failure("The probe interlock could not be armed.",
+                          MessageKey{"backend.nmlPort.interlockNotArmed"});
+  const auto interrupt = [&](std::string_view reason,
+                             std::optional<MessageKey> localization) -> Contact {
     hal->stop_probe_cycle();
     // Keep the guard active if status is lost. An acknowledgement from a previous status is
     // not evidence that the controller has stopped the probe.
@@ -1699,20 +1726,39 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
     }
     // The cycle's own reason comes first: dropping the permit makes LinuxCNC report "motion
     // stopped by enable input", which says nothing about why the cycle stopped.
-    auto errors = impl_->take_errors(from);
-    auto message = errors.empty() ? std::string(reason) : std::format("{} ({})", reason, errors);
-    std::cerr << "coffeecnc: fixed setter interrupted: " << message << '\n';
-    return std::unexpected(std::move(message));
+    const auto errors = impl_->take_errors(from);
+    auto failure = LocalizedReason{std::string(reason), std::move(localization)};
+    if (!errors.empty())
+      failure = {std::format("{} ({})", reason, errors),
+                 MessageKey{"backend.nmlPort.withErrors",
+                            {{"reason", std::string(reason)}, {"errors", errors}},
+                            parameter_localization("reason", failure.localization)}};
+    std::cerr << "coffeecnc: fixed setter interrupted: " << failure.text << '\n';
+    return std::unexpected(std::move(failure));
   };
-  std::string cycle_failure; // why live_cycle() last refused, for the operator
+  // The polling loop keeps a view of static diagnostics. Build message parameters only on failure.
+  struct ProbeDetail {
+    std::string_view text;
+    std::string_view key;
+
+    [[nodiscard]] auto localization() const -> std::optional<MessageKey> {
+      return key.empty() ? std::nullopt : std::optional{MessageKey{std::string(key)}};
+    }
+  };
+  ProbeDetail cycle_failure{}; // why live_cycle() last refused, for the operator
   const auto live_cycle = [&]() -> const EMC_STAT* {
     const auto* s = impl_->stat();
-    cycle_failure = !impl_->still()                          ? "the request was withdrawn"
-                    : s == nullptr || impl_->status.link() != Link::live ? "controller status lost"
-                    : !steady_context(*s) ? "machine state or position left the probe line"
-                    : !hal->renew_probe_cycle(Clock::now()) ? "probe lease could not be renewed"
-                                                            : "";
-    return cycle_failure.empty() ? s : nullptr;
+    cycle_failure =
+        !impl_->still()
+            ? ProbeDetail{"the request was withdrawn", "backend.nmlPort.requestWithdrawn"}
+        : s == nullptr || impl_->status.link() != Link::live
+            ? ProbeDetail{"controller status lost", "backend.nmlPort.statusLost"}
+        : !steady_context(*s) ? ProbeDetail{"machine state or position left the probe line",
+                                            "backend.nmlPort.leftProbeLine"}
+        : !hal->renew_probe_cycle(Clock::now())
+            ? ProbeDetail{"probe lease could not be renewed", "backend.nmlPort.leaseNotRenewed"}
+            : ProbeDetail{};
+    return cycle_failure.text.empty() ? s : nullptr;
   };
   const auto interlock = [&]() -> std::optional<HalView> {
     const auto view = hal->view(Clock::now());
@@ -1728,10 +1774,12 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   raw = live_cycle();
   if (raw == nullptr || !selected || selected->probe_input.value_or(true) || raw->motion.traj.probeval != 0 ||
       !near(line.distance(move.start, machine_position(raw->motion.traj.actualPosition)), 0))
-    return interrupt("The fixed setter is tripped or its interlock is unavailable.");
+    return interrupt("The fixed setter is tripped or its interlock is unavailable.",
+                     MessageKey{"backend.nmlPort.setterTripped"});
 
   bool saw_probe = false;
-  std::string block_failure; // why the last block() did not complete, for the operator
+  constexpr ProbeDetail interlock_lost{"probe interlock lost", "backend.nmlPort.interlockLost"};
+  ProbeDetail block_failure{}; // why the last block() did not complete, for the operator
   const auto block = [&](std::string_view code, std::chrono::milliseconds timeout,
                          bool watch_probe = false, bool moves = false) -> bool {
     if (live_cycle() == nullptr) {
@@ -1739,18 +1787,18 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
       return false;
     }
     if (!interlock()) {
-      block_failure = "probe interlock lost";
+      block_failure = interlock_lost;
       return false;
     }
     EMC_TASK_PLAN_EXECUTE command;
     if (!put(command.command, code) || !accepted(impl_->write(command))) {
-      block_failure = "LinuxCNC did not take the block";
+      block_failure = {"LinuxCNC did not take the block", "backend.nmlPort.blockNotTaken"};
       return false;
     }
     if (impl_->loads != nullptr)
       ++impl_->loads->mdi_blocks;
     bool done = false;
-    block_failure = "timed out";
+    block_failure = {"timed out", "backend.nmlPort.timedOut"};
     std::optional<Clock::time_point> done_since;
     static_cast<void>(until(timeout, [&]() {
       impl_->collect();
@@ -1758,18 +1806,22 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
       const auto pins = interlock();
       if (s == nullptr || !pins || (positioning && *pins->probe_input) ||
           impl_->error_since(from) || s->echo_serial_number > impl_->serial) {
-        block_failure = s == nullptr                           ? cycle_failure
-                        : !pins                                ? "probe interlock lost"
-                        : positioning && *pins->probe_input    ? "probe touched while positioning"
-                        : s->echo_serial_number > impl_->serial ? "another command took over"
-                                                                : "LinuxCNC reported an error";
+        block_failure =
+            s == nullptr ? cycle_failure
+            : !pins      ? interlock_lost
+            : positioning && *pins->probe_input
+                ? ProbeDetail{"probe touched while positioning",
+                              "backend.nmlPort.touchedWhilePositioning"}
+            : s->echo_serial_number > impl_->serial
+                ? ProbeDetail{"another command took over", "backend.nmlPort.commandTookOver"}
+                : ProbeDetail{"LinuxCNC reported an error", "backend.nmlPort.reportedErrorShort"};
         return true;
       }
       if (s->echo_serial_number != impl_->serial)
         return false;
       const auto& traj = s->motion.traj;
       if (moves && (traj.feed_override_enabled || traj.adaptive_feed_enabled)) {
-        block_failure = "feed override was enabled";
+        block_failure = {"feed override was enabled", "backend.nmlPort.feedOverrideEnabled"};
         return true;
       }
       if (watch_probe && traj.probing && !traj.probe_tripped)
@@ -1787,7 +1839,7 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
         done_since = Clock::now();
       done = still && (!moves || Clock::now() - *done_since >= std::chrono::milliseconds{150});
       if (s->status == RCS_ERROR)
-        block_failure = "LinuxCNC rejected the move";
+        block_failure = {"LinuxCNC rejected the move", "backend.nmlPort.moveRejected"};
       return done || s->status == RCS_ERROR;
     }));
     return done;
@@ -1796,7 +1848,10 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   // From here the cycle changes the operator's modal state: keep it for a restore.
   impl_->probe_modal = Impl::ProbeModal{modal};
   if (!block("M50 P0", completion_timeout) || !block("M52 P0", completion_timeout))
-    return interrupt(std::format("Could not prepare the probing feed ({}).", block_failure));
+    return interrupt(std::format("Could not prepare the probing feed ({}).", block_failure.text),
+                     MessageKey{"backend.nmlPort.probingFeed",
+                                {{"detail", std::string(block_failure.text)}},
+                                parameter_localization("detail", block_failure.localization())});
   raw = live_cycle();
   const auto probe_pin = interlock();
   // The start is measured, and the command must agree with it. Only a height map's later point
@@ -1813,7 +1868,8 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
       raw->motion.traj.feed_override_enabled || raw->motion.traj.adaptive_feed_enabled ||
       !near(line.distance(move.start, machine_position(raw->motion.traj.actualPosition)), 0) ||
       !commanded_at_start(*raw))
-    return interrupt("Probe input, position or feed controls changed before descent.");
+    return interrupt("Probe input, position or feed controls changed before descent.",
+                     MessageKey{"backend.nmlPort.changedBeforeDescent"});
 
   // Back-offs and the final retract move away from the setter: twice the search feed (turo).
   const auto feed_word = std::format(" F{:.8f}", 2 * move.feed_mm_min / program_scale);
@@ -1825,25 +1881,46 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
     if (lift_z > move.start[2] &&
         !block(std::format("G90 G53 G0 Z{:.8f}", lift_z / program_scale), positioning_timeout,
                false, true))
-      return interrupt("Could not raise Z to setter clearance.");
+      return interrupt("Could not raise Z to setter clearance.",
+                       MessageKey{"backend.nmlPort.raiseZ"});
     raw = live_cycle();
     if (raw == nullptr || !near(raw->motion.traj.position.tran.z * machine_scale, lift_z) ||
         !(std::abs(raw->motion.traj.actualPosition.tran.z * machine_scale - lift_z) <=
-          impl_->config.motion_tolerances.probe_backlash_mm))
+          impl_->config.motion_tolerances.probe_backlash_mm)) {
+      if (raw == nullptr)
+        return interrupt(
+            std::format("The machine did not reach the clearance height ({}).", cycle_failure.text),
+            MessageKey{"backend.nmlPort.clearanceNotReached",
+                       {{"detail", std::string(cycle_failure.text)}},
+                       parameter_localization("detail", cycle_failure.localization())});
+      const auto commanded =
+          std::format("{:.3f}", raw->motion.traj.position.tran.z * machine_scale);
+      const auto measured =
+          std::format("{:.3f}", raw->motion.traj.actualPosition.tran.z * machine_scale);
+      const auto wanted_height = std::format("{:.3f}", lift_z);
       return interrupt(
-          raw == nullptr
-              ? std::format("The machine did not reach the clearance height ({}).", cycle_failure)
-              : std::format("The machine did not reach the clearance height (commanded Z {:.3f}, "
-                            "measured {:.3f}, wanted {:.3f} mm).",
-                            raw->motion.traj.position.tran.z * machine_scale,
-                            raw->motion.traj.actualPosition.tran.z * machine_scale, lift_z));
+          std::format("The machine did not reach the clearance height (commanded Z {}, "
+                      "measured {}, wanted {} mm).",
+                      commanded, measured, wanted_height),
+          MessageKey{
+              "backend.nmlPort.clearanceNotReachedAt",
+              {{"commanded", commanded}, {"measured", measured}, {"wanted", wanted_height}}});
+    }
     traversing_xy = true;
     lifting = false;
     if (!block(std::format("G90 G53 G0 X{:.8f} Y{:.8f}", search_start[0] / program_scale,
                            search_start[1] / program_scale),
-               positioning_timeout, false, true))
-      return interrupt(std::format("Could not position XY for {} ({}).",
-                                   material ? "the probe" : "the setter", block_failure));
+               positioning_timeout, false, true)) {
+      const std::string device = material ? "the probe" : "the setter";
+      auto details = parameter_localization("detail", block_failure.localization());
+      details.emplace("device", MessageParameterKey{material ? "backend.nmlPort.theProbe"
+                                                             : "backend.nmlPort.theSetter"});
+      return interrupt(
+          std::format("Could not position XY for {} ({}).", device, block_failure.text),
+          MessageKey{"backend.nmlPort.positionXy",
+                     {{"device", device}, {"detail", std::string(block_failure.text)}},
+                     std::move(details)});
+    }
     traversing_xy = false;
     if (descends) {
       // Feed down beside the work: a contact on the way stops the motion (probe permit).
@@ -1851,7 +1928,8 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
       if (!block(std::format("G90 G53 G1 Z{:.8f}{}", search_start[2] / program_scale, feed_word),
                  positioning_timeout, false, true))
         return interrupt("Could not lower the probe to the search height; check that the way down "
-                         "is clear.");
+                         "is clear.",
+                         MessageKey{"backend.nmlPort.lowerProbe"});
       vertical_at.reset();
     }
     line_origin = search_start;
@@ -1866,8 +1944,10 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
         std::hypot(raw->motion.traj.actualPosition.tran.x * machine_scale - search_start[0],
                    raw->motion.traj.actualPosition.tran.y * machine_scale - search_start[1]) >
             limits->xy_tolerance_mm)
-      return interrupt(material ? "The probe did not reach a clear search position."
-                                : "The tool must be centered above a clear setter before probing.");
+      return material ? interrupt("The probe did not reach a clear search position.",
+                                  MessageKey{"backend.nmlPort.notClearSearch"})
+                      : interrupt("The tool must be centered above a clear setter before probing.",
+                                  MessageKey{"backend.nmlPort.centerAboveSetter"});
   }
 
   bool missed = false;
@@ -1887,14 +1967,18 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
                          line.sign * travel / program_scale, feed / program_scale);
     }
     if (!block(code, timeout, true, true))
-      return interrupt(std::format("The probe search did not complete ({}, {}).", block_failure,
-                                   code));
+      return interrupt(
+          std::format("The probe search did not complete ({}, {}).", block_failure.text, code),
+          MessageKey{"backend.nmlPort.searchIncomplete",
+                     {{"reason", std::string(block_failure.text)}, {"code", code}},
+                     parameter_localization("reason", block_failure.localization())});
     const auto* sample = live_cycle();
     const auto at_contact = interlock();
     if (sample == nullptr || !at_contact || !saw_probe || sample->motion.traj.probing ||
         sample->echo_serial_number != impl_->serial || !sample->motion.traj.inpos ||
         sample->motion.traj.current_vel != 0)
-      return interrupt("The fixed setter did not report a fresh contact.");
+      return interrupt("The fixed setter did not report a fresh contact.",
+                       MessageKey{"backend.nmlPort.noFreshContact"});
     const auto actual = machine_position(sample->motion.traj.actualPosition);
     const auto& trajectory = sample->motion.traj;
     if (material && !trajectory.probe_tripped && !*at_contact->probe_input &&
@@ -1903,15 +1987,18 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
       return FixedSetterContact{actual, 0};
     }
     if (!*at_contact->probe_input || !trajectory.probe_tripped || trajectory.probeval == 0)
-      return interrupt("The fixed setter did not report a fresh contact.");
+      return interrupt("The fixed setter did not report a fresh contact.",
+                       MessageKey{"backend.nmlPort.noFreshContact"});
     const auto position = machine_position(trajectory.probedPosition);
     const double travel_after_contact = line.distance(position, actual);
     if (!std::isfinite(travel_after_contact))
-      return interrupt("The fixed setter did not report a settled probe position.");
+      return interrupt("The fixed setter did not report a settled probe position.",
+                       MessageKey{"backend.nmlPort.notSettled"});
     const double latched = coordinate(position);
     if (!on_line(position, search_start) || !std::isfinite(latched) || latched <= begin_at ||
         latched > begin_at + travel + tolerance_mm)
-      return interrupt("The setter contact lies outside the confirmed search move.");
+      return interrupt("The setter contact lies outside the confirmed search move.",
+                       MessageKey{"backend.nmlPort.contactOutside"});
     return FixedSetterContact{position, std::max(0.0, travel_after_contact)};
   };
   auto contact = search(0, move.travel_mm, move.feed_mm_min);
@@ -1926,7 +2013,8 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
       const double retreat = material ? std::max(0.0, backoff) : backoff;
       if (!in_travel(line.advance(search_start, retreat)) ||
           !block(machine_move(retreat, feed_word), move_timeout, false, true))
-        return interrupt("The fixed setter latch backoff did not complete.");
+        return interrupt("The fixed setter latch backoff did not complete.",
+                         MessageKey{"backend.nmlPort.backoffIncomplete"});
       const auto released_at_backoff = [&](const EMC_STAT& sample, const HalView& pins) {
         const auto& trajectory = sample.motion.traj;
         return !*pins.probe_input && trajectory.probeval == 0 && trajectory.inpos &&
@@ -1942,8 +2030,10 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
       if (raw == nullptr || !released || !released_at_backoff(*raw, *released)) {
         if (material && backoff < 0 && raw != nullptr && released && released->probe_input.value_or(true))
           return interrupt("The probe did not release at the confirmed start. Start farther from "
-                           "the workpiece before trying again.");
-        return interrupt("The setter did not release before the latch pass.");
+                           "the workpiece before trying again.",
+                           MessageKey{"backend.nmlPort.probeNotReleased"});
+        return interrupt("The setter did not release before the latch pass.",
+                         MessageKey{"backend.nmlPort.setterNotReleased"});
       }
 
       const double latch_travel = std::min(2 * limits->latch_backoff_mm, move.travel_mm - retreat);
@@ -1977,9 +2067,11 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   if (raw == nullptr || !in_travel(line.advance(search_start, retract)) ||
       !(retract < coordinate(machine_position(raw->motion.traj.actualPosition))) ||
       !(retract < coordinate(contact->machine)))
-    return interrupt("The retract position is outside safe travel for this contact.");
+    return interrupt("The retract position is outside safe travel for this contact.",
+                     MessageKey{"backend.nmlPort.retractOutside"});
   if (!block(machine_move(retract, feed_word), move_timeout, false, true))
-    return interrupt("The fixed setter retract did not complete.");
+    return interrupt("The fixed setter retract did not complete.",
+                     MessageKey{"backend.nmlPort.retractIncomplete"});
   // The stylus or plunger can spring back after the retract move ends (the ruby probe did on
   // the mill after an edge probe): give it the same 2 s as the latch back-off.
   const auto released_at_retract = [&](const EMC_STAT& sample, const HalView& pins) {
@@ -1994,18 +2086,38 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   raw = live_cycle();
   const auto after_retract = interlock();
   if (raw == nullptr || !after_retract || !released_at_retract(*raw, *after_retract)) {
-    const auto why =
-        raw == nullptr || !after_retract
-            ? std::string{" (no controller status)"}
-            : std::format(" (probe {}, latched {}, commanded {:+.3f} mm, measured {:+.3f} mm "
-                          "from the retract)",
-                          after_retract->probe_input.value_or(true) ? "touching" : "clear",
-                          raw->motion.traj.probeval,
-                          coordinate(machine_position(raw->motion.traj.position)) - retract,
-                          coordinate(machine_position(raw->motion.traj.actualPosition)) - retract);
-    return interrupt((material ? "The probe did not release at the retract position"
-                               : "The fixed setter did not release at the retract position") +
-                     why + ".");
+    auto why =
+        LocalizedReason{" (no controller status)", MessageKey{"backend.nmlPort.noStatusDetail"}};
+    if (raw != nullptr && after_retract) {
+      const bool touching = after_retract->probe_input.value_or(true);
+      const std::string input = touching ? "touching" : "clear";
+      const auto latched = std::format("{}", raw->motion.traj.probeval);
+      const auto commanded =
+          std::format("{:+.3f}", coordinate(machine_position(raw->motion.traj.position)) - retract);
+      const auto measured = std::format(
+          "{:+.3f}", coordinate(machine_position(raw->motion.traj.actualPosition)) - retract);
+      why = {
+          std::format(" (probe {}, latched {}, commanded {} mm, measured {} mm from the retract)",
+                      input, latched, commanded, measured),
+          MessageKey{
+              "backend.nmlPort.retractDetail",
+              {{"input", input},
+               {"latched", latched},
+               {"commanded", commanded},
+               {"measured", measured}},
+              {{"input", {touching ? "backend.nmlPort.touching" : "backend.nmlPort.clear"}}}}};
+    }
+    return material ? interrupt(std::format("The probe did not release at the retract position{}.",
+                                            why.text),
+                                MessageKey{"backend.nmlPort.probeNotReleasedRetract",
+                                           {{"detail", why.text}},
+                                           parameter_localization("detail", why.localization)})
+                    : interrupt(
+                          std::format("The fixed setter did not release at the retract position{}.",
+                                      why.text),
+                          MessageKey{"backend.nmlPort.setterNotReleasedRetract",
+                                     {{"detail", why.text}},
+                                     parameter_localization("detail", why.localization)});
   }
 
   if (move.return_to_clearance && descends) {
@@ -2015,12 +2127,17 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
     vertical_at = machine_position(raw->motion.traj.actualPosition);
     if (!block(std::format("G90 G53 G0 Z{:.8f}", lift_z / program_scale),
                std::chrono::seconds{30}, false, true))
-      return interrupt(std::format("Could not lift the probe to the clearance height ({}).", block_failure));
+      return interrupt(
+          std::format("Could not lift the probe to the clearance height ({}).", block_failure.text),
+          MessageKey{"backend.nmlPort.liftProbe",
+                     {{"detail", std::string(block_failure.text)}},
+                     parameter_localization("detail", block_failure.localization())});
     raw = live_cycle();
     if (raw == nullptr || !near(raw->motion.traj.position.tran.z * machine_scale, lift_z) ||
         !(std::abs(raw->motion.traj.actualPosition.tran.z * machine_scale - lift_z) <=
           impl_->config.motion_tolerances.probe_backlash_mm))
-      return interrupt("The probe did not reach the clearance height.");
+      return interrupt("The probe did not reach the clearance height.",
+                       MessageKey{"backend.nmlPort.clearanceNotReachedProbe"});
     line_origin[2] = lift_z;
     vertical_at.reset();
     positioning = false;
@@ -2031,11 +2148,13 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
              completion_timeout) ||
       (restore_feed_override && !block("M50 P1", completion_timeout)) ||
       (restore_adaptive && !block("M52 P1", completion_timeout)))
-    return interrupt("The probe completed, but LinuxCNC did not restore its feed settings.");
+    return interrupt("The probe completed, but LinuxCNC did not restore its feed settings.",
+                     MessageKey{"backend.nmlPort.feedSettingsNotRestored"});
   raw = live_cycle();
   if (raw == nullptr || raw->motion.traj.feed_override_enabled != restore_feed_override ||
       raw->motion.traj.adaptive_feed_enabled != restore_adaptive)
-    return interrupt("The probe completed, but LinuxCNC did not confirm its feed controls.");
+    return interrupt("The probe completed, but LinuxCNC did not confirm its feed controls.",
+                     MessageKey{"backend.nmlPort.feedControlsUnconfirmed"});
   impl_->probe_modal.reset();
   hal->finish_probe_cycle();
   // A subsequent cycle must see its own permit. Wait for the control thread to publish and
@@ -2044,14 +2163,20 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
         const auto pins = hal->view(Clock::now());
         return pins && !pins->probe_cycle_active;
       }))
-    return std::unexpected("The probe retracted, but the interlock did not return to idle.");
+    return setter_failure("The probe retracted, but the interlock did not return to idle.",
+                          MessageKey{"backend.nmlPort.interlockNotIdle"});
   if (missed)
-    return std::unexpected(move.return_to_clearance && descends
-                               ? "No probe contact within the search travel. Retracted and lifted clear."
-                               : "No probe contact within the search travel. Returned to the start.");
+    return move.return_to_clearance && descends
+               ? setter_failure(
+                     "No probe contact within the search travel. Retracted and lifted clear.",
+                     MessageKey{"backend.nmlPort.noContactLifted"})
+               : setter_failure("No probe contact within the search travel. Returned to the start.",
+                                MessageKey{"backend.nmlPort.noContactReturned"});
   if (unstable_spread)
-    return std::unexpected(
-        std::format("Setter latch spread {:.4f} mm exceeds 0.01 mm.", *unstable_spread));
+    return setter_failure(
+        std::format("Setter latch spread {:.4f} mm exceeds 0.01 mm.", *unstable_spread),
+        MessageKey{"backend.nmlPort.latchSpread",
+                   {{"spread", std::format("{:.4f}", *unstable_spread)}}});
   return contact;
 }
 
@@ -2189,8 +2314,9 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
   // but the two calibrations, which measure the uncompensated ball.
   const auto runout = ball || runout_calibration ? std::nullopt
                                                  : current_runout(impl_->config, table);
-  const auto probe = [&](const FixedSetterMove& move, const Wanted& still)
-      -> std::expected<FixedSetterContact, std::string> {
+  const auto probe =
+      [&](const FixedSetterMove& move,
+          const Wanted& still) -> std::expected<FixedSetterContact, LocalizedReason> {
     auto contact = probe_fixed_setter(move, still);
     const auto line = search_line(move, before.rotation_xy);
     if (contact && runout && move.material && line.axis != 2 && move.tool == runout->tool) {
@@ -2543,16 +2669,20 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     }
     if (!runout_travel_reaches(request.outside, diameter, outside, radius,
                                limits->material_travel_mm))
-      return setter_failure(request.outside
-                                ? "The material probe travel is too short to probe beside the work."
-                                : "The material probe travel is shorter than the ring radius.");
+      return request.outside
+                 ? setter_failure(
+                       "The material probe travel is too short to probe beside the work.",
+                       MessageKey{"backend.nmlPort.besideTravel"})
+                 : setter_failure("The material probe travel is shorter than the ring radius.",
+                                  MessageKey{"backend.nmlPort.runoutRingTravel"});
     // The ball centre contact along `direction`, aimed through `through` (machine XY).
     const auto touch = [&](ProbeDirection direction, std::array<double, 2> through)
-        -> std::expected<std::array<double, 2>, std::string> {
+        -> std::expected<std::array<double, 2>, LocalizedReason> {
       const auto line = probe_line(direction, 0);
       const auto* s = impl_->stat();
       if (s == nullptr || impl_->status.link() != Link::live)
-        return std::unexpected("Controller status was lost during the runout calibration.");
+        return setter_failure("Controller status was lost during the runout calibration.",
+                              MessageKey{"backend.nmlPort.runoutStatusLost"});
       const auto status = to_status(*s, impl_->config, impl_->hal, Link::live);
       FixedSetterMove move{.tool = tool,
                            .start = {status.controller.axes[0].machine,
@@ -2573,15 +2703,15 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
       }
       const auto contact = probe(move, wanted);
       if (!contact)
-        return std::unexpected(std::format("{}{} face: {}", line.sign > 0 ? "+" : "−",
-                                           line.word(), contact.error()));
+        return probe_face_failure(std::format("{}{}", line.sign > 0 ? "+" : "−", line.word()),
+                                  contact.error());
       return std::array{contact->machine[0], contact->machine[1]};
     };
     constexpr std::array directions{ProbeDirection::x_plus, ProbeDirection::x_minus,
                                     ProbeDirection::y_plus, ProbeDirection::y_minus};
     std::array<std::array<double, 2>, 4> contacts{};
     // Four contacts: X through `through`, then Y through the X midpoint.
-    const auto pass = [&](std::array<double, 2> through) -> std::expected<void, std::string> {
+    const auto pass = [&](std::array<double, 2> through) -> std::expected<void, LocalizedReason> {
       for (std::size_t i = 0; i < directions.size(); ++i) {
         if (i == 2)
           through[0] = (contacts[0][0] + contacts[1][0]) / 2;
@@ -2593,11 +2723,11 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
       return {};
     };
     if (auto first = pass({request.start[0], request.start[1]}); !first)
-      return setter_failure(first.error());
+      return std::unexpected(first.error());
     if (auto second = pass({(contacts[0][0] + contacts[1][0]) / 2,
                             (contacts[2][1] + contacts[3][1]) / 2});
         !second)
-      return setter_failure(second.error());
+      return std::unexpected(second.error());
     // The true surface is half the diameter beyond (ring) or before (pin) the centre along the
     // travel; the uncompensated one is the contact plus the table radius. The centre, and with
     // it the eccentricity, cancels in the mean of opposite directions.
@@ -2717,10 +2847,11 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     map.points.resize(static_cast<std::size_t>(grid->columns) * static_cast<std::size_t>(grid->rows));
     int points_done = 0; // points measured so far
     // A stop after the first point keeps the points measured so far, marked partial.
-    const auto stop = [&](std::string reason) -> std::expected<SetterState, LocalizedReason> {
+    const auto stop = [&](LocalizedReason reason) -> std::expected<SetterState, LocalizedReason> {
       if (points_done == 0)
-        return setter_failure(std::move(reason));
-      map.partial = std::move(reason);
+        return std::unexpected(std::move(reason));
+      map.partial = std::move(reason.text);
+      map.partial_localization = std::move(reason.localization);
       SetterState state{calibration ? std::optional{calibration->plane} : std::nullopt,
                         std::nullopt, std::move(current_marks)};
       state.height_map = std::move(map);
@@ -2736,13 +2867,15 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
         // Back and forth: every other row from its far end.
         const int column = row % 2 == 0 ? along : grid->columns - 1 - along;
         if (wanted && !wanted())
-          return stop("The height map was stopped.");
+          return stop({"The height map was stopped.", MessageKey{"backend.nmlPort.heightStopped"}});
         const auto* s = impl_->stat();
         if (s == nullptr || impl_->status.link() != Link::live)
-          return stop("Controller status was lost during the height map.");
+          return stop({"Controller status was lost during the height map.",
+                       MessageKey{"backend.nmlPort.heightStatusLost"}});
         const auto reading = to_status(*s, impl_->config, impl_->hal, Link::live);
         if (frame_of(reading) != frame || reading.tool_offset != before.tool_offset)
-          return stop("The work frame or tool changed during the height map.");
+          return stop({"The work frame or tool changed during the height map.",
+                       MessageKey{"backend.nmlPort.heightFrameChanged"}});
         const std::array here{reading.controller.axes[0].machine, reading.controller.axes[1].machine,
                               reading.controller.axes[2].machine};
         // Each later point starts where the last one ended: commanded there, and measured there
@@ -2755,7 +2888,8 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
               std::hypot(here[0] - (*left_at)[0], here[1] - (*left_at)[1]) <= limits->xy_tolerance_mm &&
               std::abs(here[2] - (*left_at)[2]) <= z_lag;
           if (!held)
-            return stop("The machine moved between the height map points.");
+            return stop({"The machine moved between the height map points.",
+                         MessageKey{"backend.nmlPort.heightMoved"}});
         }
         const auto above = machine_of(at_column(column), at_row(row), request.clearance_mm);
         const auto contact =
@@ -2771,8 +2905,13 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
                                 .material = ProbeDirection::z_top,
                                 .start_z_lag_mm = left_at ? z_lag : 0.0},
                                wanted);
-        if (!contact)
-          return stop(std::format("Point {}: {}", where(column, row), contact.error()));
+        if (!contact) {
+          const auto position = where(column, row);
+          return stop({std::format("Point {}: {}", position, contact.error().text),
+                       MessageKey{"backend.nmlPort.heightPoint",
+                                  {{"point", position}, {"error", contact.error().text}},
+                                  parameter_localization("error", contact.error().localization)}});
+        }
         auto& point = map.points.at((static_cast<std::size_t>(row) * static_cast<std::size_t>(grid->columns)) +
                                     static_cast<std::size_t>(column));
         point.machine = contact->machine;
@@ -2784,11 +2923,18 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
         // The next traverse runs at the clearance: a top within the latch back-off of it is too
         // close to rapid over.
         const double gap = above[2] - contact->machine[2];
-        if (points_done < grid->columns * grid->rows && gap < limits->latch_backoff_mm)
-          return stop(std::format("The top at {} is {} {} below the clearance Z, within the {} {} "
-                                  "latch back-off. Raise the clearance Z.",
-                                  where(column, row), length(gap), unit,
-                                  length(limits->latch_backoff_mm), unit));
+        if (points_done < grid->columns * grid->rows && gap < limits->latch_backoff_mm) {
+          const auto position = where(column, row);
+          const auto shown_gap = length(gap);
+          const auto margin = length(limits->latch_backoff_mm);
+          return stop(
+              {std::format("The top at {0} is {1} {2} below the clearance Z, within the {3} {2} "
+                           "latch back-off. Raise the clearance Z.",
+                           position, shown_gap, unit, margin),
+               MessageKey{
+                   "backend.nmlPort.heightMargin",
+                   {{"point", position}, {"gap", shown_gap}, {"unit", unit}, {"margin", margin}}}});
+        }
       }
     }
     SetterState state{calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,
@@ -2860,7 +3006,7 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
   const auto arc_searches_in_travel =
       [&](const std::array<std::optional<std::array<double, 3>>, 5>& approaches,
           double heading_turn,
-          std::optional<double> clearance) -> std::expected<void, std::string> {
+          std::optional<double> clearance) -> std::expected<void, LocalizedReason> {
     auto from = request.start;
     for (std::size_t i = 0; i < directions.size(); ++i) {
       const double heading = directions[i];
@@ -2873,9 +3019,15 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
                          *clearance >= search_start[2] &&
                          arc_in_travel({from[0], from[1], *clearance}) &&
                          arc_in_travel({search_start[0], search_start[1], *clearance}));
-      if (!arc_in_travel(search_start) || !arc_in_travel(endpoint) || !lift_ok)
-        return std::unexpected(std::format("Contact {} at {:.1f}°: {}", i + 1, heading,
-                                           "The probe move is outside the configured travel."));
+      if (!arc_in_travel(search_start) || !arc_in_travel(endpoint) || !lift_ok) {
+        const std::string detail = "The probe move is outside the configured travel.";
+        return setter_failure(std::format("Contact {} at {:.1f}°: {}", i + 1, heading, detail),
+                              MessageKey{"backend.nmlPort.arcContact",
+                                         {{"n", std::to_string(i + 1)},
+                                          {"angle", std::format("{:.1f}", heading)},
+                                          {"error", detail}},
+                                         {{"error", {"backend.nmlPort.probeOutsideTravel"}}}});
+      }
       // A boss search lifts to clearance on its approach; the next one starts there.
       if (clearance)
         from = {search_start[0], search_start[1], *clearance};
@@ -3011,15 +3163,17 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
                               MessageKey{"backend.nmlPort.ridgeTravel"});
     }
 
-    const auto face = [&](ProbeDirection direction) -> std::expected<double, std::string> {
+    const auto face = [&](ProbeDirection direction) -> std::expected<double, LocalizedReason> {
       const auto line = probe_line(direction, before.rotation_xy);
       const auto* current = impl_->stat();
       if (!current || impl_->status.link() != Link::live)
-        return std::unexpected("Controller status was lost between the feature faces.");
+        return setter_failure("Controller status was lost between the feature faces.",
+                              MessageKey{"backend.nmlPort.lostFeatureFaces"});
       const auto status = to_status(*current, impl_->config, impl_->hal, Link::live);
       if (frame_of(status) != frame || status.tool_offset != before.tool_offset ||
           status.controller.program_units != before.controller.program_units)
-        return std::unexpected("The work frame changed between the feature faces.");
+        return setter_failure("The work frame changed between the feature faces.",
+                              MessageKey{"backend.nmlPort.frameChangedFeature"});
       const std::array from{status.controller.axes[0].machine, status.controller.axes[1].machine,
                             status.controller.axes[2].machine};
       FixedSetterMove move{.tool = tool, .start = from, .travel_mm = limits->material_travel_mm,
@@ -3030,13 +3184,14 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
         move.clearance_z = clearance;
         move.return_to_clearance = true;
       } else if (!back_at(status, request.start)) {
-        return std::unexpected("The probe did not return to the confirmed point inside the feature.");
+        return setter_failure("The probe did not return to the confirmed point inside the feature.",
+                              MessageKey{"backend.nmlPort.notBackInFeature"});
       }
       const auto contact = probe(move, wanted);
       // The physical face is beyond the centre of the ball in the direction of travel.
       if (!contact)
-        return std::unexpected(std::format("{}{} face: {}", line.sign > 0 ? "+" : "−",
-                                           line.word(), contact.error()));
+        return probe_face_failure(std::format("{}{}", line.sign > 0 ? "+" : "−", line.word()),
+                                  contact.error());
       record(direction, contact->machine, radius);
       return to_frame(contact->machine)[line.axis] + line.sign * radius;
     };
@@ -3053,7 +3208,7 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
       if (inside_corner) {
         const auto wall = face(axis == 0 ? request.direction : request.y_direction);
         if (!wall)
-          return setter_failure(wall.error());
+          return std::unexpected(wall.error());
         origin[axis] = *wall;
         continue;
       }
@@ -3061,10 +3216,10 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
       const auto positive = axis == 0 ? ProbeDirection::x_plus : ProbeDirection::y_plus;
       const auto low = face(ridge ? positive : negative);
       if (!low)
-        return setter_failure(low.error());
+        return std::unexpected(low.error());
       const auto high = face(ridge ? negative : positive);
       if (!high)
-        return setter_failure(high.error());
+        return std::unexpected(high.error());
       if (!encloses_start(axis, *low, *high))
         return setter_failure("The probed faces do not enclose the confirmed starting point.",
                               MessageKey{"backend.nmlPort.facesNotEnclosing"});
@@ -3095,7 +3250,7 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
                             MessageKey{"backend.nmlPort.edgeSpacing"});
     const auto contact = [&](const std::array<double, 3>& from,
                              std::optional<std::array<double, 3>> approach)
-        -> std::expected<std::array<double, 3>, std::string> {
+        -> std::expected<std::array<double, 3>, LocalizedReason> {
       const auto found = probe({.tool = tool,
                                              .start = from,
                                              .travel_mm = limits->material_travel_mm,
@@ -3111,7 +3266,11 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     };
     const auto first = contact(request.start, std::nullopt);
     if (!first)
-      return setter_failure("First point: " + first.error());
+      return setter_failure(
+          std::format("First point: {}", first.error().text),
+          MessageKey{"backend.nmlPort.firstPoint",
+                     {{"detail", first.error().text}},
+                     parameter_localization("detail", first.error().localization)});
     // Along the edge: Y for an X face, X for a Y face, at the start height.
     const std::size_t along = line.axis == 0 ? 1 : 0;
     const auto* now = impl_->stat();
@@ -3125,7 +3284,11 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     next[along] += spacing;
     const auto second = contact(here, to_machine(next));
     if (!second)
-      return setter_failure("Second point: " + second.error());
+      return setter_failure(
+          std::format("Second point: {}", second.error().text),
+          MessageKey{"backend.nmlPort.secondPoint",
+                     {{"detail", second.error().text}},
+                     parameter_localization("detail", second.error().localization)});
     // The face moves across by `across` while the probe moves `spacing` along it.
     const auto first_at = to_frame(*first);
     const auto second_at = to_frame(*second);
@@ -3189,7 +3352,7 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     // at the start height to `approach`.
     const auto wall = [&](ProbeDirection direction, const std::array<double, 3>& from,
                           std::optional<std::array<double, 3>> approach)
-        -> std::expected<double, std::string> {
+        -> std::expected<double, LocalizedReason> {
       const auto line = probe_line(direction, before.rotation_xy);
       const auto contact = probe({.tool = tool,
                                                .start = from,
@@ -3205,14 +3368,14 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     };
     const auto x_plus = wall(ProbeDirection::x_plus, request.start, std::nullopt);
     if (!x_plus)
-      return setter_failure("+X wall: " + x_plus.error());
+      return probe_wall_failure("+X", x_plus.error());
     auto at = here();
     if (!at)
       return setter_failure("Controller status was lost inside the bore.",
                             MessageKey{"backend.nmlPort.lostInBore"});
     const auto x_minus = wall(ProbeDirection::x_minus, *at, std::nullopt);
     if (!x_minus)
-      return setter_failure("−X wall: " + x_minus.error());
+      return probe_wall_failure("−X", x_minus.error());
     if (!encloses_start(0, *x_minus, *x_plus))
       return setter_failure("The probed X faces do not enclose the confirmed bore starting point.",
                             MessageKey{"backend.nmlPort.boreXFaces"});
@@ -3224,14 +3387,14 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     const auto y_plus =
         wall(ProbeDirection::y_plus, *at, to_machine({centre_x, start_frame[1], (*at)[2]}));
     if (!y_plus)
-      return setter_failure("+Y wall: " + y_plus.error());
+      return probe_wall_failure("+Y", y_plus.error());
     at = here();
     if (!at)
       return setter_failure("Controller status was lost inside the bore.",
                             MessageKey{"backend.nmlPort.lostInBore"});
     const auto y_minus = wall(ProbeDirection::y_minus, *at, std::nullopt);
     if (!y_minus)
-      return setter_failure("−Y wall: " + y_minus.error());
+      return probe_wall_failure("−Y", y_minus.error());
     if (!encloses_start(1, *y_minus, *y_plus))
       return setter_failure("The probed Y faces do not enclose the confirmed bore starting point.",
                             MessageKey{"backend.nmlPort.boreYFaces"});
@@ -3256,7 +3419,7 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
       return setter_failure("Set the probe ball diameter in the tool table first.",
                             MessageKey{"backend.nmlPort.setBallDiameter"});
     if (auto travel = arc_searches_in_travel({}, 0, std::nullopt); !travel)
-      return setter_failure(travel.error());
+      return std::unexpected(std::move(travel.error()));
     std::array<std::array<double, 2>, 5> contacts{};
     std::array<double, 5> spreads{};
     for (std::size_t i = 0; i < directions.size(); ++i) {
@@ -3278,11 +3441,12 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
                                  wanted);
       if (!contact)
         return setter_failure(
-            std::format("Contact {} at {:.1f}°: {}", i + 1, heading, contact.error()),
+            std::format("Contact {} at {:.1f}°: {}", i + 1, heading, contact.error().text),
             MessageKey{"backend.nmlPort.arcContact",
                        {{"n", std::format("{}", i + 1)},
                         {"angle", std::format("{:.1f}", heading)},
-                        {"error", std::format("{}", contact.error())}}});
+                        {"error", std::format("{}", contact.error().text)}},
+                       parameter_localization("error", contact.error().localization)});
       const auto at = to_frame(contact->machine);
       contacts.at(i) = {at[0], at[1]};
       spreads.at(i) = contact->latch_spread_mm;
@@ -3350,8 +3514,8 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     // `base` is in the rotated frame: the confirmed start unless given.
     const auto face = [&](const ProbeLine& line, ProbeDirection direction,
                           const std::array<double, 3>& from, double offset,
-                          std::optional<std::array<double, 3>> base = std::nullopt)
-        -> std::expected<double, std::string> {
+                          std::optional<std::array<double, 3>> base =
+                              std::nullopt) -> std::expected<double, LocalizedReason> {
       auto approach = base.value_or(start_frame);
       approach[line.axis] -= line.sign * offset;
       approach[2] = depth;
@@ -3380,7 +3544,7 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
                                        depth});
       }
       if (auto travel = arc_searches_in_travel(approaches, 180, clearance); !travel)
-        return setter_failure(travel.error());
+        return std::unexpected(std::move(travel.error()));
       std::array<std::array<double, 2>, 5> contacts{};
       std::array<double, 5> spreads{};
       for (std::size_t i = 0; i < directions.size(); ++i) {
@@ -3401,11 +3565,12 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
                                    wanted);
         if (!contact)
           return setter_failure(
-              std::format("Contact {} at {:.1f}°: {}", i + 1, heading, contact.error()),
+              std::format("Contact {} at {:.1f}°: {}", i + 1, heading, contact.error().text),
               MessageKey{"backend.nmlPort.arcContact",
                          {{"n", std::format("{}", i + 1)},
                           {"angle", std::format("{:.1f}", heading)},
-                          {"error", std::format("{}", contact.error())}}});
+                          {"error", std::format("{}", contact.error().text)}},
+                         parameter_localization("error", contact.error().localization)});
         const auto at = to_frame(contact->machine);
         contacts.at(i) = {at[0], at[1]};
         spreads.at(i) = contact->latch_spread_mm;
@@ -3418,7 +3583,7 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
       // where the surface is, so their midpoints are the centre and their distance the diameter.
       const auto left = face(x_line, ProbeDirection::x_plus, request.start, half_gauge + outside);
       if (!left)
-        return setter_failure("−X face: " + left.error());
+        return probe_face_failure("−X", left.error());
       auto at = here();
       if (!at)
         return setter_failure("Controller status was lost between the boss faces.",
@@ -3426,7 +3591,7 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
       const auto right = face(probe_line(ProbeDirection::x_minus, before.rotation_xy),
                               ProbeDirection::x_minus, *at, half_gauge + outside);
       if (!right)
-        return setter_failure("+X face: " + right.error());
+        return probe_face_failure("+X", right.error());
       if (!encloses_start(0, *left, *right))
         return setter_failure(
             "The probed X faces do not enclose the confirmed boss starting point.",
@@ -3440,7 +3605,7 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
       const auto front = face(probe_line(ProbeDirection::y_plus, before.rotation_xy),
                               ProbeDirection::y_plus, *at, half_gauge + outside, through);
       if (!front)
-        return setter_failure("−Y face: " + front.error());
+        return probe_face_failure("−Y", front.error());
       at = here();
       if (!at)
         return setter_failure("Controller status was lost between the boss faces.",
@@ -3448,7 +3613,7 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
       const auto back = face(probe_line(ProbeDirection::y_minus, before.rotation_xy),
                              ProbeDirection::y_minus, *at, half_gauge + outside, through);
       if (!back)
-        return setter_failure("+Y face: " + back.error());
+        return probe_face_failure("+Y", back.error());
       if (!encloses_start(1, *front, *back))
         return setter_failure(
             "The probed Y faces do not enclose the confirmed boss starting point.",
@@ -3469,7 +3634,11 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
       // further apart than the gauge is wide.
       const auto left = face(x_line, ProbeDirection::x_plus, request.start, half_gauge + outside);
       if (!left)
-        return setter_failure("Left face: " + left.error());
+        return setter_failure(
+            std::format("Left face: {}", left.error().text),
+            MessageKey{"backend.nmlPort.leftFace",
+                       {{"detail", left.error().text}},
+                       parameter_localization("detail", left.error().localization)});
       const auto between = here();
       if (!between)
         return setter_failure("Controller status was lost between the gauge faces.",
@@ -3477,7 +3646,11 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
       const auto right = face(probe_line(ProbeDirection::x_minus, 0), ProbeDirection::x_minus,
                               *between, half_gauge + outside);
       if (!right)
-        return setter_failure("Right face: " + right.error());
+        return setter_failure(
+            std::format("Right face: {}", right.error().text),
+            MessageKey{"backend.nmlPort.rightFace",
+                       {{"detail", right.error().text}},
+                       parameter_localization("detail", right.error().localization)});
       const double centres = (*right + radius) - (*left - radius);
       const double diameter = centres - request.gauge_width_mm;
       if (!std::isfinite(diameter) || diameter <= 0 || std::abs(diameter - 2 * radius) > 0.5)
@@ -3526,14 +3699,14 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     }
     const auto x_face = face(x_line, request.direction, request.start, outside);
     if (!x_face)
-      return setter_failure("X face: " + x_face.error());
+      return probe_face_failure("X", x_face.error());
     const auto between = here();
     if (!between)
       return setter_failure("Controller status was lost between the corner faces.",
                             MessageKey{"backend.nmlPort.lostCornerFaces"});
     const auto y_face = face(y_line, request.y_direction, *between, outside);
     if (!y_face)
-      return setter_failure("Y face: " + y_face.error());
+      return probe_face_failure("Y", y_face.error());
 
     SetterState state{calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,
                       std::move(current_marks), SetterState::Material{before.wcs, 'X', true}};
@@ -3573,7 +3746,7 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
                                              .material = request.direction},
                                             wanted);
     if (!contact)
-      return setter_failure(contact.error());
+      return std::unexpected(contact.error());
     if (request.measure_only) {
       record(request.direction, contact->machine, radius);
       // The face, or the top, where applying sets the axis to zero (see `expected` below).
@@ -3662,8 +3835,13 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
   }
   const auto contact = probe(move, wanted);
   if (!contact)
-    return setter_failure(checking ? std::format("T{} check failed. {}", tool, contact.error())
-                                   : contact.error());
+    return checking
+               ? setter_failure(
+                     std::format("T{} check failed. {}", tool, contact.error().text),
+                     MessageKey{"backend.nmlPort.checkFailedDetail",
+                                {{"tool", std::to_string(tool)}, {"detail", contact.error().text}},
+                                parameter_localization("detail", contact.error().localization)})
+               : std::unexpected(contact.error());
   if (wanted && !wanted())
     return setter_failure("The fixed setter result was cancelled.",
                           MessageKey{"backend.nmlPort.setterResultCancelled"});

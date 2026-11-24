@@ -689,6 +689,7 @@ export interface HeightMap {
   rotation?: number
   points: (HeightMapPoint | null)[]
   partial?: string
+  partial_localization?: MessageKey
 }
 
 /** A point on a probed surface: the ball-centre contact moved one ball radius along the travel. */

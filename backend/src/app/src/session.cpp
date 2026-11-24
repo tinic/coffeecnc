@@ -2158,7 +2158,7 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
             step = answer({CommandOutcome::failed, result->origin_refusal->text,
                            result->origin_refusal->localization});
           else if (const auto& map = result->height_map; map && map->partial)
-            step = answer({CommandOutcome::failed, *map->partial});
+            step = answer({CommandOutcome::failed, *map->partial, {}, map->partial_localization});
           step.setter = std::move(*result);
           return step;
         } else if constexpr (std::is_same_v<T, SetTool>) {

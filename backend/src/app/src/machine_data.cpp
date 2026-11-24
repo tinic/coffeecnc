@@ -365,14 +365,22 @@ void MachineData::report_last_restore(const Pause& pause) {
           true,
           std::format("The restore was not completed: {} The files are as they were.", reason),
           MessageKey{"backend.machineData.notCompleted", {{"detail", reason}}, std::move(details)}};
-    else
+    else {
+      const auto files = joined(kept);
+      MessageKey localized{"backend.machineData.notPutBack",
+                           {{"detail", reason}, {"files", files}, {"path", copy}},
+                           std::move(details)};
+      if (const auto metadata = result.find("not_put_back_list"); metadata != result.end())
+        if (auto items = message_list_from_json(*metadata);
+            items &&
+            std::ranges::equal(*items, kept, std::ranges::equal_to{}, &MessageListItem::text))
+          localized.params_lists.emplace("files", std::move(*items));
       notice_ = {true,
                  std::format("The restore was not completed: {} These files could not be put "
                              "back: {}. The files from before the restore are in {}.",
-                             reason, joined(kept), copy),
-                 MessageKey{"backend.machineData.notPutBack",
-                            {{"detail", reason}, {"files", joined(kept)}, {"path", copy}},
-                            std::move(details)}};
+                             reason, files, copy),
+                 std::move(localized)};
+    }
   } else if (applying.is_object()) {
     const auto pre_restore = applying.value("pre_restore", std::string{});
     notice_ = {true,
@@ -834,7 +842,7 @@ auto apply_staged_restore(ToolModelFiles& files, const std::string& data_directo
   LocalizedReason reason;
   std::string copy_path;
   std::size_t written = 0;
-  std::vector<std::string> not_put_back;
+  std::vector<LocalizedReason> not_put_back;
   std::vector<std::string> group_not_kept;
   const auto& plan_found = *plan_content;
   if (!plan_found)
@@ -1028,17 +1036,17 @@ auto apply_staged_restore(ToolModelFiles& files, const std::string& data_directo
         const auto& step = steps[i];
         if (!step.before) {
           if (auto removed = files.remove_beneath(step.root, step.relative); !removed)
-            not_put_back.push_back(removed.error());
+            not_put_back.push_back(std::move(removed.error()));
         } else if (step.before->symlink && !step.before->link.empty()) {
           // The restore replaced a link by the file: the same link again, not its content.
           if (auto relinked = files.link_beneath(step.root, step.relative, step.before->link);
               !relinked)
-            not_put_back.push_back(relinked.error());
+            not_put_back.push_back(std::move(relinked.error()));
         } else if (auto back =
                        files.replace_beneath(step.root, step.relative, step.before->content.bytes,
                                              step.before->mode, step.before->group);
                    !back && !back.error().renamed) {
-          not_put_back.push_back(std::move(back.error().reason.text));
+          not_put_back.push_back(std::move(back.error().reason));
         }
       }
       written = 0;
@@ -1046,16 +1054,33 @@ auto apply_staged_restore(ToolModelFiles& files, const std::string& data_directo
     }
   }
   const bool ok = reason.empty();
-  const Json kept = not_put_back;
+  auto kept = Json::array();
+  std::vector<MessageListItem> kept_messages;
+  kept_messages.reserve(not_put_back.size());
+  for (auto& warning : not_put_back) {
+    kept.push_back(warning.text);
+    MessageListItem item{std::move(warning.text)};
+    if (warning.localization)
+      item.localization = MessageParameterKey{std::move(warning.localization->key),
+                                              std::move(warning.localization->params)};
+    kept_messages.push_back(std::move(item));
+  }
   Json result{{"ok", ok},
               {"written", written},
               {"reason", reason.text},
               {"pre_restore", copy_path},
-              {"not_put_back", kept},
+              {"not_put_back", std::move(kept)},
               {"group_not_kept", group_not_kept},
               {"time", now.count()}};
   if (reason.localization)
     result["reason_localization"] = message_key_json(*reason.localization);
+  if (std::ranges::any_of(kept_messages,
+                          [](const auto& item) { return item.localization.has_value(); })) {
+    result["not_put_back_list"] = message_list_json(kept_messages);
+    // Keep the existing record readable even when the additional metadata is too large.
+    if (dump(result).size() >= max_record_bytes)
+      result.erase("not_put_back_list");
+  }
   const auto said = replace_file(files, result_file, dump(result) + '\n');
   // The marker goes only once the result is on the disk: without one the next start says the
   // write was interrupted.

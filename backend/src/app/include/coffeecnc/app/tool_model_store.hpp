@@ -177,18 +177,21 @@ public:
   }
   // Removes that file (a missing one is not a failure) and fsyncs its directory.
   [[nodiscard]] virtual auto remove_beneath(const std::string& root, const std::string& relative)
-      -> std::expected<void, std::string> {
+      -> Done {
     static_cast<void>(relative);
-    return std::unexpected(root + " cannot be written here");
+    return std::unexpected(
+        LocalizedReason{std::format("{} cannot be written here", root),
+                        MessageKey{"backend.machineData.writeHere", {{"path", root}}}});
   }
   // Replaces that file by a symbolic link to `target` (symlinkat beside it, rename, fsync of the
   // directory): what a restore put back where a link was.
   [[nodiscard]] virtual auto link_beneath(const std::string& root, const std::string& relative,
-                                          const std::string& target)
-      -> std::expected<void, std::string> {
+                                          const std::string& target) -> Done {
     static_cast<void>(relative);
     static_cast<void>(target);
-    return std::unexpected(root + " cannot be written here");
+    return std::unexpected(
+        LocalizedReason{std::format("{} cannot be written here", root),
+                        MessageKey{"backend.machineData.writeHere", {{"path", root}}}});
   }
 
 protected:
@@ -228,10 +231,9 @@ public:
                                      std::string_view bytes, unsigned mode,
                                      std::optional<unsigned> group) -> Replaced override;
   [[nodiscard]] auto remove_beneath(const std::string& root, const std::string& relative)
-      -> std::expected<void, std::string> override;
+      -> Done override;
   [[nodiscard]] auto link_beneath(const std::string& root, const std::string& relative,
-                                  const std::string& target)
-      -> std::expected<void, std::string> override;
+                                  const std::string& target) -> Done override;
   [[nodiscard]] auto append(const std::string& path, std::string_view bytes) -> Done override;
 
 private:

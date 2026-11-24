@@ -220,25 +220,30 @@ public:
     return disk.directories.contains(folder) || below(disk.files) || below(disk.links);
   }
   auto link_beneath(const std::string& root, const std::string& relative, const std::string& target)
-      -> std::expected<void, std::string> override {
+      -> Done override {
     const auto path = root + '/' + relative;
     if (begin("relink", path))
-      return std::unexpected(path + " cannot be made a link again: Read-only file system");
+      return std::unexpected(
+          LocalizedReason{path + " cannot be made a link again: Read-only file system",
+                          MessageKey{"backend.machineData.rollbackRelink",
+                                     {{"path", path}, {"osError", "Read-only file system"}}}});
     if (auto linked = through_link(root, relative))
-      return std::unexpected(*linked);
+      return std::unexpected(LocalizedReason{*linked});
     disk.files.erase(path);
     disk.file_modes.erase(path);
     disk.groups.erase(path);
     disk.links[path] = target;
     return {};
   }
-  auto remove_beneath(const std::string& root, const std::string& relative)
-      -> std::expected<void, std::string> override {
+  auto remove_beneath(const std::string& root, const std::string& relative) -> Done override {
     const auto path = root + '/' + relative;
     if (begin("remove", path))
-      return std::unexpected(path + " cannot be removed: Read-only file system");
+      return std::unexpected(
+          LocalizedReason{path + " cannot be removed: Read-only file system",
+                          MessageKey{"backend.machineData.rollbackRemove",
+                                     {{"path", path}, {"osError", "Read-only file system"}}}});
     if (auto linked = through_link(root, relative))
-      return std::unexpected(*linked);
+      return std::unexpected(LocalizedReason{*linked});
     disk.links.erase(path);
     disk.files.erase(path);
     return {};

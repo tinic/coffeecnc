@@ -47,8 +47,15 @@ auto localization_of(const Json& value, std::string_view field) -> std::optional
   auto parsed = message_parameter_from_json(*metadata);
   if (!parsed)
     return std::nullopt;
-  return MessageKey{std::move(parsed->key), std::move(parsed->params),
-                    std::move(parsed->params_localization)};
+  MessageKey message{std::move(parsed->key), std::move(parsed->params),
+                     std::move(parsed->params_localization)};
+  const auto lists = metadata->find("params_lists");
+  if (lists != metadata->end() && lists->is_object())
+    for (const auto& [name, items] : lists->items())
+      if (message.params.contains(name))
+        if (auto list = message_list_from_json(items))
+          message.params_lists.emplace(name, std::move(*list));
+  return message;
 }
 
 auto record_json(const AlarmRecord& record) -> Json {

@@ -160,6 +160,15 @@ void localization_survives_reload() {
       "backend.alarmLog.keptForRun",
       {{"directory", "/var/cnc"}, {"detail", "The alarm log could not be read"}},
       parameter_localization("detail", read)};
+  const MessageKey restore{
+      "backend.machineData.notPutBack",
+      {{"files", "Removal failed; name from the operating system"}},
+      {},
+      {{"files",
+        {{"Removal failed",
+          MessageParameterKey{"backend.machineData.rollbackRemove",
+                              {{"path", "tools.tbl"}, {"osError", "Permission denied"}}}},
+         {"name from the operating system"}}}}};
   const std::vector messages{
       encode_message(MessageLevel::info, "Jog stopped: probe contact", epoch, contact),
       encode_result(1, CommandOutcome::rejected,
@@ -170,24 +179,27 @@ void localization_survives_reload() {
           R"({"type":"message","level":"error","text":"Keep this text","localization":{"key":"invalid","params":{"x":7}}})"},
       std::string{
           R"({"type":"message","level":"error","text":"Panel request ignored: Bad packet.","localization":{"key":"messages.session.requestIgnored","params":{"detail":"Bad packet."},"params_localization":{"detail":{"key":"messages.request.missingField","params":{"field":7}}}}})"},
-      encode_message(MessageLevel::error, "The alarm log could not be read", epoch, storage)};
+      encode_message(MessageLevel::error, "The alarm log could not be read", epoch, storage),
+      encode_message(MessageLevel::error, "Restore failed", epoch, restore)};
   f.log->posted(page, messages, epoch);
   f.log->settle();
   f.open();
   const auto view = f.log->view();
-  require(view.entries.size() == 7 && view.skipped == 0, "Both older and localized records reload");
+  require(view.entries.size() == 8 && view.skipped == 0, "Both older and localized records reload");
   require(!view.entries[0].localization && view.entries[1].localization == contact &&
               view.entries[2].localization == refusal && view.entries[3].localization == ignored &&
               !view.entries[4].localization && view.entries[4].text == "Keep this text" &&
               view.entries[5].localization ==
                   MessageKey{"messages.session.requestIgnored", {{"detail", "Bad packet."}}} &&
-              view.entries[6].localization == storage,
+              view.entries[6].localization == storage && view.entries[7].localization == restore,
           "Known metadata survives reload and invalid metadata does not discard English text");
   const auto wire = Json::parse(encode_alarm_log(view)).at("entries");
   require(wire[1].at("localization").at("key") == contact.key &&
               wire[2].at("localization").at("params").at("axis") == "Z" &&
               wire[3].at("localization").at("params_localization").at("detail") ==
-                  Json{{"key", "messages.request.missingField"}, {"params", {{"field", "id"}}}},
+                  Json{{"key", "messages.request.missingField"}, {"params", {{"field", "id"}}}} &&
+              wire[7].at("localization").at("params_lists").at("files")[1].at("text") ==
+                  "name from the operating system",
           "The alarm log provides keys and arguments to the next page");
 }
 

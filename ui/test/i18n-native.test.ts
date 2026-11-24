@@ -597,6 +597,26 @@ describe('translateMessage', () => {
     expect(translateMessage(reason)).toBe(expected)
   })
 
+  it('translates each rollback warning while retaining literal paths and opaque text', async () => {
+    await setLanguage('fr')
+    const path = '/config/tools; main.tbl'
+    const opaque = 'The file cannot be read.'
+    expect(translateMessage(opaque)).not.toBe(opaque)
+    const raw = `${path} cannot be made a link again: ${opaque}`
+    const args = {
+      key: 'backend.machineData.notPutBack',
+      params: { detail: 'Device fault', files: `${raw}; adapter warning`, path: '/copy.tar.gz' },
+    }
+    expect(translateMessage('Fallback', {
+      ...args,
+      params_lists: { files: [
+        { text: raw, localization: { key: 'backend.machineData.rollbackRelink', params: { path, osError: opaque } } },
+        { text: 'adapter warning' },
+      ] },
+    })).toContain(`Impossible de recréer le lien ${path} : ${opaque}; adapter warning`)
+    expect(translateMessage('Fallback', { ...args, params_lists: { files: [null] } })).toContain(args.params.files)
+  })
+
   it('translates a nested reason', async () => {
     await setLanguage('fr')
     expect(translateMessage("Can't home: machine is in E-stop"))

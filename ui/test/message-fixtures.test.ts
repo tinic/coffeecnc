@@ -1066,6 +1066,16 @@ const examples = [
   },
   {
     "type": "result",
+    "id": 58,
+    "outcome": "rejected",
+    "reason": "This line is inside a canned cycle.",
+    "refusal": {
+      "key": "backend.previewRestart.cannedCycle",
+      "params": {}
+    }
+  },
+  {
+    "type": "result",
     "id": 42,
     "outcome": "rejected",
     "reason": "Home all configured axes first."

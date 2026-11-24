@@ -321,6 +321,9 @@ auto encoded_messages() -> std::vector<Encoded> {
                                        1700000001100ms,
                                        MessageKey{"backend.jogStop.probeContact"}));
   messages.emplace_back(encode_result(41, CommandOutcome::accepted, ""));
+  messages.emplace_back(encode_result(58, CommandOutcome::rejected,
+                                      "This line is inside a canned cycle.", {}, {},
+                                      RefusalMessage{"backend.previewRestart.cannedCycle"}));
   messages.emplace_back(
       encode_result(42, CommandOutcome::rejected, "Home all configured axes first."));
   messages.emplace_back(encode_result(

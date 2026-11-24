@@ -86,6 +86,7 @@ struct HelperRequest {
 //   error <line> <text>     the interpreter's error; nothing follows but `end`
 //   stop <line> <text>      the path after this line depends on the machine
 //   cut <line> <text>       a limit was reached
+//   restart_refused <id>   a CoffeeCNC restart refusal; old helpers send restart_blocked <text>
 //   end ok|error|stop|cut   the last line of a helper that ended by itself
 //
 // `line` is the line of the program (not of a subroutine file) that was being executed.
@@ -97,6 +98,30 @@ enum class HelperEnd : std::uint8_t {
   cut,
 };
 
+// The numbers are written by the helper. Keep assigned values stable.
+enum class RestartRefusal : std::uint8_t {
+  none = 0,
+  cutter_compensation = 1,
+  canned_cycle = 2,
+  feed_spindle_mode = 3,
+  no_motion = 4,
+  move_kind = 5,
+  prior_motion = 6,
+  explicit_arc = 7,
+  skipped_effects = 8,
+  frame_or_tool = 9,
+  incomplete_state = 10,
+  length_inactive = 11,
+  length_mismatch = 12,
+  subroutines = 13,
+  tool_preselection = 14,
+  rigid_tap = 15,
+  not_executed = 16,
+};
+
+// The caller opts the helper into refusal codes. Older callers expect the text record.
+inline constexpr char preview_restart_refusals_env[] = "COFFEECNC_PREVIEW_RESTART_REFUSALS";
+
 struct HelperOutput {
   std::vector<PreviewSegment> segments;
   std::optional<PreviewError> problem; // of error, stop or cut
@@ -107,6 +132,7 @@ struct HelperOutput {
   std::string defect;
   std::optional<RestartPoint> restart;
   std::string restart_blocked;
+  std::optional<MessageKey> restart_blocked_localization{};
   std::vector<PreviewDwell> dwells;
   // Recorded by canonical callbacks, with controlled-point travel and tool-tip work bounds.
   struct ProgramFacts {
@@ -124,6 +150,7 @@ struct HelperOutput {
 };
 
 [[nodiscard]] auto write_restart(const RestartPoint& point) -> std::string;
+[[nodiscard]] auto write_restart_refusal(RestartRefusal reason, bool coded) -> std::string;
 [[nodiscard]] auto write_check(const HelperOutput::ProgramFacts& check) -> std::string;
 
 // What a result may hold at most.

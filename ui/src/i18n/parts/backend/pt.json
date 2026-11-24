@@ -528,6 +528,23 @@
       "restartSynchFailed": "O LinuxCNC não guardou os seus parâmetros para o reinício.",
       "restartParametersChanged": "Os parâmetros guardados da máquina mudaram depois de o reinício ter sido revisto. Escolha a linha novamente."
     },
+    "previewRestart": {
+      "cutterCompensation": "A compensação do raio da ferramenta está ativa nesta linha.",
+      "cannedCycle": "Esta linha está dentro de um ciclo fixo.",
+      "feedSpindleMode": "Esta linha requer um modo de avanço ou do eixo-árvore que não pode ser restaurado ao retomar.",
+      "noMotion": "Escolha uma linha que mova a ferramenta.",
+      "moveKind": "Escolha um movimento rápido, de avanço ou de arco para retomar.",
+      "priorMotion": "O modo de movimento anterior não pode ser restaurado ao retomar.",
+      "explicitArc": "Escolha um bloco de arco que indique explicitamente G2 ou G3.",
+      "skippedEffects": "Os blocos ignorados alteram dados de ferramentas ou saídas da máquina.",
+      "frameOrTool": "Esta linha altera o sistema de coordenadas ou a ferramenta antes de mover.",
+      "incompleteState": "O estado do eixo-árvore ou do plano de movimento nesta linha está incompleto.",
+      "lengthInactive": "A compensação de comprimento da ferramenta necessária não está ativa nesta linha.",
+      "lengthMismatch": "O comprimento da ferramenta nesta linha não corresponde à tabela de ferramentas carregada.",
+      "subroutines": "O LinuxCNC não pode ignorar blocos em segurança ao executar a partir de uma linha num programa com subrotinas.",
+      "toolPreselection": "Um M6 posterior depende de uma ferramenta selecionada antes desta linha de retoma.",
+      "notExecuted": "A linha selecionada não é executada neste programa."
+    },
     "previewEngine": {
       "subroutineError": "{name}.ngc linha {line}: {detail}",
       "rigidTapUnavailable": "O rosqueamento rígido G33.1 não está configurado nesta máquina.",

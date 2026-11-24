@@ -31,6 +31,7 @@ const adapter = import.meta.glob<string>([
   '../../backend/src/linuxcnc/src/hal_diagnostics.cpp',
   '../../backend/src/app/src/diagnostics_feed.cpp',
   '../../backend/src/linuxcnc/src/preview_engine.cpp',
+  '../../backend/src/linuxcnc/src/preview_wire.cpp',
   '../../backend/src/app/src/machine_data.cpp',
   '../../backend/src/app/src/backup_archive.cpp',
   '../../backend/src/app/src/restore_helper.cpp',

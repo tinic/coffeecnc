@@ -528,6 +528,23 @@
       "restartSynchFailed": "LinuxCNC hat seine Parameter für den Neustart nicht gespeichert.",
       "restartParametersChanged": "Die gespeicherten Parameter der Maschine haben sich geändert, nachdem der Neustart geprüft wurde. Wählen Sie die Zeile erneut."
     },
+    "previewRestart": {
+      "cutterCompensation": "An dieser Zeile ist die Fräserradiuskorrektur aktiv.",
+      "cannedCycle": "Diese Zeile liegt in einem Festzyklus.",
+      "feedSpindleMode": "Diese Zeile benötigt einen Vorschub- oder Spindelmodus, der beim Neustart nicht wiederhergestellt werden kann.",
+      "noMotion": "Wählen Sie eine Zeile, die das Werkzeug bewegt.",
+      "moveKind": "Wählen Sie für den Neustart eine Eilgang-, Vorschub- oder Kreisbewegung.",
+      "priorMotion": "Der vorherige Bewegungsmodus kann beim Neustart nicht wiederhergestellt werden.",
+      "explicitArc": "Wählen Sie einen Kreissatz mit explizitem G2 oder G3.",
+      "skippedEffects": "Die übersprungenen Sätze ändern Werkzeugdaten oder Maschinenausgänge.",
+      "frameOrTool": "Diese Zeile ändert vor der Bewegung das Koordinatensystem oder das Werkzeug.",
+      "incompleteState": "Der Spindelzustand oder die Bewegungsebene an dieser Zeile ist unvollständig.",
+      "lengthInactive": "Die erforderliche Werkzeuglängenkorrektur ist an dieser Zeile nicht aktiv.",
+      "lengthMismatch": "Die Werkzeuglänge an dieser Zeile stimmt nicht mit der geladenen Werkzeugtabelle überein.",
+      "subroutines": "LinuxCNC kann beim Start ab Zeile in einem Programm mit Unterprogrammen keine Sätze sicher überspringen.",
+      "toolPreselection": "Ein späteres M6 benötigt ein Werkzeug, das vor dieser Neustartzeile ausgewählt wurde.",
+      "notExecuted": "Die ausgewählte Zeile wird in diesem Programm nicht ausgeführt."
+    },
     "previewEngine": {
       "subroutineError": "{name}.ngc Zeile {line}: {detail}",
       "rigidTapUnavailable": "G33.1 ist für diese Maschine nicht konfiguriert.",

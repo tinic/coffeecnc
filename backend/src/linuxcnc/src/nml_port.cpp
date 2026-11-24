@@ -2269,10 +2269,10 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
     SetterState::HeightMap map{.wcs = frame.wcs, .columns = grid->columns, .rows = grid->rows,
                                .rotation_deg = before.rotation_xy, .points = {}};
     map.points.resize(static_cast<std::size_t>(grid->columns) * static_cast<std::size_t>(grid->rows));
-    int measured = 0;
+    int points_done = 0; // points measured so far
     // A stop after the first point keeps the points measured so far, marked partial.
     const auto stop = [&](std::string reason) -> std::expected<SetterState, std::string> {
-      if (measured == 0)
+      if (points_done == 0)
         return std::unexpected(std::move(reason));
       map.partial = std::move(reason);
       SetterState state{calibration ? std::optional{calibration->plane} : std::nullopt,
@@ -2327,12 +2327,12 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
         point.work = work_position(contact->machine, before.g5x, before.g92, before.tool_offset,
                                    before.rotation_xy);
         point.measured = true;
-        ++measured;
+        ++points_done;
         left_at = above;
         // The next traverse runs at the clearance: a top within the latch back-off of it is too
         // close to rapid over.
         const double gap = above[2] - contact->machine[2];
-        if (measured < grid->columns * grid->rows && gap < limits->latch_backoff_mm)
+        if (points_done < grid->columns * grid->rows && gap < limits->latch_backoff_mm)
           return stop(std::format("The top at {} is {} {} below the clearance Z, within the {} {} "
                                   "latch back-off. Raise the clearance Z.",
                                   where(column, row), length(gap), unit,

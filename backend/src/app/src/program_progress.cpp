@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <format>
 #include <iterator>
 #include <utility>
 
@@ -100,7 +101,9 @@ void ProgramProgress::save(PanelReading& reading) {
     files_.discard(temporary);
     if (save_error_ != step.error()) {
       save_error_ = step.error();
-      reading.messages.push_back({true, "Program progress could not be saved. " + save_error_});
+      reading.messages.push_back(
+          {true, std::format("Program progress could not be saved. {}", save_error_),
+           MessageKey{"backend.programProgress.notSaved", {{"storageError", save_error_}}}});
     }
     return;
   }

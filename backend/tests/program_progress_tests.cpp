@@ -1,3 +1,5 @@
+#include "fake_tool_model_files.hpp"
+
 #include <coffeecnc/app/messages.hpp>
 #include <coffeecnc/app/program_progress.hpp>
 
@@ -50,6 +52,42 @@ void at_rest(PanelReading& sample) {
   sample.status.interp = InterpState::idle;
   sample.status.motion.in_position = true;
   sample.task_executing = false;
+}
+
+void save_failure_recovers(const fs::path& directory) {
+  const auto part = directory / "progress-unsaved.ngc";
+  std::ofstream(part) << "G21\nG0 X0\nG0 Z10\nG1 Y10 F60\nM30\n";
+  auto sample = reading(part);
+  const auto now = ProgramProgress::Clock::now();
+  FakeDisk disk;
+  FakeToolModelFiles files{disk};
+  ProgramProgress progress{files, directory.string()};
+  files.failures["open_temporary"] = 2;
+
+  moves_on_line(sample, 3);
+  progress.observe(sample, now);
+  constexpr auto detail = "the temporary file cannot be made: Permission denied";
+  require(files.failures.at("open_temporary") == 1 && sample.messages.size() == 1 &&
+              sample.messages.front().error &&
+              sample.messages.front().text ==
+                  std::string("Program progress could not be saved. ") + detail &&
+              sample.messages.front().localization ==
+                  MessageKey{"backend.programProgress.notSaved", {{"storageError", detail}}},
+          "A save failure publishes a key and preserves its fallback detail.");
+
+  sample.messages.clear();
+  progress.observe(sample, now + 1s);
+  require(files.failures.at("open_temporary") == 0 && sample.messages.empty(),
+          "An identical retry failure does not duplicate the notice.");
+  progress.observe(sample, now + 2s);
+  require(disk.files.contains((directory / "program-progress.json").string()),
+          "The dirty record is saved once the storage recovers.");
+
+  files.failures["open_temporary"] = 1;
+  moves_on_line(sample, 4);
+  progress.observe(sample, now + 3s);
+  require(files.failures.at("open_temporary") == 0 && sample.messages.size() == 1,
+          "The same failure after recovery is reported again.");
 }
 
 void stops_and_reloads(const fs::path& directory) {
@@ -144,6 +182,7 @@ auto main(int argc, char** argv) -> int {
     fs::create_directories(directory);
     fs::remove(directory / "program-progress.json");
     stops_and_reloads(directory);
+    save_failure_recovers(directory);
     std::cout << "Program progress checks passed\n";
     return 0;
   } catch (const std::exception& error) {

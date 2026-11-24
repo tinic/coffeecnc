@@ -223,6 +223,9 @@
       "damaged": "保存済みのオフセット履歴が破損していたため、空の状態から始まります。",
       "notSaved": "オフセット履歴を保存できませんでした：{detail}"
     },
+    "programProgress": {
+      "notSaved": "プログラムの進行状況を保存できませんでした。{storageError}"
+    },
     "programStore": {
       "noDirectory": "プログラムディレクトリが設定されていません。",
       "pathEmpty": "パスが空です。",

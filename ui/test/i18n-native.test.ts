@@ -42,6 +42,7 @@ const adapter = import.meta.glob<string>([
   '../../backend/src/app/src/tool_model_json.hpp',
   '../../backend/src/app/include/coffeecnc/app/tool_model_store.hpp',
   '../../backend/src/app/src/program_store.cpp',
+  '../../backend/src/app/src/program_progress.cpp',
   '../../backend/src/app/src/program_edit.cpp',
   '../../backend/src/app/src/messages.cpp',
 ], { query: '?raw', import: 'default', eager: true })
@@ -446,6 +447,17 @@ describe('translateMessage', () => {
     expect(translateMessage('the directory two cannot be made: Permission denied'))
       .toBe('impossible de créer le dossier two\u202f: Permission denied')
     expect(translateMessage("Can't open home: no such file")).not.toContain('Référencement')
+  })
+
+  it('translates a program-progress warning while keeping storage detail verbatim', async () => {
+    await setLanguage('fr')
+    const detail = 'the temporary file cannot be made: Permission denied'
+    const fallback = `Program progress could not be saved. ${detail}`
+    const expected = `La progression du programme n’a pas pu être enregistrée. ${detail}`
+    expect(translateMessage(fallback, {
+      key: 'backend.programProgress.notSaved', params: { storageError: detail },
+    })).toBe(expected)
+    expect(translateMessage(fallback)).toBe(expected)
   })
 
   it('keeps operating system errors in HAL launch refusals verbatim', async () => {

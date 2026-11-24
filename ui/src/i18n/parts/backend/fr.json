@@ -223,6 +223,9 @@
       "damaged": "L’historique des décalages enregistré était endommagé et repart vide.",
       "notSaved": "Impossible d’enregistrer l’historique des décalages : {detail}"
     },
+    "programProgress": {
+      "notSaved": "La progression du programme n’a pas pu être enregistrée. {storageError}"
+    },
     "programStore": {
       "noDirectory": "Aucun dossier de programmes n’est configuré.",
       "pathEmpty": "Le chemin est vide.",

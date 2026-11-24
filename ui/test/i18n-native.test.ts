@@ -413,6 +413,22 @@ describe('translateMessage', () => {
     })).toBe('inner.ngc ligne 3 : un arc dans un plan UVW ne peut pas être affiché')
   })
 
+  it('translates the unconfigured tapping reason with its program or subroutine location', async () => {
+    await setLanguage('fr')
+    const detail = 'G33.1 rigid tapping is not configured on this machine.'
+    const params_localization = { detail: { key: 'backend.previewEngine.rigidTapUnavailable', params: {} } }
+    expect(translateMessage(`Line 5: ${detail}`, {
+      key: 'backend.previewEngine.lineError',
+      params: { line: '5', detail },
+      params_localization,
+    })).toBe('Ligne 5 : Le taraudage rigide G33.1 n’est pas configuré sur cette machine.')
+    expect(translateMessage(`tap.ngc line 2: ${detail}`, {
+      key: 'backend.previewEngine.subroutineError',
+      params: { name: 'tap', line: '2', detail },
+      params_localization,
+    })).toBe('tap.ngc ligne 2 : Le taraudage rigide G33.1 n’est pas configuré sur cette machine.')
+  })
+
   it('translates a remap stop and retains the code', async () => {
     await setLanguage('fr')
     const detail = 'G88.1 is remapped on this machine ([RS274NGC] REMAP): what it does is not known to the preview'

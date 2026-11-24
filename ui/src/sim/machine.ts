@@ -1440,7 +1440,7 @@ export class SimMachine {
     // As the controller's policy: an action that writes never runs as a measurement (#247).
     const measureOnly = (command as { measure_only?: unknown }).measure_only === true
     // A height map writes nothing: the controller has no measure_only field for it.
-    if ('measure_only' in command && command.action === 'height_map') {
+    if (command.action === 'height_map' && 'measure_only' in command) {
       this.emit({ type: 'result', id, ...reject('Unexpected field in request.', 'messages.request.unexpectedField') })
       return
     }

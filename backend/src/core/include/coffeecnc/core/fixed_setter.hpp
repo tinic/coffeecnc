@@ -1,6 +1,8 @@
 #ifndef COFFEECNC_CORE_FIXED_SETTER_HPP
 #define COFFEECNC_CORE_FIXED_SETTER_HPP
 
+#include <coffeecnc/core/message_key.hpp>
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -308,6 +310,8 @@ struct FixedSetterRequest {
   // active work system's +X axis. A bore is probed outward from the start along them; a boss
   // inward from beyond `gauge_width_mm` / 2 along them.
   std::array<double, 3> angles_deg{};
+  // One extra contact for a bore or boss. Degrees from work +X, just as for the three angles.
+  std::optional<double> check_angle_deg{};
 };
 
 // The grid a height map probes: columns and rows of points from the first corner to the second,
@@ -402,6 +406,8 @@ struct SetterState {
     bool corner{}; // X and Y were both set
   };
   std::optional<Material> material{};
+  // The circle was sampled, but the contact check refused the origin write.
+  std::optional<LocalizedReason> origin_refusal{};
   // After a ball calibration: the effective ball diameter written to the tool table, mm.
   std::optional<double> ball_diameter{};
   // After a bore or boss: its diameter, mm (the chord through the centre). After a three-point

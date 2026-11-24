@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { translateMessage } from '../i18n/messages'
 import type { FixedSetterLimits } from '../protocol'
 import { angleChoiceLabel, angleChoices, defaultArcAngles, guideInput, probeGuide, type AngleEdge, type ProbeGuideTarget } from '../probe-guide'
-import { arcAnglesValid, arcMinSeparation, arcMinSpan, type Angles } from '../arc'
+import { arcAnglesValid, arcMinSeparation, arcMinSpan, checkAngleValid, circleRays, type Angles } from '../arc'
 import { parseNumericExpression } from '../numeric-expression'
 import { vNumeric } from '../numeric-input'
 import ModalDialog from './ModalDialog.vue'
@@ -17,7 +17,7 @@ const props = defineProps<{
   ruby?: boolean
   startBlocked?: string | null
 }>()
-const emit = defineEmits<{ start: [value: number, angle: AngleEdge, angles: Angles]; close: [] }>()
+const emit = defineEmits<{ start: [value: number, angle: AngleEdge, angles: Angles, checkAngle?: number]; close: [] }>()
 const { t } = useI18n()
 const angle = ref<AngleEdge>('y_plus')
 const input = computed(() => guideInput(props.target))
@@ -30,10 +30,20 @@ const arcAngles = computed((): Angles | null => {
   const [a, b, c] = values
   return a === null || b === null || c === null || a === undefined || b === undefined || c === undefined ? null : [a, b, c]
 })
+const canCheck = computed(() => props.limits?.circle_check === true &&
+  ['bore', 'boss', 'bore_arc', 'boss_arc'].includes(props.target.kind))
+const checking = ref(false)
+const checkText = ref('45')
+const checkAngle = computed(() => parseNumericExpression(checkText.value, '°'))
+const checkValid = computed(() => checkAngle.value !== null &&
+  checkAngleValid(checkAngle.value, arcTarget.value ? arcAngles.value ?? defaultArcAngles : circleRays))
+const enabledCheck = computed(() => canCheck.value && checking.value)
 const plan = computed(() => probeGuide(props.target, props.limits, angle.value, value.value,
-  arcAngles.value !== null && arcAnglesValid(arcAngles.value) ? arcAngles.value : defaultArcAngles))
+  arcAngles.value !== null && arcAnglesValid(arcAngles.value) ? arcAngles.value : defaultArcAngles,
+  enabledCheck.value && checkValid.value ? checkAngle.value ?? undefined : undefined))
 const valid = computed(() => {
   if (arcTarget.value && (arcAngles.value === null || !arcAnglesValid(arcAngles.value))) return false
+  if (enabledCheck.value && !checkValid.value) return false
   const field = input.value
   if (field === undefined) return true
   if (value.value === null) return false
@@ -60,7 +70,11 @@ function unavailable(): void {
   playing.value = false
 }
 function start(): void {
-  if (valid.value && !props.startBlocked) emit('start', value.value ?? 0, angle.value, arcAngles.value ?? defaultArcAngles)
+  if (valid.value && !props.startBlocked) {
+    const args = [value.value ?? 0, angle.value, arcAngles.value ?? defaultArcAngles] as const
+    if (enabledCheck.value && checkAngle.value !== null) emit('start', ...args, checkAngle.value)
+    else emit('start', ...args)
+  }
 }
 </script>
 
@@ -107,6 +121,19 @@ function start(): void {
           />
           <small>{{ input.signed ? t('probe.guideDialog.rangeSigned', { min: input.min, max: input.max }) : t('probe.guideDialog.range', { min: input.min, max: input.max }) }}</small>
         </label>
+        <template v-if="canCheck">
+          <button class="btn check-circle" type="button" :aria-pressed="checking" @click="checking = !checking">
+            {{ t('probe.guideDialog.checkCircle') }}
+          </button>
+          <label v-if="checking" class="dimension">
+            <span>{{ t('probe.guideDialog.checkAngle') }}</span>
+            <input
+              v-model="checkText" v-numeric type="text" class="field mono" inputmode="decimal" autocomplete="off"
+              data-numeric-unit="°" :data-numeric-action="t('probe.guideDialog.setValue')"
+            />
+            <small v-if="!checkValid">{{ t('probe.guideDialog.checkAngleRange', { separation: arcMinSeparation }) }}</small>
+          </label>
+        </template>
         <dl v-if="travel || limits" class="limits">
           <template v-if="travel"><dt>{{ t('probe.guideDialog.searchTravel') }}</dt><dd>{{ t('probe.guideDialog.travelMax', { value: travel }) }}</dd></template>
           <template v-if="limits"><dt>{{ t('probe.guideDialog.searchFeed') }}</dt><dd>{{ t('probe.guideDialog.feedValue', { value: limits.feed_mm_min }) }}</dd></template>
@@ -149,6 +176,7 @@ h3 { margin: 0 0 6px; font-size: 13px; font-weight: 650; }
 p { margin: 0; line-height: 1.42; font-size: 13px; }
 .edge-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .edge-choice button { min-height: 44px; padding-inline: 5px; }
+.check-circle { min-height: 44px; align-self: start; }
 .dimension { display: grid; grid-template-columns: auto 92px; gap: 3px 8px; align-items: center; font-size: 12px; }
 .dimension input { height: 44px; min-width: 0; padding-inline: 8px; }
 .dimension small { grid-column: 1 / -1; color: var(--text-dim); }

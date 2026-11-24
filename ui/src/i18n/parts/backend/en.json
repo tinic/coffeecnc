@@ -265,6 +265,10 @@
       "cannotRead": "The file cannot be read."
     },
     "nmlPort": {
+      "circleCheckResidual": "Circle check failed. The largest contact error was {residual} mm, over 0.02 mm. Clean the surface and probe again.",
+      "circleCheckFit": "Circle check failed. The contacts do not give a usable circle. Check the surface and probe again.",
+      "circleCheckAngle": "Choose a check angle at least 10° from the other contacts.",
+      "circleCheckFeature": "The extra contact is only available for a bore or boss.",
       "breakpointPlainProgram": "A breakpoint needs a program without subroutines or loops.",
       "breakpointMotionBlock": "Choose a motion block in the loaded program.",
       "commandTeleop": "the change between world and joint mode",

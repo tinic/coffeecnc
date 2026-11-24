@@ -981,7 +981,8 @@ export class SimMachine {
           this.checkOffsets()
           this.historySource = null
           this.sendStatus()
-          this.emit({ type: 'result', id: pending.id, ...result })
+          const localization = pending.plan.failureKey
+          this.emit({ type: 'result', id: pending.id, ...result, ...(localization ? { localization } : {}) })
         }
         return
       }

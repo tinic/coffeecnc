@@ -265,6 +265,10 @@
       "cannotRead": "No se puede leer el archivo."
     },
     "nmlPort": {
+      "circleCheckResidual": "Falló la comprobación del círculo. El mayor error de contacto fue de {residual} mm, por encima de 0,02 mm. Limpie la superficie y vuelva a palpar.",
+      "circleCheckFit": "Falló la comprobación del círculo. Los contactos no forman un círculo utilizable. Compruebe la superficie y vuelva a palpar.",
+      "circleCheckAngle": "Elija un ángulo de comprobación separado al menos 10° de los otros contactos.",
+      "circleCheckFeature": "El contacto adicional solo está disponible para un agujero o un resalte.",
       "breakpointPlainProgram": "Un punto de parada necesita un programa sin subrutinas ni bucles.",
       "breakpointMotionBlock": "Elija un bloque de movimiento del programa cargado.",
       "commandTeleop": "el cambio entre modo de ejes y modo de articulaciones",

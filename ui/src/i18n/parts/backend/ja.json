@@ -265,6 +265,10 @@
       "cannotRead": "ファイルを読み込めません。"
     },
     "nmlPort": {
+      "circleCheckResidual": "円の検証に失敗しました。接触の最大偏差は {residual} mm で、0.02 mm を超えています。表面を清掃して再測定してください。",
+      "circleCheckFit": "円の検証に失敗しました。接触点から有効な円を求められません。表面を確認して再測定してください。",
+      "circleCheckAngle": "他の接触点から 10° 以上離れた検証角度を指定してください。",
+      "circleCheckFeature": "追加の接触は穴またはボスでのみ使えます。",
       "breakpointPlainProgram": "ブレークポイントには、サブルーチンやループのないプログラムが必要です。",
       "breakpointMotionBlock": "読み込んだプログラムの移動ブロックを選択してください。",
       "commandTeleop": "ワールドモードとジョイントモードの切り替え",

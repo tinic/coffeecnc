@@ -338,6 +338,11 @@ if(BUILD_TESTING)
           $<TARGET_FILE:coffeecnc_fixed_setter_tests> arc-rotated)
         set_tests_properties(linuxcnc_arc_probe_rotated_${units} PROPERTIES LABELS linuxcnc
           RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 630)
+        add_test(NAME linuxcnc_probe_circle_check_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+          -u ${units} -t 660 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_probe_circle_check_${units}
+          $<TARGET_FILE:coffeecnc_fixed_setter_tests> circle-check)
+        set_tests_properties(linuxcnc_probe_circle_check_${units} PROPERTIES LABELS linuxcnc
+          RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 1000)
         # Every feature cycle measure-only, then applied (#247): +7.5° in mm, -30° in inch.
         add_test(NAME linuxcnc_probe_measure_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
           -u ${units} -t 480 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_probe_measure_${units}

@@ -265,6 +265,10 @@
       "cannotRead": "Die Datei kann nicht gelesen werden."
     },
     "nmlPort": {
+      "circleCheckResidual": "Kreisprüfung fehlgeschlagen. Die größte Kontaktabweichung betrug {residual} mm und lag über 0,02 mm. Reinigen Sie die Fläche und tasten Sie erneut.",
+      "circleCheckFit": "Kreisprüfung fehlgeschlagen. Die Kontakte ergeben keinen brauchbaren Kreis. Prüfen Sie die Fläche und tasten Sie erneut.",
+      "circleCheckAngle": "Wählen Sie einen Prüfwinkel mit mindestens 10° Abstand zu den anderen Kontakten.",
+      "circleCheckFeature": "Der zusätzliche Kontakt ist nur für Bohrungen und Zapfen verfügbar.",
       "breakpointPlainProgram": "Ein Haltepunkt erfordert ein Programm ohne Unterprogramme oder Schleifen.",
       "breakpointMotionBlock": "Wählen Sie einen Bewegungssatz im geladenen Programm.",
       "commandTeleop": "der Wechsel zwischen Welt- und Joint-Modus",

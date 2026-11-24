@@ -2273,6 +2273,22 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     return std::unexpected(std::format("Teach the setter with T{} or a touched-off tool first.",
                                        limits->reference_tool));
 
+  const auto probe_row = table && (request.measure_only || apply_measurement)
+                             ? unique_tool_row(*table, tool)
+                             : std::nullopt;
+  std::optional<Impl::FeatureMeasurement> applying;
+  if (apply_measurement) {
+    auto& saved = impl_->feature_measurement;
+    if (!saved || saved->id != request.edge_measurement)
+      return std::unexpected("Probe the feature again before applying the measurement.");
+    auto measurement = std::move(*saved);
+    saved.reset();
+    if (measurement.epoch != epoch || measurement.frame != frame || measurement.tool != tool ||
+        measurement.tool_offset != before.tool_offset || !probe_row ||
+        measurement.tool_row != *probe_row || measurement.runout != runout)
+      return std::unexpected("The work frame or tool changed. Probe the feature again.");
+    applying = std::move(measurement);
+  }
   const double machine_scale = impl_->config.millimetres_per_unit;
   const auto previous = table ? tool_z(*table, tool) : std::nullopt;
   if (!previous || !std::isfinite(*previous * machine_scale))
@@ -2299,9 +2315,6 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     return {p[0] * cos_turn - p[1] * sin_turn, p[0] * sin_turn + p[1] * cos_turn, p[2]};
   };
   const auto start_frame = to_frame(request.start);
-  const auto probe_row = table && (request.measure_only || apply_measurement)
-                             ? unique_tool_row(*table, tool)
-                             : std::nullopt;
   // Sets the measured axes of the active work system at `origin`, in the rotated frame (Z is
   // machine Z), and verifies the command against the encoder lag. The probe cycle has already
   // returned to clearance.
@@ -2434,15 +2447,8 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     state.measured = std::move(result);
     return state;
   };
-  if (apply_measurement) {
-    const auto& saved = impl_->feature_measurement;
-    if (!saved || saved->id != request.edge_measurement)
-      return std::unexpected("Probe the feature again before applying the measurement.");
-    const auto measurement = *std::exchange(impl_->feature_measurement, std::nullopt);
-    if (measurement.epoch != epoch || measurement.frame != frame || measurement.tool != tool ||
-        measurement.tool_offset != before.tool_offset || !probe_row ||
-        measurement.tool_row != *probe_row || measurement.runout != runout)
-      return std::unexpected("The work frame or tool changed. Probe the feature again.");
+  if (applying) {
+    const auto& measurement = *applying;
     if (auto set = set_origin(measurement.origin, measurement.axes); !set)
       return std::unexpected(set.error());
     const auto& axes = measurement.axes;

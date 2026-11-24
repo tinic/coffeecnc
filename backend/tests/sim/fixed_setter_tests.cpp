@@ -1009,12 +1009,15 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
     // offset changes, so Set must check the table row and correction itself.
     const auto probe_length = tool_z(table_text(), 99);
     require(probe_length.has_value(), "T99 has a stored length");
+    const auto write_table = [&](std::string_view text) {
+      std::ofstream output{tool_table};
+      require(static_cast<bool>(output << text << std::flush), "write the simulated tool table");
+    };
     const auto edit_tool = [&](const Tool& row) {
       const auto edit = with_tool(table_text(), row, scale);
       if (!edit)
         throw std::runtime_error(edit.error().text);
-      std::ofstream output{tool_table};
-      require(static_cast<bool>(output << *edit << std::flush), "edit the simulated tool table");
+      write_table(*edit);
     };
     const auto original_tool_offset = port.status().tool_offset;
     const Tool probe_row{99, 99, probe_length.value() * scale, 2, "Ruby probe"};
@@ -1026,6 +1029,17 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
     updated.length += 1;
     refused_after("probe_length", [&] { edit_tool(updated); }, epoch, "work frame or tool");
     edit_tool(probe_row);
+    const auto table_with_probe = table_text();
+    refused_after(
+        "probe_row_removed",
+        [&] {
+          const auto edited = without_tool(table_with_probe, 99);
+          if (!edited)
+            throw std::runtime_error("T99 cannot be removed from the simulated table");
+          write_table(*edited);
+        },
+        epoch, "work frame or tool");
+    write_table(table_with_probe);
     require(port.status().tool_offset == original_tool_offset,
             "editing the saved probe row leaves the applied G43 offset in effect");
     const ProbeRunout correction{.tool = 99, .table_diameter_mm = 2, .radius_mm = {0.02, -0.03}};
@@ -1066,14 +1080,15 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
     const auto forgotten = port.fixed_setter(
         {.action = SetterAction::apply_measurement, .tool = 99, .edge_measurement = first->measured->id},
         epoch, {});
-    const bool forgotten_clean = port.writes().size() == forgotten_writes;
+    const auto forgotten_program_writes = g10_since(forgotten_writes);
     edit_tool({1, 1, 8, 2, "Unrelated cutter"});
     const auto latest = port.fixed_setter(
         {.action = SetterAction::apply_measurement, .tool = 99, .edge_measurement = second->measured->id},
         epoch, {});
-    std::cout << std::format("fact=measure_only action=forgotten rotation={} first_refused={} writes={} "
-                             "second_applied={}",
-                             degrees, !forgotten, forgotten_clean ? 0 : 1, latest.has_value())
+    std::cout << std::format(
+                     "fact=measure_only action=forgotten rotation={} first_refused={} writes={} "
+                     "second_applied={}",
+                     degrees, !forgotten, forgotten_program_writes, latest.has_value())
               << std::endl;
     require(!forgotten && forgotten.error().contains("Probe the feature again") &&
                 forgotten_clean && latest.has_value() &&

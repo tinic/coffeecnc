@@ -1277,7 +1277,7 @@ void real_files(const std::filesystem::path& base) {
     require(foreign.has_value() && !foreign->group_kept &&
                 read_real(configs / "machine.hal") == "net e f\n",
             "A file is written with this user's group: " +
-                (foreign ? std::string{} : foreign.error().reason));
+                (foreign ? std::string{} : foreign.error().reason.text));
     const auto own = files.replace_beneath(dir, "machine.hal", "net g h\n", 0640, ::getegid());
     require(own.has_value() && own->group_kept, "Its own group is kept");
   }

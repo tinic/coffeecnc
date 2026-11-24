@@ -285,6 +285,73 @@ struct CodedProblem {
   std::string_view kind;
 };
 
+// Each field stays in one output record. The lengths keep whitespace and punctuation in
+// the filenames and interpreter messages without treating either as protocol syntax.
+constexpr std::size_t max_setup_field = 4096;
+
+auto sized_setup_field(std::string_view& line, std::string_view& field) -> bool {
+  std::size_t size = 0;
+  if (!number(line, size) || size > max_setup_field || line.empty() || line.front() != ' ')
+    return false;
+  line.remove_prefix(1);
+  if (size > line.size())
+    return false;
+  field = line.substr(0, size);
+  line.remove_prefix(size);
+  return !field.contains('\r') && !field.contains('\0');
+}
+
+auto preview_setup_message(PreviewSetupError reason, const PreviewSetupArguments& args)
+    -> LocalizedReason {
+  const std::string detail{args.detail};
+  const std::string code{args.code};
+  switch (reason) {
+  case PreviewSetupError::read_subroutines:
+    return {"the directory of the subroutine files cannot be read",
+            MessageKey{"backend.previewEngine.helperReadSubroutines"}};
+  case PreviewSetupError::source_too_large:
+    return {"a file of the program is larger than the preview reads",
+            MessageKey{"backend.previewEngine.helperSourceTooLarge"}};
+  case PreviewSetupError::read_source:
+    return {std::format("{} cannot be read for the preview", detail),
+            MessageKey{"backend.previewEngine.helperReadSource", {{"file", detail}}}};
+  case PreviewSetupError::interpreter_start:
+    return {
+        std::format("the interpreter did not start: {}", detail),
+        MessageKey{"backend.previewEngine.helperInterpreterStart", {{"linuxcncDetail", detail}}}};
+  case PreviewSetupError::active_work_system:
+    return {"the parameter file does not select the active work system",
+            MessageKey{"backend.previewEngine.helperActiveWorkSystem"}};
+  case PreviewSetupError::start_state:
+    return {std::format("the start state `{}` was refused: {}", code, detail),
+            MessageKey{"backend.previewEngine.helperStartState",
+                       {{"code", code}, {"linuxcncDetail", detail}}}};
+  case PreviewSetupError::open_program:
+    return {std::format("the program cannot be opened: {}", detail),
+            MessageKey{"backend.previewEngine.helperOpenProgram", {{"linuxcncDetail", detail}}}};
+  }
+  return {};
+}
+
+auto read_preview_setup_error(std::string_view line) -> std::optional<CodedProblem> {
+  unsigned id = 0;
+  PreviewSetupArguments args;
+  if (!number(line, id) || !std::in_range<std::uint8_t>(id) ||
+      !sized_setup_field(line, args.detail) || line.empty() || line.front() != ' ' ||
+      !sized_setup_field(line, args.code) || !line.empty())
+    return {};
+  const auto reason = static_cast<PreviewSetupError>(id);
+  if ((!args.code.empty() && reason != PreviewSetupError::start_state) ||
+      (!args.detail.empty() && (reason == PreviewSetupError::read_subroutines ||
+                                reason == PreviewSetupError::source_too_large ||
+                                reason == PreviewSetupError::active_work_system)))
+    return {};
+  auto localized = preview_setup_message(reason, args);
+  if (localized.empty())
+    return {};
+  return CodedProblem{std::move(localized), {}, "error"};
+}
+
 auto read_preview_problem(std::string_view line) -> std::optional<CodedProblem> {
   unsigned id = 0;
   if (!number(line, id) || !std::in_range<std::uint8_t>(id))
@@ -699,6 +766,21 @@ auto write_preview_problem(int line, KnownPreviewProblem reason,
   return out;
 }
 
+auto write_preview_setup_error(PreviewSetupError reason, bool coded,
+                               const PreviewSetupArguments& args) -> std::string {
+  const auto single_line = [](std::string_view value) -> std::string {
+    std::string clean{value};
+    std::ranges::replace_if(clean, [](char c) { return c == '\n' || c == '\r' || c == '\0'; }, ' ');
+    return clean;
+  };
+  const auto detail = single_line(args.detail);
+  const auto code = single_line(args.code);
+  if (!coded || detail.size() > max_setup_field || code.size() > max_setup_field)
+    return std::format("error 0 {}\n", preview_setup_message(reason, {detail, code}).text);
+  return std::format("setup_known 0 {} {} {} {} {}\n", static_cast<unsigned>(reason), detail.size(),
+                     detail, code.size(), code);
+}
+
 auto parse_output(std::string_view text, const OutputLimits& limits) -> HelperOutput {
   HelperOutput output;
   std::size_t points = 0;
@@ -773,7 +855,7 @@ auto parse_output(std::string_view text, const OutputLimits& limits) -> HelperOu
                       MessageKey{"backend.previewWire.tooManyDwells"});
       output.dwells.push_back(dwell);
     } else if (key == "error" || key == "stop" || key == "stop_known" || key == "cut" ||
-               key == "problem_known") {
+               key == "problem_known" || key == "setup_known") {
       PreviewError problem;
       if (output.problem)
         return defect("a second record that ends the path",
@@ -781,10 +863,13 @@ auto parse_output(std::string_view text, const OutputLimits& limits) -> HelperOu
       if (!line_number(line, problem.line))
         return defect("a record with a line that is none of the program",
                       MessageKey{"backend.previewWire.recordLine"});
-      if (key == "stop_known" || key == "problem_known") {
+      if (key == "stop_known" || key == "problem_known" || key == "setup_known") {
         const bool stop = key == "stop_known";
-        auto parsed = stop ? read_preview_stop(line) : read_preview_problem(line);
-        if (!parsed) {
+        const bool setup = key == "setup_known";
+        auto parsed = stop    ? read_preview_stop(line)
+                      : setup ? read_preview_setup_error(line)
+                              : read_preview_problem(line);
+        if (!parsed || (setup && problem.line != 0)) {
           if (stop)
             return defect("an invalid preview stop code",
                           MessageKey{"backend.previewWire.invalidStopCode"});

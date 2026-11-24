@@ -95,6 +95,8 @@ using coffeecnc::Bounds;
 using coffeecnc::HelperRequest;
 using coffeecnc::KnownPreviewProblem;
 using coffeecnc::KnownPreviewStop;
+using coffeecnc::PreviewSetupArguments;
+using coffeecnc::PreviewSetupError;
 using coffeecnc::PreviewStopArgument;
 using coffeecnc::PreviewStopReason;
 using coffeecnc::PreviewStopSource;
@@ -1083,8 +1085,12 @@ auto unknown_read(const coffeecnc::ParameterUse& use, const ParameterTrack& para
 }
 
 // Nothing can be computed: an error at line 0.
-auto give_up(const std::string& why) -> int {
-  halt(Halt::error, why);
+auto give_up(PreviewSetupError reason, const PreviewSetupArguments& args = {}) -> int {
+  if (begin_halt(Halt::error)) {
+    const char* codes = std::getenv(coffeecnc::preview_setup_codes_env);
+    put(coffeecnc::write_preview_setup_error(reason, codes && std::string_view(codes) == "1",
+                                             args));
+  }
   put("end error\n");
   std::fflush(sink);
   return 0;
@@ -1132,16 +1138,15 @@ auto run(const HelperRequest& request) -> int {
       std::ranges::transform(std::filesystem::directory_iterator(request.subroutines, error),
                              std::back_inserter(files), &std::filesystem::directory_entry::path);
     if (error)
-      return give_up("the directory of the subroutine files cannot be read");
+      return give_up(PreviewSetupError::read_subroutines);
     for (const auto& file : files) {
       // A file that is not scanned is not given to the interpreter: one that cannot be read
       // here ends the preview, whatever the reason.
       const auto text = coffeecnc::read_text_file(file.string(), max_file_bytes);
       if (!text)
-        return give_up(text.error() == coffeecnc::TextFileError::too_large
-                           ? "a file of the program is larger than the preview reads"
-                           : std::format("{} cannot be read for the preview",
-                                         file.filename().string()));
+        return text.error() == coffeecnc::TextFileError::too_large
+                   ? give_up(PreviewSetupError::source_too_large)
+                   : give_up(PreviewSetupError::read_source, {.detail = file.filename().string()});
       const auto found = coffeecnc::first_forbidden_line(*text);
       if (!found)
         continue;
@@ -1165,20 +1170,20 @@ auto run(const HelperRequest& request) -> int {
   InterpBase* const interp = makeInterp();
   // The interpreter reads the parameter file, and with it the work system and G92 in force.
   if (const int code = interp->init(); is_error(code))
-    return give_up("the interpreter did not start: " + error_text(*interp, code));
+    return give_up(PreviewSetupError::interpreter_start, {.detail = error_text(*interp, code)});
   if (canon.g5x_index != request.wcs)
-    return give_up("the parameter file does not select the active work system");
+    return give_up(PreviewSetupError::active_work_system);
   // Task's modal state, block by block.
   for (const auto& code : request.codes) {
     int result = interp->read(code.c_str());
     if (!is_error(result))
       result = interp->execute();
     if (is_error(result) || canon.halt != Halt::none)
-      return give_up(
-          std::format("the start state `{}` was refused: {}", code, error_text(*interp, result)));
+      return give_up(PreviewSetupError::start_state,
+                     {.detail = error_text(*interp, result), .code = code});
   }
   if (const int code = interp->open(request.program.c_str()); is_error(code))
-    return give_up("the program cannot be opened: " + error_text(*interp, code));
+    return give_up(PreviewSetupError::open_program, {.detail = error_text(*interp, code)});
 
   canon.recording = true;
   std::array<char, LINELEN + 1> text{};

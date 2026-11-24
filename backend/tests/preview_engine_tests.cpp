@@ -136,6 +136,24 @@ struct Rig {
   }
 };
 
+void setup_error_from_helper() {
+  Rig rig{"setup-error"};
+  rig.after_snapshot = [&](int) -> void {
+    bool removed = false;
+    for (const auto& directory : fs::directory_iterator(rig.settings.work_directory))
+      if (fs::remove(directory.path() / "program" / "program.ngc"))
+        removed = true;
+    require(removed, "Remove the helper's private copy after writing the request");
+  };
+  const auto outcome = rig.preview("M2\n");
+  require(outcome.state == PreviewState::failed && outcome.segments.empty() && rig.runs == 1 &&
+              outcome.error == PreviewError{0, "program.ngc cannot be read for the preview",
+                                            MessageKey{"backend.previewEngine.helperReadSource",
+                                                       {{"file", "program.ngc"}}}},
+          "The real helper reports a keyed setup failure for its missing private file: " +
+              text_of(outcome));
+}
+
 void lines_and_bounds() {
   Rig rig{"lines"};
   rig.inputs.start.position = {1, 2, 3};
@@ -1756,6 +1774,7 @@ auto main(int argc, char** argv) -> int {
     helper = fs::absolute(argv[1]).string();
     scratch = fs::absolute(argv[2]) / "preview_engine";
     fs::create_directories(scratch);
+    setup_error_from_helper();
     lines_and_bounds();
     restart_checkpoints();
     program_check_touched_lengths_and_travel();

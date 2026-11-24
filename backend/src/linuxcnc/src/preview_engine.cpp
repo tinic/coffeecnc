@@ -572,14 +572,16 @@ auto run_helper(const PreviewSettings& settings, const fs::path& directory,
   const auto restart_refusals = std::format("{}=1", preview_restart_refusals_env);
   const auto stop_codes = std::format("{}={}", preview_stop_codes_env, preview_stop_codes_version);
   const auto problem_codes = std::format("{}=1", preview_problem_codes_env);
+  const auto setup_codes = std::format("{}=1", preview_setup_codes_env);
   std::array<char*, 4> arguments{const_cast<char*>("coffeecnc-preview"), // NOLINT: execve's type
                                  const_cast<char*>(request_file.c_str()), // NOLINT
                                  const_cast<char*>("3"), nullptr};        // NOLINT
-  std::array<char*, 11> environment{const_cast<char*>(home.c_str()),      // NOLINT
+  std::array<char*, 12> environment{const_cast<char*>(home.c_str()),      // NOLINT
                                     const_cast<char*>(ini.c_str()),       // NOLINT
                                     const_cast<char*>(restart_refusals.c_str()),    // NOLINT
                                     const_cast<char*>(stop_codes.c_str()),          // NOLINT
                                     const_cast<char*>(problem_codes.c_str()),       // NOLINT
+                                    const_cast<char*>(setup_codes.c_str()),         // NOLINT
                                     const_cast<char*>("PATH=/usr/bin:/bin"),        // NOLINT
                                     const_cast<char*>("LC_ALL=C"),                  // NOLINT
                                     const_cast<char*>("PYTHONDONTWRITEBYTECODE=1"), // NOLINT

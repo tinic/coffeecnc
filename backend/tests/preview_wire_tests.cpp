@@ -266,6 +266,107 @@ void interpreter_stop_code_ids() {
           "Arguments that do not fit the coded record retain the original text");
 }
 
+void helper_setup_error_codes() {
+  struct Case {
+    PreviewSetupError reason;
+    unsigned id;
+    PreviewSetupArguments arguments;
+    std::string_view text;
+    MessageKey key;
+  };
+  const std::array cases{
+      Case{PreviewSetupError::read_subroutines,
+           1,
+           {},
+           "the directory of the subroutine files cannot be read",
+           {"backend.previewEngine.helperReadSubroutines"}},
+      Case{PreviewSetupError::source_too_large,
+           2,
+           {},
+           "a file of the program is larger than the preview reads",
+           {"backend.previewEngine.helperSourceTooLarge"}},
+      Case{PreviewSetupError::read_source,
+           3,
+           {.detail = "Étage A.ngc"},
+           "Étage A.ngc cannot be read for the preview",
+           {"backend.previewEngine.helperReadSource", {{"file", "Étage A.ngc"}}}},
+      Case{PreviewSetupError::interpreter_start,
+           4,
+           {.detail = "Native diagnostics"},
+           "the interpreter did not start: Native diagnostics",
+           {"backend.previewEngine.helperInterpreterStart",
+            {{"linuxcncDetail", "Native diagnostics"}}}},
+      Case{PreviewSetupError::active_work_system,
+           5,
+           {},
+           "the parameter file does not select the active work system",
+           {"backend.previewEngine.helperActiveWorkSystem"}},
+      Case{PreviewSetupError::start_state,
+           6,
+           {.detail = "  Native \"diagnostics\"\r\nwith spaces  ", .code = "G18"},
+           "the start state `G18` was refused:   Native \"diagnostics\"  with spaces  ",
+           {"backend.previewEngine.helperStartState",
+            {{"code", "G18"}, {"linuxcncDetail", "  Native \"diagnostics\"  with spaces  "}}}},
+      Case{PreviewSetupError::open_program,
+           7,
+           {},
+           "the program cannot be opened: ",
+           {"backend.previewEngine.helperOpenProgram", {{"linuxcncDetail", ""}}}},
+  };
+  for (const auto& test : cases) {
+    const auto wire = write_preview_setup_error(test.reason, true, test.arguments);
+    const auto parsed = parse_output(wire + "end error\n");
+    require(wire.starts_with(std::format("setup_known 0 {} ", test.id)) &&
+                parsed.end == HelperEnd::error &&
+                parsed.problem == PreviewError{0, std::string(test.text), test.key} &&
+                write_preview_setup_error(test.reason, false, test.arguments) ==
+                    std::format("error 0 {}\n", test.text),
+            std::format("Setup error {} keeps its ID, arguments and legacy text", test.id));
+  }
+  require(
+      write_preview_setup_error(PreviewSetupError::read_source, true, {.detail = "Étage A.ngc"}) ==
+          "setup_known 0 3 12 Étage A.ngc 0 \n",
+      "A filename's length is its byte count");
+  constexpr std::string_view nul_detail{"x\0y", 3};
+  require(write_preview_setup_error(PreviewSetupError::open_program, true,
+                                    {.detail = nul_detail}) == "setup_known 0 7 3 x y 0 \n",
+          "A NUL in diagnostic text becomes a space in the coded record");
+  const std::string largest(4096, 'x');
+  const auto largest_record =
+      write_preview_setup_error(PreviewSetupError::open_program, true, {.detail = largest});
+  const auto largest_parsed = parse_output(largest_record + "end error\n");
+  require(largest_record == std::format("setup_known 0 7 4096 {} 0 \n", largest) &&
+              largest_parsed.problem ==
+                  PreviewError{0, std::format("the program cannot be opened: {}", largest),
+                               MessageKey{"backend.previewEngine.helperOpenProgram",
+                                          {{"linuxcncDetail", largest}}}},
+          "A 4096-byte detail round-trips in a coded record");
+  const std::string oversized(4097, 'x');
+  require(write_preview_setup_error(PreviewSetupError::open_program, true, {.detail = oversized}) ==
+              std::format("error 0 the program cannot be opened: {}\n", oversized),
+          "A 4097-byte detail is sent in the legacy form");
+  require(write_preview_setup_error(PreviewSetupError::start_state, true,
+                                    {.detail = "Native text", .code = oversized}) ==
+              std::format("error 0 the start state `{}` was refused: Native text\n", oversized),
+          "A 4097-byte code is sent in the legacy form");
+  const auto require_invalid = [](std::string_view record) {
+    const auto parsed = parse_output(record);
+    require(!parsed.problem &&
+                parsed.defect.localization == MessageKey{"backend.previewWire.invalidProblemCode"},
+            "An invalid setup diagnostic is rejected");
+  };
+  for (const auto malformed :
+       {"setup_known 1 1 0  0 \n", "setup_known 0 8 0  0 \n", "setup_known 0 1 1 x 0 \n",
+        "setup_known 0 2 1 x 0 \n", "setup_known 0 5 1 x 0 \n", "setup_known 0 3 1xx 0 \n",
+        "setup_known 0 3 3 x\ry 0 \n", "setup_known 0 3 10 part\n", "setup_known 0 3 4097 x 0 \n",
+        "setup_known 0 3 1 x0 \n", "setup_known 0 7 0  1 x\n", "setup_known 0 7 0  0 extra\n"}) {
+    require_invalid(malformed);
+  }
+  require_invalid(std::format("setup_known 0 3 4097 {} 0 \n", oversized));
+  constexpr char nul_record[] = "setup_known 0 3 3 x\0y 0 \n";
+  require_invalid(std::string_view{nul_record, sizeof(nul_record) - 1});
+}
+
 void helper_problem_code_ids() {
   struct Case {
     KnownPreviewProblem reason;
@@ -755,6 +856,7 @@ auto main() -> int {
     preview_stop_codes();
     fixed_preview_stop_code_ids();
     interpreter_stop_code_ids();
+    helper_setup_error_codes();
     helper_problem_code_ids();
     block_refusal_code_ids();
     restart_refusal_codes();

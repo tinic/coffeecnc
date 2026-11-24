@@ -287,7 +287,7 @@ auto HalToolLauncher::launch(HalTool tool) -> std::optional<LocalizedReason> {
     const auto detail = std::generic_category().message(error);
     return LocalizedReason{std::format("{} could not be started: {}.", name, detail),
                            MessageKey{"backend.halDiagnostics.notStartedBecause",
-                                      {{"name", std::string(name)}, {"error", detail}}}};
+                                      {{"name", std::string(name)}, {"system_error", detail}}}};
   }
   child = started;
   return {};

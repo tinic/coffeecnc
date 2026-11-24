@@ -398,6 +398,17 @@ describe('translateMessage', () => {
     expect(translateMessage("Can't open home: no such file")).not.toContain('Référencement')
   })
 
+  it('keeps operating system errors in HAL launch refusals verbatim', async () => {
+    await setLanguage('de')
+    const systemError = 'a value is not a finite number'
+    expect(translateMessage(systemError)).not.toBe(systemError)
+    const reason = `halscope could not be started: ${systemError}.`
+    const expected = `halscope konnte nicht gestartet werden: ${systemError}.`
+    expect(translateResult({ type: 'result', id: 50, outcome: 'rejected', reason,
+      refusal: { key: 'backend.halDiagnostics.notStartedBecause', params: { name: 'halscope', system_error: systemError } } })).toBe(expected)
+    expect(translateMessage(reason)).toBe(expected)
+  })
+
   it('translates a nested reason', async () => {
     await setLanguage('fr')
     expect(translateMessage("Can't home: machine is in E-stop"))

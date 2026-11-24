@@ -174,8 +174,9 @@ void launcher(const std::filesystem::path& scratch) {
     const auto failed = tools.launch(HalTool::halshow);
     const auto detail = std::make_error_code(std::errc::no_such_file_or_directory).message();
     require(failed && failed->text == std::format("halshow could not be started: {}.", detail) &&
-                failed->localization == MessageKey{"backend.halDiagnostics.notStartedBecause",
-                                                   {{"name", "halshow"}, {"error", detail}}} &&
+                failed->localization ==
+                    MessageKey{"backend.halDiagnostics.notStartedBecause",
+                               {{"name", "halshow"}, {"system_error", detail}}} &&
                 !tools.states()[0].open,
             "A spawn failure still reports the operating system error and leaves the tool closed");
 

@@ -125,6 +125,7 @@
       "tooManyAssignments": "Há mais de 1001 atribuições de modelo da ferramenta.",
       "unknownHolder": "Porta-ferramentas desconhecido.",
       "assignedTwice": "Está atribuído mais de uma vez.",
+      "familyProblem": "{family}: {detail}",
       "toolProblem": "Ferramenta {tool}: {detail}",
       "overridesEmpty": "Os ajustes têm de estar vazios quando a atribuição é removida.",
       "chooseHolder": "Escolha um porta-ferramentas suportado para a atribuição do modelo da ferramenta.",

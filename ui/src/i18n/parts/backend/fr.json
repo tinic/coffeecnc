@@ -125,6 +125,7 @@
       "tooManyAssignments": "Il y a plus de 1001 affectations de modèle d’outil.",
       "unknownHolder": "Porte-outil inconnu.",
       "assignedTwice": "Il est affecté plus d’une fois.",
+      "familyProblem": "{family}: {detail}",
       "toolProblem": "Outil {tool} : {detail}",
       "overridesEmpty": "« overrides » doit être vide quand l’affectation est supprimée.",
       "chooseHolder": "Choisissez un porte-outil pris en charge pour l’affectation de modèle d’outil.",

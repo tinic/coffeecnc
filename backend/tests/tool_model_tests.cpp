@@ -128,7 +128,7 @@ auto other_defaults() -> ToolDefaults {
 auto saved(std::uint64_t revision, const ToolModelDocument& document,
            const std::string& id = machine) -> std::string {
   const auto text = encode_tool_model_file({id, revision, document});
-  require(text.has_value(), "A test document encodes: " + text.error_or(""));
+  require(text.has_value(), "A test document encodes: " + text.error_or(LocalizedReason{}).text);
   return text.value_or("");
 }
 
@@ -158,8 +158,10 @@ void rules() {
   // The five lengths: 0.001 to 10000, each by itself. The other rules may still object; only
   // the range rule says so in these words.
   const ToolDimensions generic{10, 20, 10, 70, 35, 90};
-  const auto error = [](const ToolDimensions& d, ToolFamily family = ToolFamily::generic)
-      -> std::string { return tool_dimension_error(family, d); };
+  const auto error = [](const ToolDimensions& d,
+                        ToolFamily family = ToolFamily::generic) -> std::string {
+    return tool_dimension_error(family, d).text;
+  };
   require(error(generic).empty(), "The base dimensions are valid");
   for (const auto member :
        {&ToolDimensions::diameter, &ToolDimensions::cutting_length,
@@ -220,7 +222,7 @@ void rules() {
           "Families without a point have no cone to fit");
   auto bad = factory;
   bad.at(at(ToolFamily::chamfer)).tip_angle = 0;
-  require(tool_defaults_error(bad) == std::string("chamfer: ") + angle_reason,
+  require(tool_defaults_error(bad).text == std::string("chamfer: ") + angle_reason,
           "A defaults error names the family");
 
   // Overrides: each by itself, not against each other.
@@ -234,7 +236,8 @@ void rules() {
     for (const double outside : {below(0.001), above(10000.0), nan, infinity, -5.0}) {
       ToolOverrides o;
       o.*member = outside;
-      require(tool_overrides_error(o, ToolFamily::generic) == length_reason, "An override length out of range");
+      require(tool_overrides_error(o, ToolFamily::generic).text == length_reason,
+              "An override length out of range");
     }
   }
   for (const double inside : {1.0, 179.0}) {
@@ -245,7 +248,8 @@ void rules() {
   for (const double outside : {below(1.0), above(179.0), nan}) {
     ToolOverrides o;
     o.tip_angle = outside;
-    require(tool_overrides_error(o, ToolFamily::generic) == angle_reason, "An override angle out of range");
+    require(tool_overrides_error(o, ToolFamily::generic).text == angle_reason,
+            "An override angle out of range");
   }
   ToolOverrides apart;
   apart.cutting_length = 500;
@@ -285,16 +289,16 @@ void rules() {
     document.assignments.push_back({row(number), ToolFamily::generic, {}});
   require(tool_document_error(document).empty(), "1001 assignments are allowed");
   document.assignments.push_back({row(1002), ToolFamily::generic, {}});
-  require(has(tool_document_error(document), "more than 1001"), "1002 are not");
+  require(has(tool_document_error(document).text, "more than 1001"), "1002 are not");
   document.assignments.resize(2);
   document.assignments.back().tool.number = 1;
   document.assignments.back().tool.comment = "another row";
-  require(has(tool_document_error(document), "Tool 1: It is assigned more than once."),
+  require(has(tool_document_error(document).text, "Tool 1: It is assigned more than once."),
           "A tool number is assigned once");
 
   // The commands.
   require(tool_model_command_error(defaults(0, factory)).empty() &&
-              has(tool_model_command_error(defaults(0, bad)), "chamfer"),
+              has(tool_model_command_error(defaults(0, bad)).text, "chamfer"),
           "A defaults command is judged as defaults are");
   require(tool_model_command_error(assign(0, 1)).empty() &&
               tool_model_command_error(remove(0, 1)).empty(),
@@ -475,7 +479,7 @@ void wire_text() {
     doc(in_row).assignments.front().tool.diameter = value;
     for (const auto& broken : {in_defaults, in_override, in_row}) {
       const auto refused = encode_tool_models(broken);
-      require(!refused && has(refused.error(), "not a finite number"),
+      require(!refused && has(refused.error().text, "not a finite number"),
               "A number that is not finite is not sent");
       require(!encode_tool_model_file({"m", 1, doc(broken)}), "nor saved");
     }
@@ -503,7 +507,7 @@ void wire_text() {
   }
   const auto file_text = saved(7, exact, "Mill_7");
   const auto read = decode_tool_model_file(file_text);
-  require(read.has_value(), "A saved file reads back: " + read.error_or(""));
+  require(read.has_value(), "A saved file reads back: " + read.error_or(LocalizedReason{}).text);
   if (!read)
     return;
   require(read->machine_id == "Mill_7" && read->revision == 7 && read->document == exact,
@@ -558,8 +562,9 @@ void file_refusals() {
   const auto refused = [&](const std::string& text, std::string_view part,
                            const std::string& what) -> void {
     const auto result = decode_tool_model_file(text);
-    require(!result && has(result.error(), part),
-            std::format("{}: refused with \"{}\", got \"{}\"", what, part, result.error_or("a document")));
+    require(!result && has(result.error().text, part),
+            std::format("{}: refused with \"{}\", got \"{}\"", what, part,
+                        result ? "a document" : result.error().text));
   };
   const auto change = [&](const std::function<void(Json&)>& edit, std::string_view part,
                           const std::string& what) -> void {
@@ -728,7 +733,7 @@ struct Rig {
     if (found == disk.files.end())
       return {};
     const auto read = decode_tool_model_file(found->second);
-    require(read.has_value(), "The saved file is valid: " + read.error_or(""));
+    require(read.has_value(), "The saved file is valid: " + read.error_or(LocalizedReason{}).text);
     return read ? std::optional<ToolModelFile>{*read} : std::nullopt;
   }
   void accepted(const ToolModelCommand& command, const std::string& what) {
@@ -1383,16 +1388,20 @@ void store_orders_messages() {
                 got.at(0).second.at(0).at("availability") == "available",
             "The snapshot asked for after hello");
     // Answered at once, without the writer.
-    require(store.submit(PageToken{1}, 1, assign(0, 1, ToolFamily::generic, {}, "mill-2"))
-                    .value_or("")
-                    .starts_with("This change is for another machine than this one (mill-1)") &&
-                store.submit(PageToken{1}, 2, assign(0, 1, ToolFamily::generic, {}, "Mill-1"))
-                    .has_value(),
-            "A command for another machine ID is refused at once, also one differing by case");
+    require(
+        store.submit(PageToken{1}, 1, assign(0, 1, ToolFamily::generic, {}, "mill-2"))
+                .value_or(LocalizedReason{})
+                .text.starts_with("This change is for another machine than this one (mill-1)") &&
+            store.submit(PageToken{1}, 2, assign(0, 1, ToolFamily::generic, {}, "Mill-1"))
+                .has_value(),
+        "A command for another machine ID is refused at once, also one differing by case");
     auto bad = other_defaults();
     bad.at(at(ToolFamily::drill)).tip_angle = 180;
-    require(store.submit(PageToken{1}, 3, defaults(0, bad)) ==
-                std::string("drill: ") + angle_reason &&
+    const auto invalid = store.submit(PageToken{1}, 3, defaults(0, bad));
+    require(invalid && invalid->text == std::string("drill: ") + angle_reason &&
+                invalid->localization ==
+                    MessageKey{"backend.toolModels.familyProblem",
+                               {{"family", "drill"}, {"detail", angle_reason}}} &&
                 store.submit(PageToken{1}, 4, SetToolModelAssignment{machine, 0, row(0), {}, {}})
                     .has_value(),
             "An invalid command is refused at once");
@@ -1408,12 +1417,18 @@ void store_orders_messages() {
     require(!store.submit(PageToken{1}, 6, assign(0, 1)), "A stale command waits too");
     got = delivered.wait(3);
     require(got.at(2).second.size() == 2 && is_snapshot(got.at(2).second.at(0), 1) &&
-                is_result(got.at(2).second.at(1), 6, "rejected"),
+                is_result(got.at(2).second.at(1), 6, "rejected") &&
+                got.at(2).second.at(1).at("localization").at("key") ==
+                    "backend.toolModelStore.revisionChanged" &&
+                got.at(2).second.at(1).at("localization").at("params") ==
+                    Json{{"shown", "0"}, {"current", "1"}},
             "A stale base revision: the current snapshot, then the rejection");
     files.failures["rename"] = 1;
     require(!store.submit(PageToken{1}, 7, assign(1, 1)), "A command whose write fails");
     got = delivered.wait(4);
-    require(got.at(3).second.size() == 1 && is_result(got.at(3).second.at(0), 7, "failed"),
+    require(got.at(3).second.size() == 1 && is_result(got.at(3).second.at(0), 7, "failed") &&
+                got.at(3).second.at(0).at("localization").at("key") ==
+                    "backend.toolModelStore.notSavedReason",
             "A failed write: the result alone, the snapshot shown still holds");
     files.failures["sync_directory"] = 1;
     require(!store.submit(PageToken{1}, 8, assign(1, 1)), "A command whose directory fsync fails");
@@ -1435,8 +1450,11 @@ void store_orders_messages() {
     Delivered told;
     const auto where = resolve_tool_model_location(settings);
     ToolModelStore store{untouched, where, told.deliver()};
-    require(store.submit(PageToken{1}, 1, assign(0, 1)) == where.reason &&
-                store.submit(PageToken{1}, 2, defaults(0, other_defaults())) == where.reason,
+    require(store.submit(PageToken{1}, 1, assign(0, 1)).value_or(LocalizedReason{}).text ==
+                    where.reason &&
+                store.submit(PageToken{1}, 2, defaults(0, other_defaults()))
+                        .value_or(LocalizedReason{})
+                        .text == where.reason,
             "Session-only or unavailable storage rejects with its reason, at once");
     store.send_snapshot(PageToken{1});
     const auto got = told.wait(1);
@@ -1448,6 +1466,11 @@ void store_orders_messages() {
                 got.at(0).second.at(0).at("machine_id") ==
                     (where.machine_id ? Json(*where.machine_id) : Json(nullptr)),
             "and its snapshot says why");
+    require(got.at(0).second.size() == 2 && !got.at(0).second.at(0).contains("localization") &&
+                got.at(0).second.at(1).at("type") == "tool_models_reason" &&
+                got.at(0).second.at(1).at("reason") == where.reason &&
+                got.at(0).second.at(1).at("localization").at("key") == where.localization->key,
+            "An unchanged legacy snapshot precedes its localized reason");
   }
   // A lock held elsewhere is found by the writer: its result comes from there.
   {
@@ -1482,9 +1505,11 @@ void store_bounds_and_races() {
     require(!store.submit(PageToken{1}, id, assign(0, static_cast<int>(id))),
             "Eight commands wait behind the one being written");
   static_assert(ToolModelStore::max_pending == 8, "The bound this test fills");
-  require(store.submit(PageToken{1}, 10, assign(0, 10)) == ToolModelStore::busy_reason &&
-              store.submit(PageToken{1}, 11, defaults(0, other_defaults())) ==
-                  ToolModelStore::busy_reason,
+  require(store.submit(PageToken{1}, 10, assign(0, 10)).value_or(LocalizedReason{}).text ==
+                  ToolModelStore::busy_reason &&
+              store.submit(PageToken{1}, 11, defaults(0, other_defaults()))
+                      .value_or(LocalizedReason{})
+                      .text == ToolModelStore::busy_reason,
           "A ninth is rejected at once: the queue is full");
   require(delivered.size() == 0, "Nothing is answered before a write is durable");
   gate.release();

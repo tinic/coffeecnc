@@ -125,6 +125,7 @@
       "tooManyAssignments": "There are more than 1001 tool model assignments.",
       "unknownHolder": "Unknown tool holder.",
       "assignedTwice": "It is assigned more than once.",
+      "familyProblem": "{family}: {detail}",
       "toolProblem": "Tool {tool}: {detail}",
       "overridesEmpty": "Overrides must be empty when the assignment is removed.",
       "chooseHolder": "Choose a supported holder for a tool model assignment.",

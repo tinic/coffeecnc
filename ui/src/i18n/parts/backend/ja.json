@@ -125,6 +125,7 @@
       "tooManyAssignments": "工具モデルの割り当てが 1001 個を超えています。",
       "unknownHolder": "不明な工具ホルダです。",
       "assignedTwice": "複数回割り当てられています。",
+      "familyProblem": "{family}: {detail}",
       "toolProblem": "工具 {tool}：{detail}",
       "overridesEmpty": "割り当てを削除するときは「overrides」を空にしてください。",
       "chooseHolder": "工具モデルの割り当てには、サポートされているホルダを選択してください。",

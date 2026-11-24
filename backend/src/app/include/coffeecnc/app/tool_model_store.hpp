@@ -41,6 +41,7 @@ struct ToolModelLocation {
   ToolModelAvailability availability{ToolModelAvailability::session_only};
   std::string reason;
   std::string directory; // <data root>/<machine_id>, absolute; empty unless available
+  std::optional<MessageKey> localization{};
   friend auto operator==(const ToolModelLocation&, const ToolModelLocation&) -> bool = default;
 };
 
@@ -232,9 +233,10 @@ private:
 struct ToolModelReply {
   CommandOutcome outcome{CommandOutcome::accepted};
   std::string reason;
-  // The `tool_models` snapshot is sent before the result: after a save, for a stale base
-  // revision, and when the store has just become unavailable.
+  // The settings snapshot is sent before the result: after a save, for a stale base revision,
+  // and when the store has just become unavailable.
   bool snapshot{};
+  std::optional<MessageKey> localization{};
 };
 
 // The saved document of one machine and every step that reads or replaces it. Synchronous and
@@ -290,7 +292,7 @@ private:
   [[nodiscard]] auto read() const -> ToolModels;
   [[nodiscard]] auto prepare() -> std::expected<void, std::string>;
   void show(ToolModels models);
-  [[nodiscard]] auto unavailable(std::string reason) const -> ToolModels;
+  [[nodiscard]] auto unavailable(LocalizedReason reason) const -> ToolModels;
   [[nodiscard]] auto path(std::string_view name) const -> std::string;
 
   ToolModelFiles& files_;
@@ -298,7 +300,7 @@ private:
   ToolModels models_;
   std::string snapshot_;
   // Said with every available snapshot: the machine directory is open to other users.
-  std::string note_;
+  LocalizedReason note_;
   bool locked_{};
 };
 
@@ -365,7 +367,7 @@ public:
   auto operator=(const ToolModelStore&) -> ToolModelStore& = delete;
 
   [[nodiscard]] auto submit(PageToken page, RequestId id, ToolModelCommand command)
-      -> std::optional<std::string> override;
+      -> std::optional<LocalizedReason> override;
   [[nodiscard]] auto submit_operator_settings(PageToken page, RequestId id,
                                               SetOperatorSettings&& command)
       -> std::optional<std::string> override;

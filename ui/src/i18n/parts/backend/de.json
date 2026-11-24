@@ -125,6 +125,7 @@
       "tooManyAssignments": "Es gibt mehr als 1001 Werkzeugmodell-Zuordnungen.",
       "unknownHolder": "Unbekannte Werkzeugaufnahme.",
       "assignedTwice": "Sie ist mehrfach zugeordnet.",
+      "familyProblem": "{family}: {detail}",
       "toolProblem": "Werkzeug {tool}: {detail}",
       "overridesEmpty": "„overrides“ muss leer sein, wenn die Zuordnung entfernt wird.",
       "chooseHolder": "Wählen Sie eine unterstützte Werkzeugaufnahme für die Werkzeugmodell-Zuordnung.",

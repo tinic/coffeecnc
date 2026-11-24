@@ -328,16 +328,19 @@ auto encode_operator_settings(const OperatorSettings& settings) -> Encoded {
     if (settings.document)
       if (auto error = operator_preferences_error(*settings.document); !error.empty())
         throw std::runtime_error(error);
-    return Json{{"type", "operator_settings"},
-                {"machine_id", settings.machine_id ? Json(*settings.machine_id) : Json(nullptr)},
-                {"revision", settings.revision},
-                {"availability", available ? "available"
-                                 : settings.availability == ToolModelAvailability::session_only
-                                     ? "session_only"
-                                     : "unavailable"},
-                {"reason", settings.reason},
-                {"document", settings.document ? document_json(*settings.document) : Json(nullptr)}}
-        .dump();
+    Json snapshot{
+        {"type", "operator_settings"},
+        {"machine_id", settings.machine_id ? Json(*settings.machine_id) : Json(nullptr)},
+        {"revision", settings.revision},
+        {"availability", available ? "available"
+                         : settings.availability == ToolModelAvailability::session_only
+                             ? "session_only"
+                             : "unavailable"},
+        {"reason", settings.reason},
+        {"document", settings.document ? document_json(*settings.document) : Json(nullptr)}};
+    if (const auto& key = settings.localization)
+      snapshot["localization"] = {{"key", key->key}, {"params", key->params}};
+    return snapshot.dump();
   });
 }
 auto encode_operator_settings_file(const OperatorSettingsFile& file) -> Encoded {

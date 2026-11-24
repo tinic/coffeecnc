@@ -30,7 +30,7 @@ import type { CommandBody } from '../protocol'
 import ProgramCheckDialog from './ProgramCheckDialog.vue'
 import SetterStatusBand from './SetterStatusBand.vue'
 import { machineFeedback } from '../machine-feedback'
-import { translateMessage } from '../i18n/messages'
+import { translateMessage, translateResult } from '../i18n/messages'
 
 const { t } = useI18n()
 
@@ -57,7 +57,7 @@ const textCurrent = computed(() => program.value !== null && status.value !== nu
 const previewCurrent = computed(() => panel.preview !== null && status.value !== null && panel.preview.context === status.value.preview_context)
 const failure = computed(() => panel.preview?.state === 'failed' && previewCurrent.value ? panel.preview.error : null)
 const unavailableReason = computed(() => panel.preview?.state === 'unavailable' && previewCurrent.value && panel.preview.error
-  ? translateMessage(panel.preview.error.text) : undefined)
+  ? translateMessage(panel.preview.error.text, panel.preview.error.localization) : undefined)
 const drawn = useDrawnPreview(panel)
 const failureLine = computed(() => textCurrent.value ? lineInText(failure.value?.line ?? 0) : 0)
 const layouts = [['path', 'program.tab.layoutPreview'], ['text', 'program.tab.layoutCode'], ['split', 'program.tab.layoutSplit']] as const satisfies readonly (readonly [ProgramLayout, string])[]
@@ -240,7 +240,7 @@ const removeEditListener = onResult((command, result) => {
   if (command !== editRequest) return
   editRequest = null
   if (result.outcome === 'accepted') editing.value = null
-  else if (editing.value !== null) editing.value.error = (): string => translateMessage(result.reason, result.refusal) || t('program.tab.notSaved')
+  else if (editing.value !== null) editing.value.error = (): string => translateResult(result) || t('program.tab.notSaved')
 })
 onBeforeUnmount(removeEditListener)
 
@@ -286,7 +286,7 @@ async function showFailure(): Promise<void> {
         <header class="scene-top">
           <span class="scene-title"><AppIcon :name="panel.programLayout === 'text' ? 'file' : 'fit'" />{{ panel.programLayout === 'text' ? t('program.tab.ncProgram') : t('program.tab.toolpathPreview') }}</span>
           <div class="scene-actions">
-            <div class="view-switch" :aria-label="t('program.tab.viewLabel')"><button v-for="[layout, label] in layouts" :key="layout" class="tone-control choice" type="button" :aria-pressed="panel.programLayout === layout" @click="chooseProgramLayout(layout)">{{ t(label) }}</button></div>
+            <div class="view-switch" :aria-label="t('program.tab.viewLabel')"><button v-for="[layout, label] in layouts" :key="layout" class="choice" type="button" :aria-pressed="panel.programLayout === layout" @click="chooseProgramLayout(layout)">{{ t(label) }}</button></div>
           </div>
         </header>
         <div v-if="textCurrent && program?.truncated" class="failure" role="status"><AppIcon name="warning" /><span>{{ t('program.tab.partial', { count: program.lines.length }) }}</span></div>
@@ -312,7 +312,7 @@ async function showFailure(): Promise<void> {
             <button class="btn picked-close" type="button" :aria-label="t('program.ncText.clearSelected')" @click="pickedLine = 0"><AppIcon name="close" /></button>
           </div>
           <div v-if="failure && (panel.programLayout === 'text' || failureLine > 0)" class="failure preview-diagnostic tinted-band" role="status">
-            <AppIcon name="warning" /><span>{{ t('program.tab.previewStopped', { reason: translateMessage(failure.text) }) }}</span>
+            <AppIcon name="warning" /><span>{{ t('program.tab.previewStopped', { reason: translateMessage(failure.text, failure.localization) }) }}</span>
             <button v-if="failureLine > 0" class="btn show-line" type="button" @click="showFailure">{{ t('program.tab.showLine', { line: failureLine }) }}</button>
           </div>
           <SetterStatusBand v-else-if="unavailableReason && panel.programLayout === 'text'" class="preview-diagnostic" :line="{ text: unavailableReason, level: 'blocked' }" />
@@ -391,9 +391,7 @@ async function showFailure(): Promise<void> {
 .program-check.blocked { color: var(--stop); background: var(--stop-soft); }
 .program-check.review:not(.blocked) { color: var(--warn); background: var(--warn-soft); }
 .view-switch { display: flex; align-items: center; gap: 3px; }
-.view-switch button { min-width: var(--touch); min-height: var(--touch); border: 0; border-radius: var(--control-radius); padding: 0 12px; font-size: var(--type-body); font-weight: 600; color: var(--text-dim); cursor: pointer; }
-.view-switch button:hover { background: var(--control-hover); }
-.view-switch button:active { background: var(--control-active); }
+.view-switch button { padding: 0 12px; font-size: var(--type-body); font-weight: 600; color: var(--text-dim); }
 .views { position: relative; flex: 1; display: grid; min-height: 0; min-width: 0; }.views.split { grid-template-columns: 1fr 1fr; }.views.text { padding: 8px 16px 16px; }
 .views :deep(.nctext) { border: 0; border-radius: 0; }.empty { display: grid; place-items: center; color: var(--text-dim); }
 .inspector { display: flex; flex-direction: column; min-height: 0; }

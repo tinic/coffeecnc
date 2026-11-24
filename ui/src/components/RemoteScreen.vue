@@ -59,7 +59,7 @@ const file = computed(() => reported.value?.program.file)
     <!-- E-stop, errors and other notices show also with no program loaded. -->
     <section v-if="file || panel.notice" class="job">
       <h1 v-if="file">{{ baseName(file) }}</h1>
-      <p v-if="panel.notice" class="notice" :class="{ error: panel.notice.level === 'error' }">{{ translateMessage(panel.notice.text, panel.notice.refusal) }}</p>
+      <p v-if="panel.notice" class="notice" :class="{ error: panel.notice.level === 'error' }">{{ translateMessage(panel.notice.text, panel.notice.localization) }}</p>
     </section>
     <DroPanel read-only />
     <main>

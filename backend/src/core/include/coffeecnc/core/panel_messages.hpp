@@ -357,6 +357,7 @@ struct PreviewDwell {
 struct PreviewError {
   int line{};
   std::string text;
+  std::optional<MessageKey> localization{};
   friend auto operator==(const PreviewError&, const PreviewError&) -> bool = default;
 };
 

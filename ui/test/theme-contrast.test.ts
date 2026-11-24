@@ -20,7 +20,9 @@ describe('theme contrast', () => {
       expect(start).toBeGreaterThanOrEqual(0)
       return css.slice(start, css.indexOf('}', start))
     }
-    for (const selector of ['.btn, .choice', '.btn', '.field']) {
+    expect(rule('.btn, button.choice')).toMatch(/appearance:\s*none/)
+    expect(rule('.btn, button.choice')).toMatch(/border:\s*0\s*;/)
+    for (const selector of ['.btn, .choice', '.btn, button.choice', '.field']) {
       const body = rule(selector)
       expect(body).not.toMatch(/border:\s*1px solid/)
       expect(body).not.toMatch(/box-shadow/)
@@ -32,13 +34,13 @@ describe('theme contrast', () => {
   // A control that is pressed (or selected, or primary) and disabled shows the disabled look: every
   // state rule after the disabled rule must leave disabled controls out.
   it('lets no pressed, selected or coloured state override a disabled control', () => {
-    const disabledAt = css.indexOf('\n.btn:disabled,')
+    const disabledAt = css.indexOf('\n.btn:disabled,\n.btn[aria-disabled=\'true\'],')
     expect(disabledAt).toBeGreaterThan(0)
     const later = css.slice(disabledAt + 1)
     const rules = [...later.matchAll(/(?:^|\n)([^{}@/]+)\{[^}]*background[^}]*\}/g)].map((m) => m[1] ?? '')
-    const selectors = rules.flatMap((rule) => rule.split(',').map((s) => s.trim()))
+    const selectors = rules.flatMap((rule) => rule.split(/,(?![^()]*\))/).map((s) => s.trim()))
       .filter((s) => /^\.(btn|choice)\b/.test(s) && /\.on\b|aria-pressed|aria-current|\.selected|\.primary|\.go\b|\.warning|\.danger/.test(s))
     expect(selectors.length).toBeGreaterThan(5)
-    for (const selector of selectors) expect(selector, selector).toMatch(/:not\([^)]*:disabled/)
+    for (const selector of selectors) expect(selector, selector).toContain(":not(:disabled, [aria-disabled='true'])")
   })
 })

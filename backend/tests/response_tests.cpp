@@ -35,7 +35,17 @@ void command_results() {
   const auto failed =
       Json::parse(encode_result(1, CommandOutcome::failed, "Why.", {}, {}, refusal));
   require(!failed.contains("refusal"), "Only a rejection carries a refusal key");
-  const auto accepted = Json::parse(encode_result(7, CommandOutcome::accepted, ""));
+  require(failed.at("localization").at("key") == refusal.key,
+          "A refusal after writing a command can still be localized as a failure");
+  const MessageKey timeout{"messages.session.linuxcncNoAnswer"};
+  const auto timed_out = Json::parse(
+      encode_result(8, CommandOutcome::timed_out, "LinuxCNC did not answer.", {}, {}, {}, timeout));
+  require(timed_out.at("reason") == "LinuxCNC did not answer." &&
+              timed_out.at("localization") ==
+                  Json{{"key", timeout.key}, {"params", Json::object()}},
+          "A timeout carries both the English reason and its key");
+  const auto accepted =
+      Json::parse(encode_result(7, CommandOutcome::accepted, "", {}, {}, {}, timeout));
   require(accepted.at("reason") == "" && accepted.size() == 4, "Accepted keeps an empty reason");
   for (const auto id : {RequestId{0}, RequestId{-1}, -max_request_id, max_request_id}) {
     const auto result = Json::parse(encode_result(id, CommandOutcome::rejected, "No."));
@@ -91,6 +101,12 @@ void operator_messages() {
   const auto info = Json::parse(encode_message(MessageLevel::info, "Probe tripped", 0ms));
   require(info.at("level") == "info" && info.at("time") == 0, "Info level and epoch time");
   require(info.at("time").is_number_integer(), "Time is integer milliseconds");
+  const MessageKey contact{"backend.jogStop.probeContact"};
+  const auto keyed =
+      Json::parse(encode_message(MessageLevel::info, "Jog stopped: probe contact", 10ms, contact));
+  require(keyed.at("text") == "Jog stopped: probe contact" &&
+              keyed.at("localization") == Json{{"key", contact.key}, {"params", Json::object()}},
+          "A catalogued operator message retains its English text for older panels");
 }
 } // namespace
 

@@ -311,17 +311,26 @@ auto Session::reply(ActionResult result) -> Reply {
   case ActionStatus::accepted:
     return {};
   case ActionStatus::timed_out:
-    return {CommandOutcome::timed_out,
-            result.reason.empty() ? "LinuxCNC did not answer." : std::move(result.reason)};
+    if (result.reason.empty())
+      return {CommandOutcome::timed_out,
+              "LinuxCNC did not answer.",
+              {},
+              MessageKey{"messages.session.linuxcncNoAnswer"}};
+    return {
+        CommandOutcome::timed_out, std::move(result.reason), {}, std::move(result.localization)};
   case ActionStatus::cancelled:
     // Only where the port withdrew something that is never withdrawn; not `rejected`, since
     // something may have been sent.
-    return {CommandOutcome::failed, cancelled_reason};
+    return {CommandOutcome::failed, cancelled_reason, {}, MessageKey{"messages.session.cancelled"}};
   case ActionStatus::failed:
     break;
   }
-  return {CommandOutcome::failed,
-          result.reason.empty() ? "LinuxCNC reported an error." : std::move(result.reason)};
+  if (result.reason.empty())
+    return {CommandOutcome::failed,
+            "LinuxCNC reported an error.",
+            {},
+            MessageKey{"messages.session.linuxcncError"}};
+  return {CommandOutcome::failed, std::move(result.reason), {}, std::move(result.localization)};
 }
 
 auto Session::answer(Reply reply) -> Stage { return {StageKind::reply, std::move(reply), {}}; }
@@ -417,7 +426,8 @@ void Session::expire_panel_frame(JogLease::Time now) {
   // Withdraw queued and in-flight work through the same cancellation checks used by Abort.
   ++cancels_;
   if (ready_)
-    problems_.emplace_back(panel_frame_stop);
+    problems_.push_back(
+        {true, std::string(panel_frame_stop), MessageKey{"messages.session.panelStoppedDrawing"}});
 }
 
 auto Session::frame_age(Instant now, std::chrono::milliseconds rendered_at) const
@@ -463,10 +473,13 @@ auto Session::submit(PageToken page, std::string_view json, Instant now,
   if (const auto* error = std::get_if<DecodeError>(&decoded)) {
     if (!error->id)
       outcome.messages.push_back(encode_message(
-          MessageLevel::error, "Panel request ignored: " + error->reason, now.unix_time));
+          MessageLevel::error, std::format("Panel request ignored: {}", error->reason),
+          now.unix_time,
+          MessageKey{"messages.session.requestIgnored", {{"detail", error->reason}}}));
     else if (in_order(*error->id))
       outcome.messages.push_back(
-          encode_result(*error->id, CommandOutcome::rejected, error->reason));
+          encode_result(*error->id, CommandOutcome::rejected, error->reason, {}, {},
+                        error->localization));
     return outcome;
   }
   auto& request = std::get<Request>(decoded);
@@ -549,7 +562,7 @@ auto Session::submit(PageToken page, std::string_view json, Instant now,
       result(CommandOutcome::rejected, no_tool_models_reason,
              RefusalMessage{"messages.session.noToolModels"});
     else if (const auto refused = tool_models_->submit(page, request.id, std::move(*models)))
-      result(CommandOutcome::rejected, *refused);
+      result(CommandOutcome::rejected, refused->text, refused->localization);
     return outcome;
   }
 
@@ -649,12 +662,18 @@ auto Session::submit(PageToken page, std::string_view json, Instant now,
   } else if (stop_request) {
     stop_jogs();
     ++cancels_;
-    for (const auto& waiting : requests_)
-      if (!waiting.stop)
-        outcome.messages.push_back(encode_result(
-            waiting.id, waiting.sent ? CommandOutcome::failed : CommandOutcome::rejected,
-            waiting.sent ? mode_changed_reason : cancelled_reason, {}, {},
-            RefusalMessage{"messages.session.cancelled"}));
+    for (const auto& waiting : requests_) {
+      if (waiting.stop)
+        continue;
+      if (waiting.sent)
+        outcome.messages.push_back(encode_result(waiting.id, CommandOutcome::failed,
+                                                 mode_changed_reason, {}, {}, {},
+                                                 MessageKey{"messages.session.modeChanged"}));
+      else
+        outcome.messages.push_back(encode_result(waiting.id, CommandOutcome::rejected,
+                                                 cancelled_reason, {}, {},
+                                                 RefusalMessage{"messages.session.cancelled"}));
+    }
     drop_requests();
   }
   auto& queue = stop_request ? stops_ : requests_;
@@ -865,8 +884,9 @@ auto Session::work(const Clock& clock) -> Work {
   if (idle_page && idle_page != result.outcome.page)
     published.clear();
   for (const auto& message : published)
-    result.outcome.messages.push_back(encode_message(
-        message.error ? MessageLevel::error : MessageLevel::info, message.text, now.unix_time));
+    result.outcome.messages.push_back(
+        encode_message(message.error ? MessageLevel::error : MessageLevel::info, message.text,
+                       now.unix_time, message.localization));
   report(result.outcome, now.unix_time);
   return result;
 }
@@ -966,7 +986,10 @@ auto Session::run(Queued request, const Clock& clock) -> Work {
     // `rejected` only when nothing at all was sent for the request; otherwise `failed`, with
     // what was sent and what was not.
     if (step.reply.reason.empty() && request.sent)
-      step.reply.reason = mode_changed_reason;
+      step.reply = {CommandOutcome::failed,
+                    mode_changed_reason,
+                    {},
+                    MessageKey{"messages.session.modeChanged"}};
     if (step.reply.reason.empty())
       step.reply = {CommandOutcome::rejected, cancelled_reason,
                     RefusalMessage{"messages.session.cancelled"}};
@@ -1001,7 +1024,7 @@ auto Session::run(Queued request, const Clock& clock) -> Work {
       result.outcome.messages.push_back(std::move(message));
     result.outcome.messages.push_back(encode_result(request.id, step.reply.outcome,
                                                     step.reply.reason, step.setter, step.restart,
-                                                    step.reply.refusal));
+                                                    step.reply.refusal, step.reply.localization));
   }
   report(result.outcome, now.unix_time);
   return result;
@@ -1092,7 +1115,8 @@ void Session::report(Outcome& outcome, std::chrono::milliseconds unix_time) {
   if (!ready_)
     return;
   for (const auto& problem : problems_)
-    outcome.messages.push_back(encode_message(MessageLevel::error, problem, unix_time));
+    outcome.messages.push_back(
+        encode_message(MessageLevel::error, problem.text, unix_time, problem.localization));
   problems_.clear();
 }
 
@@ -1210,7 +1234,10 @@ auto Session::execute(Queued& request, const Clock& clock) -> Stage {
     }
     if (decision.allowed && decision.required_mode && *decision.required_mode != state.mode) {
       forget_press(request);
-      return answer({CommandOutcome::failed, "LinuxCNC did not enter the required mode."});
+      return answer({CommandOutcome::failed,
+                     "LinuxCNC did not enter the required mode.",
+                     {},
+                     MessageKey{"messages.session.modeNotEntered"}});
     }
   }
   if (!decision.allowed) {
@@ -1322,7 +1349,7 @@ auto Session::plan_restart(Queued& request, PlanRestart command, const Controlle
     const auto shown = preview_->latest();
     if (shown && shown->context == command.preview_context) {
       if (const auto& error = shown->error)
-        return answer({CommandOutcome::rejected, error->text});
+        return answer({CommandOutcome::rejected, error->text, error->localization});
     }
     return refuse("Wait for an up-to-date program preview.",
                   RefusalMessage{"messages.session.waitPreview"});
@@ -1337,11 +1364,14 @@ auto Session::plan_restart(Queued& request, PlanRestart command, const Controlle
     return refuse("The program preview changed. Choose the line again.",
                   RefusalMessage{"messages.session.previewChanged"});
   const auto& outcome = computed.outcome;
-  if (!outcome.restart || outcome.restart->line != command.line || !computed.files_changed)
-    return answer({CommandOutcome::rejected,
-                   !outcome.restart_blocked.empty() ? outcome.restart_blocked
-                   : outcome.error ? outcome.error->text
-                                   : "No verified motion is available at that line."});
+  if (!outcome.restart || outcome.restart->line != command.line || !computed.files_changed) {
+    if (!outcome.restart_blocked.empty())
+      return answer({CommandOutcome::rejected, outcome.restart_blocked});
+    if (const auto& error = outcome.error)
+      return answer({CommandOutcome::rejected, error->text, error->localization});
+    return refuse("No verified motion is available at that line.",
+                  RefusalMessage{"messages.session.noVerifiedMotion"});
+  }
   auto point = *outcome.restart;
   if (tool_models_ != nullptr && tool_models_->touch_probe_loaded(point.tool) != false)
     return refuse("Restart requires a tool verified for machining.",
@@ -1417,7 +1447,10 @@ auto Session::start_restart(const Queued& request, StartRestart command) -> Stag
   const auto pending = port_.snapshot();
   if (pending.requested_tool != restart.plan.point.tool || !wanted(request)) {
     static_cast<void>(port_.abort());
-    return answer({CommandOutcome::failed, "Restart stopped before the tool change was confirmed."});
+    return answer({CommandOutcome::failed,
+                   "Restart stopped before the tool change was confirmed.",
+                   {},
+                   MessageKey{"messages.session.restartStoppedBeforeToolChange"}});
   }
   restart.owner = request;
   restart.tool_request = pending.tool_request;
@@ -1434,11 +1467,17 @@ auto Session::resume_restart(const Queued& request, const ControllerState& state
   const auto still = token(request);
   if (tool_models_ != nullptr && tool_models_->touch_probe_loaded(restart->plan.point.tool) != false) {
     static_cast<void>(port_.abort());
-    return answer({CommandOutcome::failed, "Restart requires a tool verified for machining."});
+    return answer({CommandOutcome::failed,
+                   "Restart requires a tool verified for machining.",
+                   {},
+                   MessageKey{"messages.session.restartNeedsTool"}});
   }
   if (!still() || restart->files_changed([&] { return !still(); })) {
     static_cast<void>(port_.abort());
-    return answer({CommandOutcome::failed, "The restart was cancelled or the program changed."});
+    return answer({CommandOutcome::failed,
+                   "The restart was cancelled or the program changed.",
+                   {},
+                   MessageKey{"messages.session.restartCancelled"}});
   }
   auto ack = port_.tool_changed(restart->plan.point.tool, state.tool_request, still);
   if (ack.status != ActionStatus::accepted) {
@@ -2176,14 +2215,18 @@ auto Session::jog(Queued& request, const Jog& command, const Decision& decision,
     -> Stage {
   const auto index = axis_index(command.axis);
   if (!index)
-    return answer({CommandOutcome::failed, "Unknown axis."});
+    return answer(
+        {CommandOutcome::failed, "Unknown axis.", {}, MessageKey{"messages.policy.unknownAxis"}});
   if (!command.held)
     return answer(reply(tracked_stop(*index)));
   if (!wanted(request))
     return cancelled();
   if (!decision.jog_space) {
     forget_press(request);
-    return answer({CommandOutcome::failed, "Jog space is undecided."});
+    return answer({CommandOutcome::failed,
+                   "Jog space is undecided.",
+                   {},
+                   MessageKey{"messages.session.jogSpaceUndecided"}});
   }
   const HeldJog asked{command.direction, command.velocity, *decision.jog_space};
   {
@@ -2353,8 +2396,11 @@ void Session::flush_stops() {
     const auto stopped = tracked_stop(i);
     if (stopped.status != ActionStatus::accepted && !known) {
       const std::scoped_lock lock{mutex_};
-      problems_.push_back(std::string("Jog stop failed on ") + letter(axes.at(i)) + ": " +
-                          reply(stopped).reason);
+      const auto axis = std::string(1, letter(axes.at(i)));
+      const auto detail = reply(stopped).reason;
+      problems_.push_back(
+          {true, std::format("Jog stop failed on {}: {}", axis, detail),
+           MessageKey{"messages.session.jogStopFailed", {{"axis", axis}, {"detail", detail}}}});
     }
   }
 }

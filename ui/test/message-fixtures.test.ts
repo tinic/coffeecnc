@@ -973,6 +973,24 @@ const examples = [
     "dwells": []
   },
   {
+    "type": "preview",
+    "context": 4821339,
+    "state": "unavailable",
+    "error": {
+      "line": 0,
+      "text": "Cutter compensation (G41) is active: no preview.",
+      "localization": {
+        "key": "backend.previewEngine.cutterCompensation",
+        "params": {
+          "code": "G41"
+        }
+      }
+    },
+    "segments": [],
+    "bounds": null,
+    "dwells": []
+  },
+  {
     "type": "message",
     "level": "error",
     "text": "Joint 0 on limit switch error",
@@ -983,6 +1001,16 @@ const examples = [
     "level": "info",
     "text": "Probe tripped",
     "time": 1700000001000
+  },
+  {
+    "type": "message",
+    "level": "info",
+    "text": "Jog stopped: probe contact",
+    "time": 1700000001100,
+    "localization": {
+      "key": "backend.jogStop.probeContact",
+      "params": {}
+    }
   },
   {
     "type": "result",
@@ -1017,6 +1045,16 @@ const examples = [
     "id": 44,
     "outcome": "timed_out",
     "reason": "LinuxCNC did not answer."
+  },
+  {
+    "type": "result",
+    "id": 47,
+    "outcome": "timed_out",
+    "reason": "LinuxCNC did not answer.",
+    "localization": {
+      "key": "messages.session.linuxcncNoAnswer",
+      "params": {}
+    }
   },
   {
     "type": "result",
@@ -1190,8 +1228,18 @@ const examples = [
     "machine_id": "G0759",
     "revision": 0,
     "availability": "unavailable",
-    "reason": "Tool model settings are already in use",
+    "reason": "Tool model settings in /data/G0759 are already in use by another CoffeeCNC. Tool models are not saved.",
     "document": null
+  },
+  {
+    "type": "tool_models_reason",
+    "machine_id": "G0759",
+    "revision": 0,
+    "reason": "Tool model settings in /data/G0759 are already in use by another CoffeeCNC. Tool models are not saved.",
+    "localization": {
+      "key": "backend.toolModelStore.inUse",
+      "params": { "path": "/data/G0759" }
+    }
   },
   {
     "type": "operator_settings",
@@ -1242,8 +1290,14 @@ const examples = [
     "machine_id": "G0759",
     "revision": 0,
     "availability": "unavailable",
-    "reason": "Operator settings file is corrupt",
-    "document": null
+    "reason": "/home/cnc/operator-settings.json exceeds 16 KiB. The file was left alone.",
+    "document": null,
+    "localization": {
+      "key": "backend.operatorSettingsStore.fileTooLarge",
+      "params": {
+        "file": "/home/cnc/operator-settings.json"
+      }
+    }
   },
   {
     "type": "offset_history",
@@ -1407,7 +1461,7 @@ const examples = [
 
 // A new FromMachine message requires coverage here, even if its fields are all optional.
 const messageTypes: Record<FromMachine['type'], true> = {
-  hello: true, status: true, tool_table: true, tool_models: true, operator_settings: true, work_offsets: true, program: true,
+  hello: true, status: true, tool_table: true, tool_models: true, tool_models_reason: true, operator_settings: true, work_offsets: true, program: true,
   preview: true, message: true, result: true, directory: true, offset_history: true, alarm_log: true, backup_written: true,
   restore_summary: true, diagnostics: true,
 }

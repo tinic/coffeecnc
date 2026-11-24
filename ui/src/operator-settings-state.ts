@@ -3,7 +3,7 @@ import type { CommandBody, Hello } from './protocol'
 import type { Panel, PanelState } from './store'
 import { decodeOperatorPreferences, decodeTheme, defaultOperatorPreferences, withRecentProgram, type OperatorPreferences, type PanelTheme, type ProgramLayout } from './operator-settings'
 import { decodeLanguage, t, type Language } from './i18n'
-import { translateMessage } from './i18n/messages'
+import { translateMessage, translateResult } from './i18n/messages'
 import { validMachineId } from './tool-model-settings'
 
 const storageKey = 'coffeecnc.operator-settings.v1'
@@ -16,7 +16,7 @@ export interface SettingsContext { hello: Hello | null; revision: number | null 
 export interface SettingsResult { saved: boolean; reason: string }
 export interface SettingsState {
   storage: 'loading' | 'browser' | 'available' | 'session_only' | 'unavailable'
-  reason: string
+  readonly reason: string
   readonly error: string
   revision: number | null
   saving: boolean
@@ -52,8 +52,10 @@ export function createOperatorSettingsState(panel: PanelState, connection: Pick<
   presentation?: StartupPresentation): OperatorSettingsController {
   const viewer = presentation?.viewer === true
   const error = shallowRef<(() => string) | null>(null)
-  const state = reactive<SettingsState>({ storage: panel.simulated || viewer ? 'browser' : 'loading', reason: '',
-    revision: null, saving: false, uncertain: false, get error() { return error.value?.() ?? '' } })
+  const storageReason = shallowRef<(() => string) | null>(null)
+  const state = reactive<SettingsState>({ storage: panel.simulated || viewer ? 'browser' : 'loading',
+    revision: null, saving: false, uncertain: false, get reason() { return storageReason.value?.() ?? '' },
+    get error() { return error.value?.() ?? '' } })
   if (panel.simulated) {
     try {
       const saved: unknown = JSON.parse(browserStorage().getItem(storageKey) ?? 'null')
@@ -111,7 +113,7 @@ export function createOperatorSettingsState(panel: PanelState, connection: Pick<
   }
   stops.push(watch(() => panel.hello, (hello) => {
     if (pending !== null) finish(fail(t('status.settingsState.draftUnconfirmed')))
-    error.value = null; state.reason = ''; state.uncertain = false; state.revision = null
+    error.value = null; storageReason.value = null; state.uncertain = false; state.revision = null
     if (hello === null) { state.storage = viewer ? 'browser' : 'loading'; return }
     if (machineId !== hello.machine_id) {
       if (machineId !== undefined) {
@@ -132,17 +134,18 @@ export function createOperatorSettingsState(panel: PanelState, connection: Pick<
     panel.preferences.default_jog_velocity = Math.min(600, hello.max_jog_velocity)
     const capability: unknown = Reflect.get(hello, 'operator_settings_storage')
     if (capability === undefined) {
-      state.storage = 'session_only'; state.reason = t('status.settingsState.cannotSave')
+      state.storage = 'session_only'; storageReason.value = (): string => t('status.settingsState.cannotSave')
       applyStartup()
     } else if (capability !== 1 || !(hello.machine_id === null || validMachineId(hello.machine_id))) {
-      state.storage = 'unavailable'; state.reason = t('status.settingsState.invalidIdentity')
+      state.storage = 'unavailable'; storageReason.value = (): string => t('status.settingsState.invalidIdentity')
       applyStartup()
     } else state.storage = 'loading'
   }, { immediate: true, flush: 'sync' }))
   stops.push(watch(() => panel.operatorSettings, (snapshot) => {
     if (panel.simulated || viewer || panel.hello?.operator_settings_storage !== 1) return
-    if (snapshot === null) { state.storage = 'loading'; state.revision = null; return }
-    state.storage = snapshot.availability; state.reason = snapshot.reason; state.uncertain = false
+    if (snapshot === null) { state.storage = 'loading'; storageReason.value = null; state.revision = null; return }
+    state.storage = snapshot.availability; state.uncertain = false
+    storageReason.value = (): string => translateMessage(snapshot.reason, snapshot.localization)
     state.revision = snapshot.availability === 'available' ? snapshot.revision : null
     if (snapshot.availability === 'available') panel.preferences = snapshot.document
     applyStartup()
@@ -152,7 +155,7 @@ export function createOperatorSettingsState(panel: PanelState, connection: Pick<
     if (result.outcome !== 'accepted') {
       state.uncertain = result.outcome === 'timed_out'
       finish(fail(() => result.outcome === 'timed_out' ? t('status.settingsState.noConfirmation')
-        : translateMessage(result.reason, result.refusal) || t('status.settingsState.saveFailed')))
+        : translateResult(result) || t('status.settingsState.saveFailed')))
     } else if (panel.hello !== pending.context.hello || state.storage !== 'available' ||
       state.revision === null || state.revision <= pending.command.base_revision) {
       state.uncertain = true

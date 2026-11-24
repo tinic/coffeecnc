@@ -1,6 +1,6 @@
 import { reactive, shallowRef, watch } from 'vue'
 import { t } from './i18n'
-import { translateMessage } from './i18n/messages'
+import { translateMessage, translateResult } from './i18n/messages'
 import type { CommandBody, Hello, Tool } from './protocol'
 import type { Panel, PanelState } from './store'
 import type { ToolHolder } from './tool-holder'
@@ -134,7 +134,7 @@ export function createToolModelState(panel: PanelState, connection: Pick<Panel, 
       state.uncertain = result.outcome === 'timed_out'
       const reason = (): string => result.outcome === 'timed_out'
         ? t('tools.modelState.noConfirmation')
-        : translateMessage(result.reason, result.refusal) || t('tools.modelState.couldNotSave')
+        : translateResult(result) || t('tools.modelState.couldNotSave')
       finish(fail(reason))
     } else if (panel.hello !== pending.context.hello || state.storage !== 'available' ||
       state.revision === null || state.revision <= pending.command.base_revision) {
@@ -153,7 +153,11 @@ export function createToolModelState(panel: PanelState, connection: Pick<Panel, 
     if (state.saving) return t('tools.modelState.inProgress')
     if (state.uncertain) return state.storageError
     if (state.storage === 'loading') return t('tools.modelState.waiting')
-    if (state.storage === 'unavailable') return translateMessage(state.storageReason) || t('tools.modelState.unavailable')
+    if (state.storage === 'unavailable') {
+      const snapshot = panel.toolModels
+      const localization = snapshot?.reason === state.storageReason ? snapshot.localization : undefined
+      return translateMessage(state.storageReason, localization) || t('tools.modelState.unavailable')
+    }
     if (state.storage === 'available' && state.revision !== edit.revision) {
       return t('tools.modelState.settingsChanged')
     }

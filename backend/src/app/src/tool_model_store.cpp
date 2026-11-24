@@ -42,7 +42,7 @@ auto close_descriptor(int& descriptor) -> bool {
 
 // The document a command leaves behind, or why there is none.
 auto changed(ToolModelDocument document, const ToolModelCommand& command)
-    -> std::expected<ToolModelDocument, std::string> {
+    -> std::expected<ToolModelDocument, LocalizedReason> {
   if (const auto* defaults = std::get_if<SetToolModelDefaults>(&command)) {
     document.defaults = defaults->defaults;
     return document;
@@ -64,8 +64,9 @@ auto changed(ToolModelDocument document, const ToolModelCommand& command)
     *place = std::move(assignment);
   } else {
     if (assignments.size() >= max_tool_model_assignments)
-      return std::unexpected(std::string("At most 1001 tools can have a model. Nothing was "
-                                         "saved."));
+      return std::unexpected(
+          LocalizedReason{"At most 1001 tools can have a model. Nothing was saved.",
+                          MessageKey{"backend.toolModelStore.tooManyModels"}});
     assignments.insert(place, std::move(assignment));
   }
   return document;
@@ -75,38 +76,40 @@ auto changed(ToolModelDocument document, const ToolModelCommand& command)
 
 auto resolve_tool_model_location(const ToolModelSettings& settings) -> ToolModelLocation {
   ToolModelLocation location;
-  if (!settings.machine_id) {
-    location.reason = "No machine identity is configured ([COFFEECNC] MACHINE_ID): tool models "
-                      "last until the panel closes.";
+  const auto with_reason = [&](LocalizedReason reason) -> ToolModelLocation {
+    location.reason = std::move(reason.text);
+    location.localization = std::move(reason.localization);
     return location;
-  }
+  };
+  if (!settings.machine_id)
+    return with_reason({"No machine identity is configured ([COFFEECNC] MACHINE_ID): tool models "
+                        "last until the panel closes.",
+                        MessageKey{"backend.toolModelStore.noMachineId"}});
   location.availability = ToolModelAvailability::unavailable;
-  if (!valid_machine_id(*settings.machine_id)) {
-    location.reason =
-        std::format("[COFFEECNC] MACHINE_ID is not valid: use 1 to 64 of the characters A-Z a-z "
-                    "0-9 _ and -, the first a letter or a digit. {}",
-                    not_saved);
-    return location;
-  }
+  if (!valid_machine_id(*settings.machine_id))
+    return with_reason(
+        {std::format("[COFFEECNC] MACHINE_ID is not valid: use 1 to 64 of the characters A-Z a-z "
+                     "0-9 _ and -, the first a letter or a digit. {}",
+                     not_saved),
+         MessageKey{"backend.toolModelStore.invalidMachineId"}});
   location.machine_id = settings.machine_id;
   std::string root;
   if (settings.data_directory) {
     const auto* configured = absolute(settings.data_directory);
-    if (configured == nullptr) {
-      location.reason =
-          std::format("[COFFEECNC] DATA_DIRECTORY is not an absolute path. {}", not_saved);
-      return location;
-    }
+    if (configured == nullptr)
+      return with_reason(
+          {std::format("[COFFEECNC] DATA_DIRECTORY is not an absolute path. {}", not_saved),
+           MessageKey{"backend.toolModelStore.dataDirectoryNotAbsolute"}});
     root = *configured;
   } else if (const auto* xdg = absolute(settings.xdg_data_home)) {
     root = *xdg + "/coffeecnc";
   } else if (const auto* home = absolute(settings.home)) {
     root = *home + "/.local/share/coffeecnc";
   } else {
-    location.reason = std::format("Neither XDG_DATA_HOME nor HOME is an absolute path: set "
-                                  "[COFFEECNC] DATA_DIRECTORY. {}",
-                                  not_saved);
-    return location;
+    return with_reason({std::format("Neither XDG_DATA_HOME nor HOME is an absolute path: set "
+                                    "[COFFEECNC] DATA_DIRECTORY. {}",
+                                    not_saved),
+                        MessageKey{"backend.toolModelStore.noDataHome"}});
   }
   location.availability = ToolModelAvailability::available;
   location.directory = root + '/' + *settings.machine_id;
@@ -289,30 +292,35 @@ auto LocalToolModelFiles::append(const std::string& path, std::string_view bytes
 
 ToolModelArchive::ToolModelArchive(ToolModelFiles& files, ToolModelLocation location)
     : files_(files), location_(std::move(location)) {
+  auto reason = location_.availability == ToolModelAvailability::available
+                    ? LocalizedReason{"Tool model settings have not been opened yet.",
+                                      MessageKey{"backend.toolModelStore.notOpenedYet"}}
+                    : LocalizedReason{location_.reason, location_.localization};
   show({location_.machine_id,
         0,
         location_.availability == ToolModelAvailability::session_only
             ? ToolModelAvailability::session_only
             : ToolModelAvailability::unavailable,
-        location_.availability == ToolModelAvailability::available
-            ? std::string("Tool model settings have not been opened yet.")
-            : location_.reason,
-        {}});
+        std::move(reason.text),
+        {},
+        std::move(reason.localization)});
 }
 
 auto ToolModelArchive::path(std::string_view name) const -> std::string {
   return location_.directory + '/' + std::string(name);
 }
 
-auto ToolModelArchive::unavailable(std::string reason) const -> ToolModels {
-  return {location_.machine_id, 0, ToolModelAvailability::unavailable, std::move(reason), {}};
+auto ToolModelArchive::unavailable(LocalizedReason reason) const -> ToolModels {
+  return {location_.machine_id,   0,  ToolModelAvailability::unavailable,
+          std::move(reason.text), {}, std::move(reason.localization)};
 }
 
 void ToolModelArchive::show(ToolModels models) {
   auto encoded = encode_tool_models(models);
   if (!encoded) {
     models = unavailable(
-        std::format("Tool model settings cannot be shown: {} {}", encoded.error(), not_saved));
+        {std::format("Tool model settings cannot be shown: {} {}", encoded.error().text, not_saved),
+         MessageKey{"backend.toolModelStore.cannotShow", {{"detail", encoded.error().text}}}});
     encoded = encode_tool_models(models);
   }
   models_ = std::move(models);
@@ -346,8 +354,11 @@ auto ToolModelArchive::prepare() -> std::expected<void, std::string> {
   if (!made)
     return std::unexpected(made.error());
   if ((made->mode & 077) != 0)
-    note_ = std::format("The directory {} can be entered by other users (mode {:o}).",
-                        location_.directory, made->mode);
+    note_ = {
+        std::format("The directory {} can be entered by other users (mode {:o}).",
+                    location_.directory, made->mode),
+        MessageKey{"backend.toolModelStore.directoryOpenToOthers",
+                   {{"path", location_.directory}, {"mode", std::format("{:o}", made->mode)}}}};
   return {};
 }
 
@@ -355,17 +366,24 @@ void ToolModelArchive::open() {
   if (location_.availability != ToolModelAvailability::available)
     return;
   if (const auto prepared = prepare(); !prepared) {
-    show(unavailable(std::format("Tool model settings in {} cannot be opened: {}. {}",
-                                 location_.directory, prepared.error(), not_saved)));
+    show(unavailable({std::format("Tool model settings in {} cannot be opened: {}. {}",
+                                  location_.directory, prepared.error(), not_saved),
+                      MessageKey{"backend.toolModelStore.cannotOpen",
+                                 {{"path", location_.directory}, {"detail", prepared.error()}}}}));
     return;
   }
   if (const auto locked = files_.lock(location_.directory); !locked) {
-    show(unavailable(locked.error().in_use
-                         ? std::format("Tool model settings in {} are already in use by another "
-                                       "CoffeeCNC. {}",
-                                       location_.directory, not_saved)
-                         : std::format("Tool model settings in {} cannot be opened: {}. {}",
-                                       location_.directory, locked.error().reason, not_saved)));
+    if (locked.error().in_use)
+      show(unavailable(
+          {std::format("Tool model settings in {} are already in use by another CoffeeCNC. {}",
+                       location_.directory, not_saved),
+           MessageKey{"backend.toolModelStore.inUse", {{"path", location_.directory}}}}));
+    else
+      show(unavailable(
+          {std::format("Tool model settings in {} cannot be opened: {}. {}", location_.directory,
+                       locked.error().reason, not_saved),
+           MessageKey{"backend.toolModelStore.cannotOpen",
+                      {{"path", location_.directory}, {"detail", locked.error().reason}}}}));
     return;
   }
   locked_ = true;
@@ -374,8 +392,10 @@ void ToolModelArchive::open() {
 
 auto ToolModelArchive::shared_location() const -> ToolModelLocation {
   if (locked_)
-    return {location_.machine_id, ToolModelAvailability::available, note_, location_.directory};
-  return {location_.machine_id, models_.availability, models_.reason, {}};
+    return {location_.machine_id, ToolModelAvailability::available, note_.text, location_.directory,
+            note_.localization};
+  return {
+      location_.machine_id, models_.availability, models_.reason, {}, models_.reason_localization};
 }
 
 void ToolModelArchive::close() {
@@ -387,46 +407,68 @@ auto ToolModelArchive::read() const -> ToolModels {
   const auto file = path(tool_model_file_name);
   auto read = files_.read(file, max_tool_model_bytes);
   if (!read)
-    return unavailable(std::format("{} cannot be read: {}. {}", file, read.error(), not_saved));
+    return unavailable({std::format("{} cannot be read: {}. {}", file, read.error(), not_saved),
+                        MessageKey{"backend.toolModelStore.cannotRead",
+                                   {{"file", file}, {"detail", read.error()}}}});
   const std::optional<ToolModelFiles::Content> content = std::move(*read);
   if (!content)
-    return {location_.machine_id, 0, ToolModelAvailability::available, note_,
-            ToolModelDocument{factory_tool_defaults(), {}}};
+    return {location_.machine_id,
+            0,
+            ToolModelAvailability::available,
+            note_.text,
+            ToolModelDocument{factory_tool_defaults(), {}},
+            note_.localization};
   if (content->more)
-    return unavailable(std::format("{} is larger than 1 MiB. {}", file, left_alone));
+    return unavailable({std::format("{} is larger than 1 MiB. {}", file, left_alone),
+                        MessageKey{"backend.toolModelStore.fileTooLarge", {{"file", file}}}});
   auto saved = decode_tool_model_file(content->bytes);
   if (!saved)
-    return unavailable(std::format("{} is not usable: {} {}", file, saved.error(), left_alone));
+    return unavailable(
+        {std::format("{} is not usable: {} {}", file, saved.error().text, left_alone),
+         MessageKey{"backend.toolModelStore.notUsable",
+                    {{"file", file}, {"detail", saved.error().text}}}});
   if (saved->machine_id != location_.machine_id)
-    return unavailable(std::format("{} belongs to machine {}, not to {}. {}", file,
-                                   saved->machine_id, location_.machine_id.value_or(""),
-                                   left_alone));
-  ToolModels held{location_.machine_id, saved->revision, ToolModelAvailability::available, note_,
-                  std::move(saved->document)};
+    return unavailable(
+        {std::format("{} belongs to machine {}, not to {}. {}", file, saved->machine_id,
+                     location_.machine_id.value_or(""), left_alone),
+         MessageKey{"backend.toolModelStore.otherMachine",
+                    {{"file", file},
+                     {"owner", saved->machine_id},
+                     {"machine", location_.machine_id.value_or("")}}}});
+  ToolModels held{
+      location_.machine_id,       saved->revision,   ToolModelAvailability::available, note_.text,
+      std::move(saved->document), note_.localization};
   if (const auto encoded = encode_tool_models(held); !encoded)
-    return unavailable(std::format("{} is not usable: {} {}", file, encoded.error(), left_alone));
+    return unavailable(
+        {std::format("{} is not usable: {} {}", file, encoded.error().text, left_alone),
+         MessageKey{"backend.toolModelStore.notUsable",
+                    {{"file", file}, {"detail", encoded.error().text}}}});
   return held;
 }
 
 auto ToolModelArchive::apply(const ToolModelCommand& command) -> ToolModelReply {
   if (models_.availability != ToolModelAvailability::available)
-    return {CommandOutcome::rejected, models_.reason, false};
+    return {CommandOutcome::rejected, models_.reason, false, models_.reason_localization};
   // Compare and swap against the file itself. The lock keeps other CoffeeCNC processes out;
   // a file that is nevertheless not what this process read or wrote last was changed by
   // something else. Nothing is written over it, and nothing of it is taken over: storage is
   // unavailable until the next start.
   if (auto now = read(); now != models_) {
     const auto file = path(tool_model_file_name);
-    show(now.availability == ToolModelAvailability::available
-             ? unavailable(std::format("{} was changed from outside while CoffeeCNC runs. {} "
-                                       "Restart CoffeeCNC to use what it holds.",
-                                       file, not_saved))
-             : unavailable(std::format("{} was changed from outside while CoffeeCNC runs: {}", file,
-                                       now.reason)));
-    return {CommandOutcome::rejected, models_.reason, true};
+    if (now.availability == ToolModelAvailability::available)
+      show(unavailable({std::format("{} was changed from outside while CoffeeCNC runs. {} "
+                                    "Restart CoffeeCNC to use what it holds.",
+                                    file, not_saved),
+                        MessageKey{"backend.toolModelStore.changedOutside", {{"file", file}}}}));
+    else
+      show(unavailable(
+          {std::format("{} was changed from outside while CoffeeCNC runs: {}", file, now.reason),
+           MessageKey{"backend.toolModelStore.changedOutsideReason",
+                      {{"file", file}, {"detail", now.reason}}}}));
+    return {CommandOutcome::rejected, models_.reason, true, models_.reason_localization};
   }
   if (!models_.document)
-    return {CommandOutcome::rejected, models_.reason, true};
+    return {CommandOutcome::rejected, models_.reason, true, models_.reason_localization};
   const auto base =
       std::visit([](const auto& c) -> std::uint64_t { return c.base_revision; }, command);
   if (base != models_.revision)
@@ -434,20 +476,26 @@ auto ToolModelArchive::apply(const ToolModelCommand& command) -> ToolModelReply 
             std::format("The tool models were changed since revision {} was shown: they are at "
                         "revision {}. Nothing was saved.",
                         base, models_.revision),
-            true};
+            true,
+            MessageKey{
+                "backend.toolModelStore.revisionChanged",
+                {{"shown", std::to_string(base)}, {"current", std::to_string(models_.revision)}}}};
   if (models_.revision >= max_tool_model_revision)
     return {CommandOutcome::rejected,
-            "The tool models have reached their last revision. Nothing was saved.", false};
+            "The tool models have reached their last revision. Nothing was saved.", false,
+            MessageKey{"backend.toolModelStore.lastRevision"}};
   auto document = changed(*models_.document, command);
   if (!document)
-    return {CommandOutcome::rejected, document.error(), false};
+    return {CommandOutcome::rejected, document.error().text, false, document.error().localization};
   ToolModels next{location_.machine_id, models_.revision + 1, ToolModelAvailability::available,
-                  note_, std::move(*document)};
+                  note_.text,           std::move(*document), note_.localization};
   const auto text =
       encode_tool_model_file({location_.machine_id.value_or(""), next.revision, *next.document});
-  if (const auto message = encode_tool_models(next); !text || !message)
-    return {CommandOutcome::rejected,
-            std::format("{} Nothing was saved.", text ? message.error() : text.error()), false};
+  if (const auto message = encode_tool_models(next); !text || !message) {
+    const auto& detail = text ? message.error().text : text.error().text;
+    return {CommandOutcome::rejected, std::format("{} Nothing was saved.", detail), false,
+            MessageKey{"backend.toolModelStore.nothingSaved", {{"detail", detail}}}};
+  }
 
   const auto file = path(tool_model_file_name);
   const auto temporary = path(tool_model_temporary_name);
@@ -463,7 +511,7 @@ auto ToolModelArchive::apply(const ToolModelCommand& command) -> ToolModelReply 
     return {CommandOutcome::failed,
             std::format("The tool models were not saved: {}. The saved file is unchanged.",
                         step.error()),
-            false};
+            false, MessageKey{"backend.toolModelStore.notSavedReason", {{"detail", step.error()}}}};
   }
   if (const auto durable = files_.sync_directory(location_.directory); !durable) {
     // The file was replaced, and whether that outlasts a power failure is not known. What it
@@ -473,7 +521,7 @@ auto ToolModelArchive::apply(const ToolModelCommand& command) -> ToolModelReply 
             std::format("The tool models may not have been saved: {}. The outcome is uncertain; "
                         "what is shown was read back from the file.",
                         durable.error()),
-            true};
+            true, MessageKey{"backend.toolModelStore.uncertain", {{"detail", durable.error()}}}};
   }
   show(std::move(next));
   return {CommandOutcome::accepted, {}, true};
@@ -510,23 +558,27 @@ auto ToolModelStore::held_location() -> ToolModelLocation {
 }
 
 auto ToolModelStore::submit(PageToken page, RequestId id, ToolModelCommand command)
-    -> std::optional<std::string> {
+    -> std::optional<LocalizedReason> {
   if (location_.availability != ToolModelAvailability::available)
-    return location_.reason;
+    return LocalizedReason{location_.reason, location_.localization};
   const auto& machine =
       std::visit([](const auto& c) -> const std::string& { return c.machine_id; }, command);
   if (machine != location_.machine_id)
-    return std::format("This change is for another machine than this one ({}). Nothing was "
-                       "saved.",
-                       location_.machine_id.value_or(""));
+    return LocalizedReason{
+        std::format("This change is for another machine than this one ({}). Nothing was saved.",
+                    location_.machine_id.value_or("")),
+        MessageKey{"backend.toolModelStore.otherMachineChange",
+                   {{"machine", location_.machine_id.value_or("")}}}};
   if (auto error = tool_model_command_error(command); !error.empty())
     return error;
   {
     const std::scoped_lock lock{mutex_};
     if (page.value <= ended_through_)
-      return "This page is no longer active.";
+      return LocalizedReason{"This page is no longer active.",
+                             MessageKey{"backend.toolModelStore.pageInactive"}};
     if (pending_.size() >= max_pending)
-      return std::string(busy_reason);
+      return LocalizedReason{std::string(busy_reason),
+                             MessageKey{"backend.toolModelStore.tooManyChanges"}};
     pending_.push_back({page, id, std::move(command)});
   }
   wake_.notify_all();
@@ -634,6 +686,11 @@ void ToolModelStore::loop() {
     if (deliver_)
       deliver_(page, std::move(messages));
   };
+  const auto append_tool_models = [this](std::vector<std::string>& messages) -> void {
+    messages.push_back(archive_.snapshot());
+    if (auto reason = encode_tool_models_reason(archive_.models()))
+      messages.push_back(std::move(*reason));
+  };
   for (;;) {
     std::optional<PageToken> snapshot;
     std::optional<Pending> next;
@@ -655,7 +712,8 @@ void ToolModelStore::loop() {
       }
     }
     if (snapshot) {
-      std::vector<std::string> messages{archive_.snapshot()};
+      std::vector<std::string> messages;
+      append_tool_models(messages);
       if (operator_settings_)
         messages.push_back(operator_settings_->snapshot());
       send(*snapshot, std::move(messages));
@@ -664,21 +722,19 @@ void ToolModelStore::loop() {
     if (!next)
       continue;
     ToolModelReply reply;
-    std::string changed_snapshot;
+    std::vector<std::string> messages;
     if (const auto* settings = std::get_if<SetOperatorSettings>(&next->command)) {
       reply = operator_settings_->apply(*settings);
       if (reply.snapshot)
-        changed_snapshot = operator_settings_->snapshot();
+        messages.push_back(operator_settings_->snapshot());
     } else {
       reply = archive_.apply(std::get<ToolModelCommand>(next->command));
       refresh_probe_tools();
       if (reply.snapshot)
-        changed_snapshot = archive_.snapshot();
+        append_tool_models(messages);
     }
-    std::vector<std::string> messages;
-    if (reply.snapshot)
-      messages.push_back(std::move(changed_snapshot));
-    messages.push_back(encode_result(next->id, reply.outcome, reply.reason));
+    messages.push_back(
+        encode_result(next->id, reply.outcome, reply.reason, {}, {}, {}, reply.localization));
     send(next->page, std::move(messages));
   }
 }

@@ -306,15 +306,28 @@ describe('commands', () => {
 })
 
 describe('MDI history', () => {
+  it('keeps message and failure keys with their fallback texts', () => {
+    const { panel, receive } = rig()
+    const contact = { key: 'backend.jogStop.probeContact', params: {} }
+    receive({ type: 'message', level: 'info', text: 'Jog stopped: probe contact', time: 10, localization: contact })
+    expect(panel.state.notice).toMatchObject({ text: 'Jog stopped: probe contact', localization: contact })
+    const id = panel.send({ type: 'mdi', text: 'G0 X1' })
+    const timeout = { key: 'messages.session.linuxcncNoAnswer', params: {} }
+    const reason = 'LinuxCNC did not answer.'
+    receive({ type: 'result', id, outcome: 'timed_out', reason, localization: timeout })
+    expect(panel.state.mdi.at(-1)).toMatchObject({ reason, localization: timeout })
+    expect(panel.state.log.at(-1)).toMatchObject({ text: reason, localization: timeout })
+  })
+
   it('keeps a structured refusal and the fallback in both the MDI history and message log', () => {
     const { panel, receive } = rig()
     const id = panel.send({ type: 'mdi', text: 'G0 X1' })
     const reason = 'Home all configured axes first.'
     const refusal = { key: 'messages.policy.homeAllFirst', params: {} }
     receive({ type: 'result', id, outcome: 'rejected', reason, refusal })
-    expect(panel.state.mdi.at(-1)).toMatchObject({ reason, refusal })
-    expect(panel.state.notice).toMatchObject({ text: reason, refusal })
-    expect(panel.state.log.at(-1)).toMatchObject({ text: reason, refusal })
+    expect(panel.state.mdi.at(-1)).toMatchObject({ reason, localization: refusal })
+    expect(panel.state.notice).toMatchObject({ text: reason, localization: refusal })
+    expect(panel.state.log.at(-1)).toMatchObject({ text: reason, localization: refusal })
   })
 
   it('records each command with its result', () => {

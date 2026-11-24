@@ -23,6 +23,9 @@ using Json = nlohmann::json;
 class InvalidRequest : public std::runtime_error {
 public:
   using std::runtime_error::runtime_error;
+  explicit InvalidRequest(LocalizedReason reason)
+      : std::runtime_error(reason.text), localization(std::move(reason.localization)) {}
+  std::optional<MessageKey> localization{};
 };
 
 auto parse(std::string_view text) -> Json {
@@ -124,9 +127,9 @@ auto choice(const Json& object, std::string_view name,
 }
 
 // A value read by the forms the saved file shares with these commands.
-template <typename T> auto valid(std::expected<T, std::string> read) -> T {
+template <typename T, typename Error> auto valid(std::expected<T, Error> read) -> T {
   if (!read)
-    throw InvalidRequest(read.error());
+    throw InvalidRequest(std::move(read.error()));
   return std::move(*read);
 }
 
@@ -485,7 +488,9 @@ auto command(const Json& object) -> Command {
     if (object.contains("holder")) {
       assignment.holder = string(object, "holder");
       if (!valid_tool_holder(assignment.holder) || !assignment.family)
-        throw InvalidRequest("Choose a supported holder for a tool model assignment.");
+        throw InvalidRequest(
+            LocalizedReason{"Choose a supported holder for a tool model assignment.",
+                            MessageKey{"backend.toolModels.chooseHolder"}});
     }
     return assignment;
   }
@@ -524,7 +529,7 @@ auto decode_request(std::string_view json) -> DecodedRequest {
     id = request_id(object);
     return Request{*id, command(object)};
   } catch (const InvalidRequest& error) {
-    return DecodeError{id, error.what()};
+    return DecodeError{id, error.what(), error.localization};
   } catch (const Json::exception&) {
     // Parser diagnostics can contain arbitrary input. Keep the operator message bounded.
     return DecodeError{id, "Invalid JSON request."};

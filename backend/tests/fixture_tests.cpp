@@ -337,9 +337,6 @@ auto encoded_messages() -> std::vector<Encoded> {
   messages.emplace_back(
       encode_result(48, CommandOutcome::failed, "A program named part.ngc exists already.", {}, {},
                     {}, MessageKey{"backend.programEdit.exists", {{"name", "part.ngc"}}}));
-  messages.emplace_back(encode_result(
-      54, CommandOutcome::failed, "Home the machine before jogging Y: two motors drive it.",
-      {}, {}, {}, MessageKey{"backend.nmlPort.homeBeforeJogging", {{"axis", "Y"}, {"motors", "two"}}}));
   const RestartPoint restart{.line = 25,
                              .tool = 98,
                              .h = 98,
@@ -542,6 +539,9 @@ auto encoded_messages() -> std::vector<Encoded> {
   messages.emplace_back(encode_result(55, CommandOutcome::failed,
                                       "LinuxCNC is not waiting for that tool change any more.", {},
                                       {}, {}, MessageKey{"backend.nmlPort.toolChangeGone"}));
+  messages.emplace_back(encode_result(
+      59, CommandOutcome::failed, "Home the machine before jogging Y: two motors drive it.",
+      {}, {}, {}, MessageKey{"backend.nmlPort.homeBeforeJogging", {{"axis", "Y"}, {"motors", "two"}}}));
   return messages;
 }
 

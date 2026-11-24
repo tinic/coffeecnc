@@ -248,9 +248,9 @@ struct RestoreHooks {
   // of another boot, or staged more than restore_plan_limit before or after it, is refused.
   std::optional<BootTime> ended;
   // Before the applying marker: a reason, and nothing is written.
-  std::function<std::optional<std::string>()> may_write;
+  std::function<std::optional<LocalizedReason>()> may_write;
   // Before each replacement: a reason, and what was written is put back.
-  std::function<std::optional<std::string>()> still_may_write;
+  std::function<std::optional<LocalizedReason>()> still_may_write;
 };
 
 // The helper's work, after LinuxCNC has stopped: reads `<data>/restore/plan.json` and refuses

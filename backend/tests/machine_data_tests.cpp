@@ -859,8 +859,16 @@ void helper_waits_for_linuxcnc() {
               f.disk.files[tools] == "now\n",
           "A LinuxCNC that starts meanwhile stops the write: " + outcome.line);
   require(!f.disk.locked.contains(data), "The helper releases the lock");
-  // And with LinuxCNC stopped for good it writes.
   f.open();
+  const auto restarted_notice = f.machine->take_notice();
+  require(restarted_notice && restarted_notice->error && restarted_notice->localization &&
+              restarted_notice->localization->params_localization ==
+                  std::map<std::string, MessageParameterKey>{
+                      {"detail",
+                       {"backend.machineData.restoreControllerRunning",
+                        {{"controllerDetail", "rtapi_app (pid 77) runs"}}}}},
+          "The startup notice retains why the controller guard stopped the restore.");
+  // And with LinuxCNC stopped for good it writes.
   f.stage(path);
   host.running = [] { return std::optional<std::string>{}; };
   outcome = run_restore_helper(f.files, data, 4000, host);
@@ -1126,8 +1134,15 @@ void helper_holds_linuxcnc_lock() {
   require(f.disk.files[tools] == "now tools\n" && f.disk.files[var] == "now var\n",
           "and what was written is put back");
   require(host.lock_file, "LinuxCNC's own lock is not removed");
-  // A lock that is there when the helper is to write: nothing.
   f.open();
+  const auto interrupted_notice = f.machine->take_notice();
+  require(interrupted_notice && interrupted_notice->error && interrupted_notice->localization &&
+              interrupted_notice->localization->params_localization ==
+                  std::map<std::string, MessageParameterKey>{
+                      {"detail",
+                       {"backend.machineData.restoreLockLost", {{"path", "/tmp/linuxcnc.lock"}}}}},
+          "The startup notice retains the lock-loss reason after rollback.");
+  // A lock that is there when the helper is to write: nothing.
   f.stage(path);
   host.running = [] { return std::optional<std::string>{}; };
   outcome = run_restore_helper(f.files, data, 4000, host);
@@ -1136,6 +1151,15 @@ void helper_holds_linuxcnc_lock() {
                                 "be made: File exists)") != std::string::npos &&
               f.disk.files[tools] == "now tools\n",
           "The lock is made O_EXCL: " + outcome.line);
+  f.open();
+  const auto lock_notice = f.machine->take_notice();
+  require(lock_notice && lock_notice->error && lock_notice->localization &&
+              lock_notice->localization->params_localization ==
+                  std::map<std::string, MessageParameterKey>{
+                      {"detail",
+                       {"backend.machineData.restoreControllerRunning",
+                        {{"controllerDetail", "/tmp/linuxcnc.lock cannot be made: File exists"}}}}},
+          "The underlying lock error stays available as the operator detail.");
 }
 
 // A file that read_beneath found; the check fails when it did not.

@@ -694,6 +694,8 @@
       "noMachine": "Cette sauvegarde n'indique pas sa machine ; cette machine est {machine}. Elle n'est pas restaurée.",
       "halNotNamed": "{name} n'est pas un fichier HAL que le fichier INI nomme : l'archive est refusée.",
       "unreachable": "{name} ne peut pas être restauré : {detail}. L'archive est refusée.",
+      "restoreControllerRunning": "LinuxCNC fonctionne de nouveau ({controllerDetail}) : aucune écriture n’a été effectuée.",
+      "restoreLockLost": "LinuxCNC a démarré pendant l’écriture des fichiers ({path} a été supprimé).",
       "stale": "La restauration a été préparée {age} s avant la fin de CoffeeCNC, plus de {limit} s : rien n'a été écrit.",
       "otherBoot": "La restauration a été préparée avant le redémarrage de l’ordinateur : rien n’a été écrit.",
       "noFolder": "{name} ne peut pas être restauré : le dossier de {path} n'existe pas. L'archive est refusée.",

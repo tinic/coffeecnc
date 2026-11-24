@@ -482,6 +482,20 @@ describe('translateMessage', () => {
     expect(translateMessage('')).toBe('')
   })
 
+  it('translates the restore guard while keeping the controller detail verbatim', async () => {
+    await setLanguage('fr')
+    const controllerDetail = 'The file cannot be opened.'
+    expect(translateMessage(controllerDetail)).not.toBe(controllerDetail)
+    const detail = `LinuxCNC runs again (${controllerDetail}): nothing was written.`
+    expect(translateMessage(`The restore was not completed: ${detail} The files are as they were.`, {
+      key: 'backend.machineData.notCompleted',
+      params: { detail },
+      params_localization: {
+        detail: { key: 'backend.machineData.restoreControllerRunning', params: { controllerDetail } },
+      },
+    })).toBe('La restauration n’a pas abouti : LinuxCNC fonctionne de nouveau (The file cannot be opened.) : aucune écriture n’a été effectuée. Les fichiers sont tels qu’avant.')
+  })
+
   it('translates the saved restore refusal and keeps its timing values', async () => {
     await setLanguage('fr')
     const detail = 'The restore was prepared 181 s before CoffeeCNC ended, more than 120 s: nothing was written.'

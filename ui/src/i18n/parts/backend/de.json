@@ -694,6 +694,8 @@
       "noMachine": "Diese Sicherung nennt keine Maschine; diese Maschine ist {machine}. Sie wird nicht wiederhergestellt.",
       "halNotNamed": "{name} ist keine HAL-Datei, die die INI-Datei nennt: das Archiv wird abgelehnt.",
       "unreachable": "{name} kann nicht wiederhergestellt werden: {detail}. Das Archiv wird abgelehnt.",
+      "restoreControllerRunning": "LinuxCNC läuft wieder ({controllerDetail}). Es wurde nichts geschrieben.",
+      "restoreLockLost": "LinuxCNC wurde gestartet, während die Dateien geschrieben wurden ({path} wurde entfernt).",
       "stale": "Die Wiederherstellung wurde {age} s vor dem Ende von CoffeeCNC vorbereitet, mehr als {limit} s: nichts wurde geschrieben.",
       "otherBoot": "Die Wiederherstellung wurde vor dem Neustart des Computers vorbereitet: nichts wurde geschrieben.",
       "noFolder": "{name} kann nicht wiederhergestellt werden: Der Ordner von {path} existiert nicht. Das Archiv wird abgelehnt.",

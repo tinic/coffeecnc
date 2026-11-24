@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <expected>
+#include <format>
 #include <initializer_list>
 #include <limits>
 #include <set>
@@ -33,13 +34,15 @@ auto parse(std::string_view text) -> Json {
   const auto callback = [&object_keys](int depth, Json::parse_event_t event, Json& value) -> bool {
     using Event = Json::parse_event_t;
     if ((event == Event::object_start || event == Event::array_start) && depth >= max_request_depth)
-      throw InvalidRequest("Request nesting limit exceeded.");
+      throw InvalidRequest(LocalizedReason{"Request nesting limit exceeded.",
+                                           MessageKey{"messages.request.nestingLimit"}});
     if (event == Event::object_start)
       object_keys.emplace_back();
     else if (event == Event::object_end)
       object_keys.pop_back();
     else if (event == Event::key && !object_keys.back().insert(value.get<std::string>()).second)
-      throw InvalidRequest("Duplicate object key in request.");
+      throw InvalidRequest(LocalizedReason{"Duplicate object key in request.",
+                                           MessageKey{"messages.request.duplicateKey"}});
     return true; // Never silently discard an invalid field.
   };
   return Json::parse(text.begin(), text.end(), callback);
@@ -47,42 +50,54 @@ auto parse(std::string_view text) -> Json {
 
 auto field(const Json& object, std::string_view name) -> const Json& {
   if (!object.is_object())
-    throw InvalidRequest("Expected a JSON object.");
+    throw InvalidRequest(
+        LocalizedReason{"Expected a JSON object.", MessageKey{"messages.request.expectedObject"}});
   const auto it = object.find(name);
   if (it == object.end())
-    throw InvalidRequest("Missing required field: " + std::string(name) + '.');
+    throw InvalidRequest(LocalizedReason{
+        std::format("Missing required field: {}.", name),
+        MessageKey{"messages.request.missingField", {{"field", std::string(name)}}}});
   return *it;
 }
 
 void fields(const Json& object, std::initializer_list<std::string_view> names,
             std::initializer_list<std::string_view> optional = {}) {
   if (!object.is_object())
-    throw InvalidRequest("Expected a JSON object.");
+    throw InvalidRequest(
+        LocalizedReason{"Expected a JSON object.", MessageKey{"messages.request.expectedObject"}});
   for (const auto name : names)
     static_cast<void>(field(object, name));
   const auto present = std::ranges::count_if(optional, [&](auto name) { return object.contains(name); });
   const auto expected = names.size() + static_cast<std::size_t>(present);
   if (object.size() != expected)
-    throw InvalidRequest("Unexpected field in request.");
+    throw InvalidRequest(LocalizedReason{"Unexpected field in request.",
+                                         MessageKey{"messages.request.unexpectedField"}});
 }
 
 auto string(const Json& object, std::string_view name) -> std::string {
   const auto& value = field(object, name);
   if (!value.is_string())
-    throw InvalidRequest("Expected a string: " + std::string(name) + '.');
+    throw InvalidRequest(LocalizedReason{
+        std::format("Expected a string: {}.", name),
+        MessageKey{"messages.request.expectedString", {{"field", std::string(name)}}}});
   auto result = value.get<std::string>();
   if (result.find('\0') != std::string::npos)
-    throw InvalidRequest("NUL is not allowed in request strings.");
+    throw InvalidRequest(LocalizedReason{"NUL is not allowed in request strings.",
+                                         MessageKey{"messages.request.nulInString"}});
   return result;
 }
 
 auto number(const Json& object, std::string_view name) -> double {
   const auto& value = field(object, name);
   if (!value.is_number())
-    throw InvalidRequest("Expected a number: " + std::string(name) + '.');
+    throw InvalidRequest(LocalizedReason{
+        std::format("Expected a number: {}.", name),
+        MessageKey{"messages.request.expectedNumber", {{"field", std::string(name)}}}});
   const auto result = value.get<double>();
   if (!std::isfinite(result))
-    throw InvalidRequest("Expected a finite number: " + std::string(name) + '.');
+    throw InvalidRequest(LocalizedReason{
+        std::format("Expected a finite number: {}.", name),
+        MessageKey{"messages.request.expectedFinite", {{"field", std::string(name)}}}});
   return result;
 }
 
@@ -90,7 +105,9 @@ auto integer(const Json& object, std::string_view name) -> int {
   const auto value = number(object, name);
   if (std::trunc(value) != value || value < std::numeric_limits<int>::min() ||
       value > std::numeric_limits<int>::max())
-    throw InvalidRequest("Expected an in-range integer: " + std::string(name) + '.');
+    throw InvalidRequest(LocalizedReason{
+        std::format("Expected an in-range integer: {}.", name),
+        MessageKey{"messages.request.expectedInteger", {{"field", std::string(name)}}}});
   return static_cast<int>(value);
 }
 
@@ -98,21 +115,26 @@ auto request_id(const Json& object) -> RequestId {
   const auto value = number(object, "id");
   if (std::trunc(value) != value || value < -static_cast<double>(max_request_id) ||
       value > static_cast<double>(max_request_id))
-    throw InvalidRequest("Request ID must be a JavaScript safe integer.");
+    throw InvalidRequest(LocalizedReason{"Request ID must be a JavaScript safe integer.",
+                                         MessageKey{"messages.request.requestIdInvalid"}});
   return static_cast<RequestId>(value);
 }
 
 auto positive_id(const Json& object, std::string_view name) -> std::uint64_t {
   const auto value = number(object, name);
   if (std::trunc(value) != value || value < 1 || value > static_cast<double>(max_request_id))
-    throw InvalidRequest("Expected a positive JavaScript safe integer: " + std::string(name) + '.');
+    throw InvalidRequest(LocalizedReason{
+        std::format("Expected a positive JavaScript safe integer: {}.", name),
+        MessageKey{"messages.request.expectedPositiveId", {{"field", std::string(name)}}}});
   return static_cast<std::uint64_t>(value);
 }
 
 auto boolean(const Json& object, std::string_view name) -> bool {
   const auto& value = field(object, name);
   if (!value.is_boolean())
-    throw InvalidRequest("Expected a boolean: " + std::string(name) + '.');
+    throw InvalidRequest(LocalizedReason{
+        std::format("Expected a boolean: {}.", name),
+        MessageKey{"messages.request.expectedBoolean", {{"field", std::string(name)}}}});
   return value.get<bool>();
 }
 
@@ -123,7 +145,9 @@ auto choice(const Json& object, std::string_view name,
   for (const auto& [label, result] : choices)
     if (value == label)
       return result;
-  throw InvalidRequest("Unsupported value for field: " + std::string(name) + '.');
+  throw InvalidRequest(LocalizedReason{
+      std::format("Unsupported value for field: {}.", name),
+      MessageKey{"messages.request.unsupportedValue", {{"field", std::string(name)}}}});
 }
 
 // A value read by the forms the saved file shares with these commands.
@@ -179,7 +203,8 @@ auto command(const Json& object) -> Command {
     fields(object, {"id", "type", "axis", "direction", "velocity", "held"});
     const auto direction = integer(object, "direction");
     if (direction != -1 && direction != 1)
-      throw InvalidRequest("Jog direction must be -1 or 1.");
+      throw InvalidRequest(LocalizedReason{"Jog direction must be -1 or 1.",
+                                           MessageKey{"messages.request.jogDirection"}});
     return Jog{axis(object), direction, number(object, "velocity"), boolean(object, "held")};
   }
   if (type == "jog_paused_z") {
@@ -221,7 +246,8 @@ auto command(const Json& object) -> Command {
                               {"rename", ProgramFileOperation::rename},
                               {"remove", ProgramFileOperation::remove}});
     if (object.contains("name") != (operation == ProgramFileOperation::rename))
-      throw InvalidRequest("A new file name is required for rename only.");
+      throw InvalidRequest(LocalizedReason{"A new file name is required for rename only.",
+                                           MessageKey{"backend.programFiles.nameForRename"}});
     return ManageProgramFile{operation, string(object, "path"),
                              object.contains("name") ? string(object, "name") : std::string{}};
   }
@@ -245,26 +271,31 @@ auto command(const Json& object) -> Command {
       fields(breakpoint, {"line", "text"});
       const auto line = integer(breakpoint, "line");
       if (line < 1)
-        throw InvalidRequest("A breakpoint requires a positive program line.");
+        throw InvalidRequest(LocalizedReason{"A breakpoint requires a positive program line.",
+                                             MessageKey{"messages.request.breakpointLine"}});
       run.breakpoint = BreakpointRequest{line, string(breakpoint, "text")};
     }
     if ((run.confirmed || run.breakpoint) &&
         (!run.preview_context || !run.display_units))
-      throw InvalidRequest("Confirmation needs the reviewed preview and display units.");
+      throw InvalidRequest(
+          LocalizedReason{"Confirmation needs the reviewed preview and display units.",
+                          MessageKey{"messages.request.confirmationNeeds"}});
     return run;
   }
   if (type == "plan_restart") {
     fields(object, {"id", "type", "line", "preview_context"});
     const int line = integer(object, "line");
     if (line < 1)
-      throw InvalidRequest("Restart requires a positive program line.");
+      throw InvalidRequest(LocalizedReason{"Restart requires a positive program line.",
+                                           MessageKey{"messages.request.restartLine"}});
     return PlanRestart{line, positive_id(object, "preview_context")};
   }
   if (type == "edit_program") {
     fields(object, {"id", "type", "path", "line", "old_text", "new_text"});
     const int line = integer(object, "line");
     if (line < 1)
-      throw InvalidRequest("A program edit requires a positive line.");
+      throw InvalidRequest(LocalizedReason{"A program edit requires a positive line.",
+                                           MessageKey{"messages.request.editLine"}});
     return EditProgram{string(object, "path"), line, string(object, "old_text"),
                        string(object, "new_text")};
   }
@@ -272,7 +303,8 @@ auto command(const Json& object) -> Command {
     fields(object, {"id", "type", "path", "text"}, {"replace", "stamp"});
     SaveProgram save{string(object, "path"), string(object, "text"), false};
     if (save.text.size() > max_saved_program_bytes)
-      throw InvalidRequest("The program text is longer than 512 KiB.");
+      throw InvalidRequest(LocalizedReason{"The program text is longer than 512 KiB.",
+                                           MessageKey{"messages.request.programTooLong"}});
     if (object.contains("replace"))
       save.replace = boolean(object, "replace");
     if (object.contains("stamp"))
@@ -333,14 +365,17 @@ auto command(const Json& object) -> Command {
     fields(object, {"id", "type", "wcs", "offset"});
     const auto& offset = field(object, "offset");
     if (!offset.is_array() || offset.size() != 3)
-      throw InvalidRequest("Work offset must contain three XYZ numbers.");
+      throw InvalidRequest(LocalizedReason{"Work offset must contain three XYZ numbers.",
+                                           MessageKey{"messages.request.workOffsetXyz"}});
     std::array<double, 3> values{};
     for (std::size_t i = 0; i < values.size(); ++i) {
       if (!offset.at(i).is_number())
-        throw InvalidRequest("Work offset must contain three XYZ numbers.");
+        throw InvalidRequest(LocalizedReason{"Work offset must contain three XYZ numbers.",
+                                             MessageKey{"messages.request.workOffsetXyz"}});
       values[i] = offset.at(i).get<double>();
       if (!std::isfinite(values[i]))
-        throw InvalidRequest("Work offsets must be finite.");
+        throw InvalidRequest(LocalizedReason{"Work offsets must be finite.",
+                                             MessageKey{"messages.request.workOffsetsFinite"}});
     }
     return SetWorkOffset{integer(object, "wcs"), values};
   }
@@ -482,16 +517,22 @@ auto command(const Json& object) -> Command {
     }
     return assignment;
   }
-  throw InvalidRequest("Unknown protocol v1 command.");
+  throw InvalidRequest(LocalizedReason{"Unknown protocol v1 command.",
+                                       MessageKey{"messages.request.unknownCommand"}});
+}
+
+auto request_too_long() -> DecodeError {
+  return {std::nullopt, "Request exceeds the 16 KiB limit.",
+          MessageKey{"messages.request.tooLong"}};
 }
 } // namespace
 
 auto decode_request(std::string_view json) -> DecodedRequest {
-  constexpr auto too_long = "Request exceeds the 16 KiB limit.";
   if (json.size() > max_save_program_request_bytes)
-    return DecodeError{std::nullopt, too_long};
+    return request_too_long();
   if (json.find('\0') != std::string_view::npos)
-    return DecodeError{std::nullopt, "Invalid JSON request."};
+    return DecodeError{std::nullopt, "Invalid JSON request.",
+                       MessageKey{"messages.request.invalidJson"}};
   std::optional<RequestId> id;
   try {
     if (json.size() > max_request_bytes) {
@@ -499,19 +540,20 @@ auto decode_request(std::string_view json) -> DecodedRequest {
       // save. JSON can put the fields in any order. The full parser still validates every key.
       const auto first = json.find_first_not_of(" \t\r\n");
       if (first == std::string_view::npos || json[first] != '{')
-        return DecodeError{std::nullopt, too_long};
+        return request_too_long();
       const auto header = Json::parse(json.begin(), json.end(),
           [](int depth, Json::parse_event_t event, const Json& value) -> bool {
             using Event = Json::parse_event_t;
             if ((event == Event::object_start || event == Event::array_start) &&
                 depth >= max_request_depth)
-              throw InvalidRequest("Request nesting limit exceeded.");
+              throw InvalidRequest(LocalizedReason{"Request nesting limit exceeded.",
+                                                   MessageKey{"messages.request.nestingLimit"}});
             if (event == Event::key)
               return depth == 1 && value == "type";
             return depth == 0 || event == Event::value || event == Event::object_end;
           });
       if (!header.is_object() || header.value("type", Json{}) != "save_program")
-        return DecodeError{std::nullopt, too_long};
+        return request_too_long();
     }
     const auto object = parse(json);
     id = request_id(object);
@@ -520,7 +562,7 @@ auto decode_request(std::string_view json) -> DecodedRequest {
     return DecodeError{id, error.what(), error.localization};
   } catch (const Json::exception&) {
     // Parser diagnostics can contain arbitrary input. Keep the operator message bounded.
-    return DecodeError{id, "Invalid JSON request."};
+    return DecodeError{id, "Invalid JSON request.", MessageKey{"messages.request.invalidJson"}};
   }
 }
 

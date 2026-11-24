@@ -55,6 +55,8 @@ A hello with a different protocol version puts the panel in an incompatible conn
 
 A rejected `result` may include `refusal`. Operator `message` records, non-accepted results, `alarm_log.entries`, `preview.error`, and `operator_settings` may include `localization` with the same shape. Each carries a catalog `key` and `params`, an object of named string arguments. Static messages use an empty object. English `reason` and `text` continue to be sent. The panel translates by key when it recognizes the key and its expected arguments. It uses the fallback text for older peers, unknown keys, and invalid arguments. The alarm log retains the optional metadata across reloads with the same version 1 format.
 
+When the decoder has a catalog key and an unambiguous request ID, the rejected result carries the key. Field names are supplied as text parameters. Invalid requests without a usable ID are reported with the `messages.session.requestIgnored` operator message and its detail.
+
 Reconnect (`ready`), abort, jog-stop-all, held-jog release and software E-stop requests remain available as attempts. Their outcomes are not trusted while the protocol is incompatible, and unanswered attempts retain the normal timeout reporting. `set_machine: off` is not exempt: it can reset an E-stop, so it cannot be treated as an unconditional stop request here. Compatible protocol v1 behavior is unchanged.
 
 ## Machine-capability additions, 14 November 2026

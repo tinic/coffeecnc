@@ -188,8 +188,11 @@ function pageMeasure(themes, allowed) {
   return { findings, rows }
 }
 
-// A list row in its hover state (forced through DevTools): no outline, and a tone of 1.1:1 or more from the surface.
-function pageHover(themes, sig) {
+// A list row in its hover state (forced through DevTools): no outline, and a tone of 1.1:1 or more
+// from the surface. It reads the element DevTools forced, and returns null when that element has
+// left the page or become disabled since: the state moved on, and a disabled row has no hover tone.
+function pageHover(el, themes, sig) {
+  if (!el.isConnected || el.matches(':disabled, [aria-disabled="true"]')) return null
   const parse = (value) => {
     let m = /rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)/.exec(value)
     if (m) return [Number(m[1]) / 255, Number(m[2]) / 255, Number(m[3]) / 255, m[4] === undefined ? 1 : Number(m[4])]
@@ -201,8 +204,6 @@ function pageHover(themes, sig) {
   const lum = (c) => c.slice(0, 3).map((v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4))
     .reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0)
   const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)]; return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05) }
-  const el = [...document.querySelectorAll('button, summary, [role=button], a.button, label.choice')].find((c) => c.checkVisibility() && window.__sig(c) === sig)
-  if (!el) return []
   const under = () => {
     const stack = []
     for (let node = el.parentElement; node; node = node.parentElement) {
@@ -389,18 +390,28 @@ async function main() {
               if (hovered.has(row.sig)) continue
               hovered.add(row.sig)
               // Force :hover on the row through DevTools: a pointer move is not reliable in headless Chrome.
-              const handle = await page.call('Runtime.evaluate', {
-                expression: `[...document.querySelectorAll('button, summary, [role=button], a.button, label.choice')].find((c) => c.checkVisibility() && window.__sig(c) === ${JSON.stringify(row.sig)})`,
-              })
-              const objectId = handle.result?.result?.objectId
-              if (!objectId) continue
-              await page.call('DOM.getDocument', { depth: 0 })
-              const node = await page.call('DOM.requestNode', { objectId })
-              const nodeId = node.result?.nodeId
-              if (!nodeId) continue
-              await page.call('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: ['hover'] })
-              for (const finding of await page.run(pageHover, themes, row.sig)) await record(finding, null)
-              await page.call('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: [] })
+              // The force and the reading act on the same element object, so a re-render in between
+              // cannot swap in an element without the forced state.
+              for (let attempt = 0; attempt < 3; attempt++) {
+                const handle = await page.call('Runtime.evaluate', {
+                  expression: `[...document.querySelectorAll('button, summary, [role=button], a.button, label.choice')].find((c) => c.checkVisibility() && !c.matches(':disabled, [aria-disabled="true"]') && window.__sig(c) === ${JSON.stringify(row.sig)})`,
+                })
+                const objectId = handle.result?.result?.objectId
+                if (!objectId) break
+                await page.call('DOM.getDocument', { depth: 0 })
+                const nodeId = (await page.call('DOM.requestNode', { objectId })).result?.nodeId
+                if (!nodeId) break
+                await page.call('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: ['hover'] })
+                const reply = await page.call('Runtime.callFunctionOn', {
+                  objectId, functionDeclaration: `function (themes, sig) { return (${pageHover.toString()})(this, themes, sig) }`, arguments: [{ value: themes }, { value: row.sig }], returnByValue: true,
+                })
+                await page.call('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: [] })
+                if (reply.result?.exceptionDetails) throw new Error(reply.result.exceptionDetails.exception?.description ?? 'page error')
+                const hover = reply.result?.result?.value
+                if (hover === null || hover === undefined) continue
+                for (const finding of hover) await record(finding, null)
+                break
+              }
             }
             if (job.path.length < maxDepth) {
               for (const sig of await page.run(pageClickables, noClick)) {

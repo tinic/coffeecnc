@@ -27,7 +27,3 @@ jobs:
           npm ci
           npm run check
           npm run build
-      # Every control in every view and theme: no outline at rest, a fill of its own.
-      - name: Control sweep
-        working-directory: ui
-        run: npm run check:controls

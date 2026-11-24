@@ -277,7 +277,7 @@ describe('native and store sentences', () => {
   })
 
   it('keeps native message keys, fallback text and named arguments in sync', () => {
-    const sources = { ...native, ...adapter }
+    const sources = { ...native, ...adapter, '../../backend/src/linuxcnc/src/program_watch.cpp': programWatch }
     const constantsByFile = new Map<string, Map<string, string>>()
     for (const [path, source] of Object.entries(sources)) {
       const constants = new Map<string, string>()

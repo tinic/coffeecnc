@@ -129,7 +129,7 @@ struct HelperOutput {
   // Why the reading ended before an `end` that fits the records: the text is not what a
   // helper writes. Empty for a result that is whole, and for one that only stops short (a
   // helper that was ended): then `end` is missing and nothing more.
-  std::string defect;
+  LocalizedReason defect;
   std::optional<RestartPoint> restart;
   std::string restart_blocked;
   std::optional<MessageKey> restart_blocked_localization{};

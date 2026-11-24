@@ -31,6 +31,7 @@ const adapter = import.meta.glob<string>([
   '../../backend/src/app/src/diagnostics_feed.cpp',
   '../../backend/src/linuxcnc/src/preview_engine.cpp',
   '../../backend/src/linuxcnc/src/preview_wire.cpp',
+  '../../backend/src/linuxcnc/src/preview_wire.cpp',
   '../../backend/src/app/src/machine_data.cpp',
   '../../backend/src/app/src/backup_archive.cpp',
   '../../backend/src/app/src/restore_helper.cpp',
@@ -370,6 +371,16 @@ describe('translateMessage', () => {
     expect(translateMessage(fallback, {
       ...localization, params_localization: { detail: { ...detail, params: {} } },
     })).toBe('Anfrage der Bedienoberfläche ignoriert: Bad packet.')
+  })
+
+  it('translates the invalid preview result and its parser detail', async () => {
+    await setLanguage('fr')
+    const fallback = "The preview program's result is not valid (a record of an unknown kind); the path is shown as far as it was."
+    expect(translateMessage(fallback, {
+      key: 'backend.previewEngine.invalidResult',
+      params: { detail: 'a record of an unknown kind' },
+      params_localization: { detail: { key: 'backend.previewWire.unknownRecord', params: {} } },
+    })).toBe('Le résultat du programme d’aperçu n’est pas valide (un enregistrement de type inconnu) ; le parcours est affiché jusqu’où il a été reçu.')
   })
 
   it('uses a structured key for a timeout without matching its English reason', async () => {

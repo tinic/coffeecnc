@@ -289,6 +289,18 @@ auto encoded_messages() -> std::vector<EncodedMessage> {
           {{"detail", {"backend.previewEngine.stopFileWritingComment", {{"word", "log,"}}}}}}};
   messages.push_back(encode_preview(blocked));
 
+  Preview invalid;
+  invalid.context = 4821341;
+  invalid.state = PreviewState::failed;
+  invalid.error =
+      PreviewError{0,
+                   "The preview program's result is not valid (a record of an unknown kind); "
+                   "the path is shown as far as it was.",
+                   MessageKey{"backend.previewEngine.invalidResult",
+                              {{"detail", "a record of an unknown kind"}},
+                              {{"detail", {"backend.previewWire.unknownRecord"}}}}};
+  messages.push_back(encode_preview(invalid));
+
   const PreviewSegment approach{4, MoveKind::rapid, 3, {{0, 0, 10}, {0, 0, 2}}};
   const PreviewSegment cut{
       5, MoveKind::feed, 3, {{0, 0, 2}, {0, 0, -1.5}, {30, 0, -1.5}, {30, 20.5, -1.5}}, 450};

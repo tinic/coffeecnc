@@ -38,30 +38,13 @@ auto bounded(std::string text, std::size_t limit) -> std::string {
   return text;
 }
 
-auto parameter_key(const Json& metadata) -> std::optional<MessageParameterKey> {
-  if (!metadata.is_object())
-    return std::nullopt;
-  const auto key = metadata.find("key");
-  const auto params = metadata.find("params");
-  if (key == metadata.end() || !key->is_string() || key->get<std::string_view>().empty() ||
-      params == metadata.end() || !params->is_object())
-    return std::nullopt;
-  MessageParameterKey message{key->get<std::string>()};
-  for (const auto& [name, arg] : params->items()) {
-    if (!arg.is_string())
-      return std::nullopt;
-    message.params.emplace(name, arg.get<std::string>());
-  }
-  return message;
-}
-
 // Ignore invalid optional metadata so an older or edited record keeps its English text.
 auto localization_of(const Json& value, std::string_view field) -> std::optional<MessageKey> {
   const auto metadata = value.find(field);
   if (metadata == value.end() || !metadata->is_object() ||
       dump(*metadata).size() > AlarmLog::max_text_bytes)
     return std::nullopt;
-  auto parsed = parameter_key(*metadata);
+  auto parsed = message_parameter_from_json(*metadata);
   if (!parsed)
     return std::nullopt;
   MessageKey message{std::move(parsed->key), std::move(parsed->params)};
@@ -69,7 +52,7 @@ auto localization_of(const Json& value, std::string_view field) -> std::optional
   if (keys != metadata->end() && keys->is_object())
     for (const auto& [name, key] : keys->items())
       if (message.params.contains(name))
-        if (auto parameter = parameter_key(key))
+        if (auto parameter = message_parameter_from_json(key))
           message.params_localization.emplace(name, std::move(*parameter));
   return message;
 }

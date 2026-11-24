@@ -868,6 +868,26 @@ void helper_waits_for_linuxcnc() {
           "It writes once LinuxCNC has stopped: " + outcome.line);
 }
 
+void restore_notices_accept_older_and_invalid_metadata() {
+  Fixture f;
+  Json result{{"ok", false}, {"reason", "The prepared restore is damaged."}};
+  for (const auto& metadata : {Json(nullptr), Json{{"key", "backend.machineData.damagedPlan"},
+                                                   {"params", {{"wrong", true}}}}}) {
+    if (!metadata.is_null())
+      result["reason_localization"] = metadata;
+    f.disk.files[in_staging("result.json")] = result.dump();
+    f.open();
+    const auto notice = f.machine->take_notice();
+    require(notice && notice->error &&
+                notice->text == "The restore was not completed: The prepared restore is damaged. "
+                                "The files are as they were." &&
+                notice->localization ==
+                    MessageKey{"backend.machineData.notCompleted",
+                               {{"detail", "The prepared restore is damaged."}}},
+            "An old restore record or invalid metadata keeps the English detail.");
+  }
+}
+
 // Re-review #274, 1: the window drops a close when the page changed after the quit was decided,
 // and a later normal exit wrote the old plan; the .var is not compared, so the backup's offsets
 // replaced newer ones. The plan says when it was staged and for which page; the helper refuses
@@ -895,9 +915,13 @@ void stale_plan_refused() {
   require(!f.disk.files.contains(in_staging("plan.json")), "and the plan is not tried again");
   f.open();
   const auto notice = f.machine->take_notice();
-  require(notice && notice->error && notice->text.find("more than 120 s") != std::string::npos &&
-              notice->text.ends_with("The files are as they were."),
-          "The next start says so: " + (notice ? notice->text : std::string{}));
+  require(
+      notice && notice->error && notice->text.find("more than 120 s") != std::string::npos &&
+          notice->text.ends_with("The files are as they were.") && notice->localization &&
+          notice->localization->params_localization ==
+              std::map<std::string, MessageParameterKey>{
+                  {"detail", {"backend.machineData.stale", {{"age", "181"}, {"limit", "120"}}}}},
+      "The next start says so: " + (notice ? notice->text : std::string{}));
   // The run ended at once, and LinuxCNC took long to stop: the end of the run counts.
   f.stage(path);
   hooks.ended = BootTime{"boot-1", 1h + 5s};
@@ -1337,6 +1361,7 @@ auto main(int argc, char** argv) -> int {
     start_check_under_lock();
     helper_waits_for_linuxcnc();
     stale_plan_refused();
+    restore_notices_accept_older_and_invalid_metadata();
     data_decided_after_exit();
     missing_folder_refused();
     links_and_groups();

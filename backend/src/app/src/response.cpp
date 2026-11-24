@@ -103,8 +103,12 @@ auto encode_result(RequestId id, CommandOutcome outcome, std::string_view reason
                                          {"rows", map->rows},
                                          {"rotation", map->rotation_deg},
                                          {"points", std::move(points)}};
-      if (map->partial)
-        message["setter"]["height_map"]["partial"] = *map->partial;
+      if (map->partial) {
+        auto& height_map = message["setter"]["height_map"];
+        height_map["partial"] = *map->partial;
+        if (map->partial_localization)
+          height_map["partial_localization"] = message_key_json(*map->partial_localization);
+      }
     }
     if (const auto& measured = setter->measured) {
       const auto direction = [](ProbeDirection d) {

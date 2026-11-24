@@ -3291,10 +3291,14 @@ void run(const std::string& ini, std::string_view scenario) {
   auto invalid_move = move;
   invalid_move.travel_mm = 16;
   const auto commands_before = port->writes().size();
-  require(!port->probe_fixed_setter(invalid_move, {}) && port->writes().size() == commands_before,
+  const auto refused_move = port->probe_fixed_setter(invalid_move, {});
+  require(!refused_move &&
+              refused_move.error().localization ==
+                  MessageKey{"backend.nmlPort.probeExceedsSetter"} &&
+              port->writes().size() == commands_before,
           "travel beyond the configured limit sends no command");
   const auto contact = port->probe_fixed_setter(move, {});
-  require(contact.has_value(), contact ? "native fixed setter completed" : contact.error());
+  require(contact.has_value(), contact ? "native fixed setter completed" : contact.error().text);
   require(std::abs(contact->machine[2] - 10) < 0.03, "native latch is in machine millimetres");
   std::cout << std::format("fact=stopping_distance_mm={:.6f}\n", contact->stopping_distance);
   require(contact->stopping_distance > 0.001 && contact->stopping_distance < 0.1,

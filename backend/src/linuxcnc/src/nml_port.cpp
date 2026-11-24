@@ -106,7 +106,7 @@ void save_touched(const std::string& file, const TouchedOff& touched) {
 // The touch probe's runout compensation (#247) while it still holds: for that probe, and
 // against the ball diameter the tool table gives it now.
 auto current_runout(const MachineConfig& config,
-                    const std::expected<std::string, std::string>& table)
+                    const std::expected<std::string, LocalizedReason>& table)
     -> std::optional<ProbeRunout> {
   if (!config.touch_probe_tool || !table)
     return std::nullopt;

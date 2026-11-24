@@ -659,9 +659,9 @@ public:
   std::vector<std::pair<std::uint64_t, bool>> watches;
   std::vector<HalTool> launched;
   std::vector<std::uint64_t> ended;
-  std::optional<std::string> refusal;
+  std::optional<LocalizedReason> refusal;
   void watch(PageToken page, bool on) override { watches.emplace_back(page.value, on); }
-  auto launch(HalTool tool) -> std::optional<std::string> override {
+  auto launch(HalTool tool) -> std::optional<LocalizedReason> override {
     launched.push_back(tool);
     return refusal;
   }
@@ -695,13 +695,16 @@ void diagnostics_go_to_their_service() {
               diagnostics.watches == std::vector<std::pair<std::uint64_t, bool>>{{page.value, true}},
           "The watch is accepted at once, in E-stop with the link down");
   answer = send(page, R"("type":"launch_hal_tool","tool":"halscope")");
-  require(answer.at("outcome") == "accepted" &&
+  require(answer.at("outcome") == "accepted" && !answer.contains("refusal") &&
               diagnostics.launched == std::vector<HalTool>{HalTool::halscope},
           "A HAL tool is started by the service");
-  diagnostics.refusal = "halscope is already open.";
+  const MessageKey already_open{"backend.halDiagnostics.alreadyOpen", {{"name", "halscope"}}};
+  diagnostics.refusal = LocalizedReason{"halscope is already open.", already_open};
   answer = send(page, R"("type":"launch_hal_tool","tool":"halscope")");
-  require(answer.at("outcome") == "rejected" && answer.at("reason") == "halscope is already open.",
-          "The service's refusal is the result");
+  require(
+      answer.at("outcome") == "rejected" && answer.at("reason") == "halscope is already open." &&
+          answer.at("refusal") == Json{{"key", already_open.key}, {"params", already_open.params}},
+      "The refusal carries the service's key, name, and original reason");
   answer = send(page, R"("type":"watch_diagnostics","on":false)");
   require(answer.at("outcome") == "accepted" && diagnostics.watches.back() ==
                                                     std::pair<std::uint64_t, bool>{page.value, false},
@@ -899,6 +902,12 @@ void decode_errors() {
   Rig rig;
   rig.expect(R"("type":"set_mode","mode":"auto")", "rejected", "Unknown protocol v1 command.");
   rig.expect(R"("type":"run","line":100)", "rejected", "Unexpected field in request.");
+  const auto missing = results(rig.send(R"("type":"open_program")"));
+  require(missing.size() == 1 && missing.front().at("outcome") == "rejected" &&
+              missing.front().at("reason") == "Missing required field: path." &&
+              missing.front().at("refusal") ==
+                  Json{{"key", "messages.request.missingField"}, {"params", {{"field", "path"}}}},
+          "An invalid command with an ID carries its field as a catalog parameter");
   require(rig.port.calls.empty() && rig.port.snapshots == 0,
           "Invalid requests reach no controller");
   const auto seen = rig.next_id - 1;
@@ -1152,8 +1161,13 @@ void directory_listing() {
              "Path is not available: No such file or directory");
   rig.expect(R"("type":"list_directory","path":"part.ngc")", "rejected",
              "Path is not a directory.");
-  rig.expect(R"("type":"list_directory","path":"locked")", "rejected",
-             "Directory cannot be read: Permission denied");
+  const auto denied = results(rig.send(R"("type":"list_directory","path":"locked")"));
+  require(denied.size() == 1 && denied.front().at("outcome") == "rejected" &&
+              denied.front().at("reason") == "Directory cannot be read: Permission denied" &&
+              denied.front().at("localization") ==
+                  Json{{"key", "backend.programStore.folderUnreadable"},
+                       {"params", {{"detail", "Permission denied"}}}},
+          "A directory error carries the original detail and its catalog key");
   rig.acted({}, "A refused listing is not a controller action either");
 
   // The listing does not need the machine.
@@ -2349,7 +2363,7 @@ public:
   auto check_restore(const std::string&) -> MachineDataAnswer override { return {}; }
   std::uint64_t page = 0; // of the last restore
   auto restore(const std::string&, const std::string&, std::uint64_t asked,
-               const std::function<std::string()>&) -> MachineDataAnswer override {
+               const std::function<LocalizedReason()>&) -> MachineDataAnswer override {
     if (during)
       during();
     ++staged;
@@ -2935,7 +2949,8 @@ void editor_saves_over_the_loaded_program() {
   const auto stale = send(save(part, program_stamp("G0 X0\nM2\n")));
   require(stale.at("outcome") == "failed" &&
               stale.at("reason") ==
-                  "The program file changed since it was opened. Open it again to edit it.",
+                  "The program file changed since it was opened. Open it again to edit it." &&
+              stale.at("localization").at("key") == "backend.programEdit.changedSinceOpened",
           "A file changed since it was opened is not written over: " + stale.dump());
   require(disk.files.at(part) == before && port.calls.empty(),
           "Nothing is written and nothing opened while refused");
@@ -2947,8 +2962,10 @@ void editor_saves_over_the_loaded_program() {
   const auto started = send(save(part, stamp));
   require(started.at("outcome") == "failed" &&
               started.at("reason") == "Stop the program before saving it." &&
+              started.at("localization").at("key") == "messages.policy.stopBeforeSave" &&
               disk.files.at(part) == before && port.calls.empty(),
-          "A program that starts during the temporary-file sync prevents replacement: " + started.dump());
+          "A program that starts during the temporary-file sync prevents replacement: " +
+              started.dump());
   writes.during = {};
   port.state.interp = InterpState::idle;
 
@@ -2964,6 +2981,9 @@ void editor_saves_over_the_loaded_program() {
   require(refused_reopen.at("outcome") == "failed" &&
               refused_reopen.at("reason") ==
                   "Saved on disk, but not reopened. LinuxCNC refused the open." &&
+              refused_reopen.at("localization") ==
+                  Json{{"key", "messages.session.savedNotReopened"},
+                       {"params", {{"detail", "LinuxCNC refused the open."}}}} &&
               disk.files.at(part) == "G0 X2\nM2\n",
           "A reopen failure reports the disk save separately: " + refused_reopen.dump());
 }

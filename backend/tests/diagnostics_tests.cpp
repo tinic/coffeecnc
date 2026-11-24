@@ -131,7 +131,7 @@ void feed_reads_only_while_watched() {
            ++reads;
            return sample();
          },
-         .launch = [&](HalTool tool) -> std::optional<std::string> {
+         .launch = [&](HalTool tool) -> std::optional<LocalizedReason> {
            launched.push_back(tool);
            return std::nullopt;
          }},
@@ -188,7 +188,10 @@ void feed_reads_only_while_watched() {
   require(posted.count() == at_close, "Nothing after the feed is gone");
 
   DiagnosticsFeed bare{{}, [](PageToken, const std::vector<std::string>&) -> void {}, period};
-  require(bare.launch(HalTool::halscope).has_value(), "No launcher: a refusal, never a start");
+  const auto unavailable = bare.launch(HalTool::halscope);
+  require(unavailable && unavailable->text == "HAL tools cannot be started here." &&
+              unavailable->localization == MessageKey{"backend.halDiagnostics.cannotStart"},
+          "A feed without a launcher returns the fallback text and key");
 }
 
 } // namespace

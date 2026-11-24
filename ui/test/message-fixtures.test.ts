@@ -297,7 +297,17 @@ const examples = [
       "M4"
     ],
     "program_units": "mm",
-    "probe_input": false
+    "probe_input": false,
+    "paused_z": {
+      "offset": 0,
+      "max_lift": 20,
+      "displaced": false,
+      "reason": "Pause a running program before jogging Z.",
+      "localization": {
+        "key": "backend.nmlStatus.pauseFirst",
+        "params": {}
+      }
+    }
   },
   {
     "type": "status",
@@ -1068,7 +1078,11 @@ const examples = [
     "type": "result",
     "id": 43,
     "outcome": "failed",
-    "reason": "LinuxCNC reported an error."
+    "reason": "LinuxCNC reported an error.",
+    "localization": {
+      "key": "backend.nmlPort.reportedError",
+      "params": {}
+    }
   },
   {
     "type": "result",
@@ -1084,6 +1098,16 @@ const examples = [
     "localization": {
       "key": "messages.session.linuxcncNoAnswer",
       "params": {}
+    }
+  },
+  {
+    "type": "result",
+    "id": 48,
+    "outcome": "failed",
+    "reason": "A program named part.ngc exists already.",
+    "localization": {
+      "key": "backend.programEdit.exists",
+      "params": { "name": "part.ngc" }
     }
   },
   {
@@ -1113,6 +1137,16 @@ const examples = [
         30
       ],
       "approach_feed": 300
+    }
+  },
+  {
+    "type": "result",
+    "id": 49,
+    "outcome": "rejected",
+    "reason": "Missing required field: path.",
+    "refusal": {
+      "key": "messages.request.missingField",
+      "params": { "field": "path" }
     }
   },
   {
@@ -1445,6 +1479,17 @@ const examples = [
     "entries": []
   },
   {
+    "type": "offset_history",
+    "revision": 2,
+    "storage": "saved",
+    "reason": "The saved offset history was damaged and starts empty. The damaged file is kept as offset-history.json.corrupt.",
+    "entries": [],
+    "localization": {
+      "key": "backend.offsetHistory.damagedKept",
+      "params": { "file": "offset-history.json.corrupt" }
+    }
+  },
+  {
     "type": "alarm_log",
     "storage": "saved",
     "reason": "",
@@ -1459,14 +1504,27 @@ const examples = [
   },
   {
     "type": "alarm_log",
+    "storage": "saved",
+    "reason": "The alarm log could not be saved: No space left on device",
+    "session": 3,
+    "skipped": 0,
+    "entries": [],
+    "localization": {
+      "key": "backend.alarmLog.notSaved",
+      "params": { "detail": "No space left on device" }
+    }
+  },
+  {
+    "type": "alarm_log",
     "storage": "session_only",
     "reason": "No machine identity configured",
     "session": 1,
     "skipped": 0,
     "entries": []
   },
-  {"type": "backup_written", "path": "/media/cnc/STICK/coffeecnc-G0759-20261123-140200.tar.gz", "files": 8, "bytes": 5321, "not_included": [{"path": "LIB:basic_sim.tcl", "reason": "a HAL file of LinuxCNC's own library"}]},
+  {"type": "backup_written", "path": "/media/cnc/STICK/coffeecnc-G0759-20261123-140200.tar.gz", "files": 8, "bytes": 5321, "not_included": [{"path": "LIB:basic_sim.tcl", "reason": "a HAL file of LinuxCNC's own library", "localization": {"key": "backend.machineData.libHal", "params": {}}}]},
   {"type": "backup_written", "path": "/home/cnc/coffeecnc-machine-20261123-140200.tar.gz", "files": 3, "bytes": 1024, "not_included": []},
+  {"type": "result", "id": 31, "outcome": "accepted", "reason": "Nothing to restore: every file is the same.", "localization": {"key": "backend.machineData.nothing", "params": {}}},
   {"type": "restore_summary", "path": "/media/cnc/STICK/coffeecnc-G0759-20261123-140200.tar.gz", "token": "3f1c8e0a9b2d4c75", "machine_id": "G0759", "created": 1795960920000, "files": [{"role": "ini", "name": "config/g0759.ini", "target": "/home/cnc/linuxcnc/configs/g0759/g0759.ini", "change": "same", "bytes": 4012, "symlink": false}, {"role": "hal", "name": "config/g0759.hal", "target": "/home/cnc/linuxcnc/configs/g0759/g0759.hal", "change": "changed", "bytes": 2210, "symlink": true}, {"role": "tool_table", "name": "tool-table/tool.tbl", "target": "/home/cnc/linuxcnc/configs/g0759/tool.tbl", "change": "changed", "bytes": 310, "symlink": false}, {"role": "parameters", "name": "parameters/g0759.var", "target": "/home/cnc/linuxcnc/configs/g0759/g0759.var", "change": "at_exit", "bytes": 1882, "symlink": false}, {"role": "data", "name": "data/tool-models.json", "target": "/home/cnc/.local/share/coffeecnc/G0759/tool-models.json", "change": "new", "bytes": 512, "symlink": false}]},
   {"type": "restore_summary", "path": "/home/cnc/old.tar.gz", "token": "0000000000000001", "machine_id": null, "created": 0, "files": [{"role": "ini", "name": "config/mill.ini", "target": "/home/cnc/linuxcnc/configs/mill/mill.ini", "change": "same", "bytes": 10, "symlink": false}]},
   {
@@ -1486,6 +1544,16 @@ const examples = [
       { "tool": "halmeter", "available": true, "open": true },
       { "tool": "halscope", "available": false, "open": false }
     ]
+  },
+  {
+    "type": "result",
+    "id": 50,
+    "outcome": "rejected",
+    "reason": "halscope is not installed: it is not in the search path (/usr/bin:/bin).",
+    "refusal": {
+      "key": "backend.halDiagnostics.notInstalled",
+      "params": { "name": "halscope", "path": "/usr/bin:/bin" }
+    }
   }
 ] satisfies FromMachine[]
 

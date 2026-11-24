@@ -686,7 +686,7 @@
       "notInstalled": "{name} n’est pas installé : il n’est pas dans le chemin de recherche ({path}).",
       "alreadyOpen": "{name} est déjà ouvert.",
       "notStarted": "{name} n’a pas pu être démarré.",
-      "notStartedBecause": "{name} n’a pas pu être démarré : {error}.",
+      "notStartedBecause": "{name} n’a pas pu être démarré : {system_error}.",
       "cannotStart": "Les outils HAL ne peuvent pas être démarrés ici."
     }
   }

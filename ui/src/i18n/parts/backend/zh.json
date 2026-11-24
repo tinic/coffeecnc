@@ -686,7 +686,7 @@
       "notInstalled": "{name} 未安装：它不在搜索路径中（{path}）。",
       "alreadyOpen": "{name} 已经打开。",
       "notStarted": "无法启动 {name}。",
-      "notStartedBecause": "无法启动 {name}：{error}。",
+      "notStartedBecause": "无法启动 {name}：{system_error}。",
       "cannotStart": "此处无法启动 HAL 工具。"
     }
   }

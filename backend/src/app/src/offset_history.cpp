@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <format>
 #include <iterator>
 #include <limits>
 #include <stdexcept>
@@ -138,7 +139,7 @@ auto entry_from(const Json& value) -> HistoryEntry {
 } // namespace
 
 OffsetHistoryStore::OffsetHistoryStore(ToolModelFiles& files, std::string directory,
-                                       std::string unsaved_reason)
+                                       LocalizedReason unsaved_reason)
     : files_(files), directory_(std::move(directory)), saved_(!directory_.empty()) {
   if (saved_)
     load();
@@ -151,8 +152,10 @@ void OffsetHistoryStore::load() {
   const auto path = directory_ + '/' + std::string(file_name);
   const auto content = files_.read(path, max_file_bytes);
   if (!content) {
-    reason_ = "The saved offset history cannot be read (" + content.error() +
-              "). The history starts empty.";
+    reason_ = {
+        std::format("The saved offset history cannot be read ({}). The history starts empty.",
+                    content.error()),
+        MessageKey{"backend.offsetHistory.cannotRead", {{"detail", content.error()}}}};
     load_notice_ = reason_;
     return;
   }
@@ -213,9 +216,16 @@ void OffsetHistoryStore::load() {
     // written over: the operator may want what is in it.
     const auto aside = directory_ + '/' + std::string(corrupt_name);
     const auto moved = files_.rename(path, aside);
-    reason_ = moved ? "The saved offset history was damaged and starts empty. The damaged file "
-                      "is kept as " + std::string(corrupt_name) + "."
-                    : "The saved offset history was damaged and starts empty.";
+    if (moved) {
+      reason_ = {
+          std::format("The saved offset history was damaged and starts empty. The damaged file "
+                      "is kept as {}.",
+                      corrupt_name),
+          MessageKey{"backend.offsetHistory.damagedKept", {{"file", std::string(corrupt_name)}}}};
+    } else {
+      reason_ = {"The saved offset history was damaged and starts empty.",
+                 MessageKey{"backend.offsetHistory.damaged"}};
+    }
     load_notice_ = reason_;
   }
 }
@@ -255,7 +265,9 @@ void OffsetHistoryStore::publish() {
   auto history = std::make_shared<OffsetHistory>();
   history->revision = revision_++;
   history->saved = saved_;
-  history->reason = save_error_.empty() ? reason_ : save_error_;
+  const auto& reason = save_error_.empty() ? reason_ : save_error_;
+  history->reason = reason.text;
+  history->localization = reason.localization;
   history->entries = entries_;
   snapshot_ = std::move(history);
 }
@@ -400,7 +412,8 @@ void OffsetHistoryStore::observe(PanelReading& reading, std::chrono::millisecond
       }
     }
     if (!load_notice_.empty()) {
-      reading.messages.push_back({true, std::exchange(load_notice_, {})});
+      auto notice = std::exchange(load_notice_, {});
+      reading.messages.push_back({true, std::move(notice.text), std::move(notice.localization)});
     }
     if (saved_ && (entries_due_ || (seen_due_ && now >= write_after_))) {
       entries_due_ = false;
@@ -449,14 +462,18 @@ void OffsetHistoryStore::observe(PanelReading& reading, std::chrono::millisecond
     if (!step)
       files_.discard(temporary);
     const std::scoped_lock lock{mutex_};
-    const auto error = step ? std::string{} : "The offset history could not be saved: " + step.error();
+    auto error =
+        step ? LocalizedReason{}
+             : LocalizedReason{
+                   std::format("The offset history could not be saved: {}", step.error()),
+                   MessageKey{"backend.offsetHistory.notSaved", {{"detail", step.error()}}}};
     // Not written: tried again after write_period.
     if (!error.empty())
       seen_due_ = true;
-    if (error != save_error_) {
+    if (error.text != save_error_.text) {
       if (!error.empty())
-        reading.messages.push_back({true, error});
-      save_error_ = error;
+        reading.messages.push_back({true, error.text, error.localization});
+      save_error_ = std::move(error);
       publish();
     }
   }

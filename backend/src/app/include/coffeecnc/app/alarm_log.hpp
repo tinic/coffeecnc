@@ -52,6 +52,7 @@ struct AlarmLogView {
   std::uint64_t session{};
   std::uint64_t skipped{}; // lines of the files that could not be read
   std::vector<AlarmRecord> entries;
+  std::optional<MessageKey> localization{}; // of reason
 };
 
 // Wire text of the `alarm_log` message. Text that is not UTF-8 is replaced.
@@ -112,7 +113,7 @@ public:
   // An empty directory: this run only, `unsaved_reason` says why. The files, `deliver` and
   // `lock` must outlive the log. Starts the writer, which finds the lock (with `lock`, else
   // through `files`) and then reads the files.
-  AlarmLog(ToolModelFiles& files, std::string directory, std::string unsaved_reason,
+  AlarmLog(ToolModelFiles& files, std::string directory, LocalizedReason unsaved_reason,
            Deliver deliver, Lock lock = {});
   // Appends what waits, once, and joins the writer.
   ~AlarmLog();
@@ -167,7 +168,7 @@ private:
   std::map<std::pair<std::uint64_t, std::uint64_t>, std::string> commands_; // by page, id
   std::optional<std::pair<PageToken, std::uint64_t>> snapshot_due_;         // page, order
   std::optional<Clock::time_point> retry_at_;
-  std::string reason_;
+  LocalizedReason reason_;
   // Writer only.
   bool own_lock_{}; // taken through files_
   // Bytes of the current file that appends which worked wrote (or that were read at start);

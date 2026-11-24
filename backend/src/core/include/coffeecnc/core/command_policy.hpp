@@ -58,6 +58,7 @@ struct PausedZStatus {
   bool feedback_available{};
   std::string reason;
   PausedSpindle spindle{};
+  std::optional<MessageKey> localization{}; // of reason
   friend auto operator==(const PausedZStatus&, const PausedZStatus&) -> bool = default;
 };
 

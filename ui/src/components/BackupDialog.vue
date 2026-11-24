@@ -5,9 +5,9 @@
 import { computed, onBeforeUnmount, ref, shallowRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import { translateMessage } from '../i18n/messages'
+import { translateMessage, translateResult } from '../i18n/messages'
 import { live, onResult, panel, send } from '../machine'
-import type { BackupRole, CommandBody, RestoreSummary } from '../protocol'
+import type { BackupRole, CommandBody, CommandResult, RestoreSummary } from '../protocol'
 import { formatBytes } from '../units'
 import AppIcon from './AppIcon.vue'
 import FileBrowser from './FileBrowser.vue'
@@ -18,7 +18,8 @@ const emit = defineEmits<{ close: [] }>()
 
 const browsing = ref<'folder' | 'file' | null>(null)
 const request = shallowRef<CommandBody | null>(null)
-const error = ref('')
+const feedback = shallowRef<CommandResult | null>(null)
+const error = computed(() => feedback.value === null ? '' : translateResult(feedback.value))
 const written = ref<string | null>(null)
 const summary = shallowRef<RestoreSummary | null>(null)
 const restored = ref(false)
@@ -50,7 +51,7 @@ function changeName(change: RestoreSummary['files'][number]['change']): string {
 const decidedAtExit = computed(() => summary.value?.files.some((file) => file.change === 'at_exit') ?? false)
 
 function run(command: CommandBody): void {
-  error.value = ''
+  feedback.value = null
   // Install before sending: the browser simulator answers synchronously.
   request.value = command
   send(command)
@@ -79,14 +80,14 @@ const removeResultListener = onResult((command, result) => {
   if (request.value !== command) return
   request.value = null
   if (result.outcome !== 'accepted') {
-    error.value = result.reason
+    feedback.value = result
     return
   }
   if (command.type === 'backup') written.value = panel.backupWritten?.path ?? ''
   else if (command.type === 'check_restore') summary.value = panel.restoreSummary
   else if (command.type === 'restore') {
     restored.value = true
-    if (result.reason !== '') error.value = result.reason
+    if (result.reason !== '') feedback.value = result
   }
 })
 onBeforeUnmount(removeResultListener)
@@ -106,7 +107,7 @@ onBeforeUnmount(removeResultListener)
         </p>
         <ul v-if="written !== null && panel.backupWritten?.not_included.length" class="left-out">
           <li v-for="item in panel.backupWritten.not_included" :key="item.path" class="note">
-            {{ t('status.backup.notIncluded', { path: item.path, reason: translateMessage(item.reason) }) }}
+            {{ t('status.backup.notIncluded', { path: item.path, reason: translateMessage(item.reason, item.localization) }) }}
           </li>
         </ul>
       </section>
@@ -145,7 +146,7 @@ onBeforeUnmount(removeResultListener)
         <p v-if="restored" class="feedback" role="status">{{ panel.simulated ? t('status.backup.simulatedDone') : t('status.backup.restoring') }}</p>
       </section>
     </div>
-    <p v-if="error" class="failure" role="alert">{{ translateMessage(error) }}</p>
+    <p v-if="error" class="failure" role="alert">{{ error }}</p>
     <template #footer>
       <button class="btn" type="button" :disabled="request !== null" @click="emit('close')">{{ t('common.close') }}</button>
       <button

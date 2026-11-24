@@ -663,7 +663,7 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
             };
           }
           if (auto written = upload_writer.receive(name, bytes, replace, publish); !written)
-            return std::unexpected(written.error());
+            return std::unexpected(written.error().text);
           return {};
         };
       }
@@ -700,7 +700,9 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
     alarms = std::make_unique<AlarmLog>(
         alarm_files,
         location.availability == ToolModelAvailability::available ? location.directory : "",
-        location.availability == ToolModelAvailability::available ? "" : location.reason,
+        location.availability == ToolModelAvailability::available
+            ? LocalizedReason{}
+            : LocalizedReason{location.reason, location.localization},
         [&window](PageToken page, std::vector<std::string> messages) -> void {
           window.post(page, std::move(messages));
         },
@@ -717,8 +719,8 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
         history_files,
         location.availability == ToolModelAvailability::available ? location.directory : "",
         location.availability == ToolModelAvailability::available
-            ? ""
-            : location.reason);
+            ? LocalizedReason{}
+            : LocalizedReason{location.reason, location.localization});
     program_writer.emplace(programs, edit_files);
     models->set_fixed_probe_tool(config->touch_probe_tool);
     diagnostics = std::make_unique<DiagnosticsFeed>(
@@ -730,7 +732,7 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
             .read = [&]() -> Diagnostics {
               return {read_diagnostics(diagnostic_rows, hal_lookup, wiring), launcher.states()};
             },
-            .launch = [&launcher](HalTool tool) -> std::optional<std::string> {
+            .launch = [&launcher](HalTool tool) -> std::optional<LocalizedReason> {
               return launcher.launch(tool);
             }},
         post);
@@ -762,7 +764,8 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
           alarms->send_snapshot(page);
           // What a restore before this run came to, once.
           if (auto notice = machine_data->take_notice())
-            post(page, {encode_message(notice->first, notice->second, unix_now())});
+            post(page, {encode_message(notice->error ? MessageLevel::error : MessageLevel::info,
+                                       notice->text, unix_now(), notice->localization)});
         },
         progress.get(), history.get(), std::move(mirror));
     if (hooks.before_load)

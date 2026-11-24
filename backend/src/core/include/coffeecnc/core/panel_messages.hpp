@@ -312,6 +312,7 @@ struct OffsetHistory {
   bool saved{};
   std::string reason;
   std::vector<HistoryEntry> entries; // newest first
+  std::optional<MessageKey> localization{}; // of reason
   friend auto operator==(const OffsetHistory&, const OffsetHistory&) -> bool = default;
 };
 

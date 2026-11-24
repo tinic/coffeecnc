@@ -168,7 +168,14 @@ void paused_z_gates() {
   s.mode = TaskMode::automatic;
   s.interp = InterpState::paused;
   s.program_loaded = true;
-  s.paused_z = PausedZStatus{0, 20, false, true, "Stop the spindle.", PausedSpindle::can_stop};
+  const MessageKey stop_spindle{"backend.nmlStatus.stopSpindle"};
+  s.paused_z = PausedZStatus{
+      0,           20, false, true, "Stop the spindle before jogging Z.", PausedSpindle::can_stop,
+      stop_spindle};
+  const auto blocked = policy.evaluate(JogPausedZ{5, false}, s);
+  require(!blocked.allowed && blocked.reason == s.paused_z->reason &&
+              blocked.refusal == stop_spindle,
+          "A refused lift carries the paused Z reason and key");
   const JogPausedZ lift{5, true};
   require(policy.evaluate(lift, s).allowed, "An otherwise valid paused lift may stop the spindle");
   s.axes[0].homed = false;

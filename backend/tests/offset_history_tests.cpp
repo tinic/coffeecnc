@@ -355,15 +355,18 @@ void damaged_files() {
     f.disk.files[file] = content;
     f.open();
     const auto history = f.history();
-    require(history.entries.empty() && history.reason.find("damaged") != std::string::npos,
-            "A damaged file starts empty and says so: " + what);
+    require(history.entries.empty() && history.reason.find("damaged") != std::string::npos &&
+                history.localization == MessageKey{"backend.offsetHistory.damagedKept",
+                                                   {{"file", "offset-history.json.corrupt"}}},
+            "A damaged file starts empty and names the file kept aside: " + what);
     require(f.disk.files.at("/data/G0759/offset-history.json.corrupt") == content &&
                 !f.disk.files.contains(file),
             "The damaged file is kept aside: " + what);
     auto first = f.observe(reading());
     auto second = f.observe(reading(), 100ms);
     require(first.messages.size() == 1 && first.messages[0].error &&
-                first.messages[0].text == history.reason && second.messages.empty(),
+                first.messages[0].text == history.reason &&
+                first.messages[0].localization == history.localization && second.messages.empty(),
             "The operator is told once: " + what);
     f.observe(reading({1, 2, 3}), 200ms);
     require(f.saved().at("entries").size() == 1, "The history works on: " + what);
@@ -371,8 +374,19 @@ void damaged_files() {
   Fixture unreadable;
   unreadable.files.failures["read"] = 1;
   unreadable.open();
-  require(unreadable.history().reason.find("cannot be read") != std::string::npos,
-          "A file that cannot be read is said");
+  require(unreadable.history().reason.find("cannot be read") != std::string::npos &&
+              unreadable.history().localization ==
+                  MessageKey{"backend.offsetHistory.cannotRead",
+                             {{"detail", "it cannot be read: Input/output error"}}},
+          "A file that cannot be read reports the read detail");
+
+  Fixture cannot_keep;
+  cannot_keep.disk.files[file] = "damaged";
+  cannot_keep.files.failures["rename"] = 1;
+  cannot_keep.open();
+  require(cannot_keep.history().localization == MessageKey{"backend.offsetHistory.damaged"} &&
+              cannot_keep.disk.files.at(file) == "damaged",
+          "When the damaged file cannot be moved, the reason does not claim it was kept aside");
 }
 
 void failed_writes() {
@@ -380,28 +394,37 @@ void failed_writes() {
   f.observe(reading());
   f.files.failures["rename"] = 1;
   auto failed = f.observe(reading({1, 2, 3}), 100ms);
+  const MessageKey not_saved{"backend.offsetHistory.notSaved",
+                             {{"detail", "the file cannot be replaced: Read-only file system"}}};
   require(failed.messages.size() == 1 &&
               failed.messages[0].text.find("could not be saved") != std::string::npos &&
+              failed.messages[0].localization == not_saved &&
+              f.history().localization == not_saved &&
               f.history().reason == failed.messages[0].text && f.saved().at("entries").empty(),
           "A failed write is said once, in the message and the history");
   auto quiet = f.observe(reading({1, 2, 3}), 200ms);
   require(quiet.messages.empty(), "Not repeated");
   f.observe(reading({1, 2, 3}), 1200ms);
-  require(f.saved().at("entries").size() == 1 && f.history().reason.empty(),
-          "Written again after the period; the reason is cleared");
+  require(f.saved().at("entries").size() == 1 && f.history().reason.empty() &&
+              !f.history().localization && !f.saved().contains("localization"),
+          "Written again after the period; the reason clears and the file layout stays intact");
 }
 
 void session_only() {
   FakeDisk disk;
   FakeToolModelFiles files{disk};
-  OffsetHistoryStore store{files, "", "No machine identity configured"};
+  const LocalizedReason no_machine{"No machine identity is configured ([COFFEECNC] MACHINE_ID): "
+                                   "tool models last until the panel closes.",
+                                   MessageKey{"backend.toolModelStore.noMachineId"}};
+  OffsetHistoryStore store{files, "", no_machine};
   PanelReading sample = reading();
   store.observe(sample, epoch, start);
   sample = reading({5, 5, 5});
   store.observe(sample, epoch + 2000ms, start + 2000ms);
   const auto history = *store.snapshot();
-  require(!history.saved && history.reason == "No machine identity configured" &&
-              history.entries.size() == 1 && files.calls.empty(),
+  require(!history.saved && history.reason == no_machine.text &&
+              history.localization == no_machine.localization && history.entries.size() == 1 &&
+              files.calls.empty(),
           "Without a directory the history is kept in memory only");
 }
 

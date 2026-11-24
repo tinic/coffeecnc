@@ -1085,7 +1085,7 @@ auto unknown_read(const coffeecnc::ParameterUse& use, const ParameterTrack& para
 }
 
 // Nothing can be computed: an error at line 0.
-auto give_up(PreviewSetupError reason, PreviewSetupArguments args = {}) -> int {
+auto give_up(PreviewSetupError reason, const PreviewSetupArguments& args = {}) -> int {
   if (begin_halt(Halt::error)) {
     const char* codes = std::getenv(coffeecnc::preview_setup_codes_env);
     put(coffeecnc::write_preview_setup_error(reason, codes && std::string_view(codes) == "1",

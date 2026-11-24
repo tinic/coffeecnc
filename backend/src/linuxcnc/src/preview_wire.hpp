@@ -220,7 +220,7 @@ struct PreviewSetupArguments {
 inline constexpr char preview_setup_codes_env[] = "COFFEECNC_PREVIEW_SETUP_CODES";
 
 [[nodiscard]] auto write_preview_setup_error(PreviewSetupError reason, bool coded,
-                                             PreviewSetupArguments args = {}) -> std::string;
+                                             const PreviewSetupArguments& args = {}) -> std::string;
 
 struct HelperOutput {
   std::vector<PreviewSegment> segments;

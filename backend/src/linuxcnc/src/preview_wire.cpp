@@ -765,8 +765,8 @@ auto write_preview_problem(int line, KnownPreviewProblem reason,
   return out;
 }
 
-auto write_preview_setup_error(PreviewSetupError reason, bool coded, PreviewSetupArguments args)
-    -> std::string {
+auto write_preview_setup_error(PreviewSetupError reason, bool coded,
+                               const PreviewSetupArguments& args) -> std::string {
   const auto single_line = [](std::string_view value) -> std::string {
     std::string clean{value};
     std::ranges::replace_if(clean, [](char c) { return c == '\n' || c == '\r' || c == '\0'; }, ' ');

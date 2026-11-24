@@ -138,20 +138,18 @@ struct Rig {
 
 void setup_error_from_helper() {
   Rig rig{"setup-error"};
-  const auto filename = "plate setup.ngc";
-  rig.inputs.program_file = (rig.root / "nc" / filename).string();
   rig.after_snapshot = [&](int) -> void {
     bool removed = false;
     for (const auto& directory : fs::directory_iterator(rig.settings.work_directory))
-      if (fs::remove(directory.path() / "program" / filename))
+      if (fs::remove(directory.path() / "program" / "program.ngc"))
         removed = true;
     require(removed, "Remove the helper's private copy after writing the request");
   };
   const auto outcome = rig.preview("M2\n");
   require(outcome.state == PreviewState::failed && outcome.segments.empty() && rig.runs == 1 &&
-              outcome.error == PreviewError{0, "plate setup.ngc cannot be read for the preview",
+              outcome.error == PreviewError{0, "program.ngc cannot be read for the preview",
                                             MessageKey{"backend.previewEngine.helperReadSource",
-                                                       {{"file", "plate setup.ngc"}}}},
+                                                       {{"file", "program.ngc"}}}},
           "The real helper reports a keyed setup failure for its missing private file: " +
               text_of(outcome));
 }

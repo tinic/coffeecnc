@@ -704,7 +704,7 @@ auto snapshot_rejection(const SnapshotFailure& failure) -> PreviewComputation {
     return {{}, true, {}};
   auto outcome = failed(failure.error);
   if (failure.blocks_run)
-    outcome.check.emplace().errors.push_back(failure.error.text);
+    outcome.check.emplace().errors.push_back({failure.error.text, failure.error.localization});
   return {std::move(outcome), false, {}};
 }
 
@@ -741,9 +741,13 @@ auto program_check(const PreviewSettings& settings, const PreviewInputs& inputs,
   if (!complete) {
     if (output.end == HelperEnd::error && output.problem && output.problem->line > 0 &&
         outcome.error) {
-      check.errors.push_back(std::format("Line {}: {}", outcome.error->line, outcome.error->text));
+      check.errors.push_back({std::format("Line {}: {}", outcome.error->line, outcome.error->text),
+                              MessageKey{"backend.previewEngine.lineError",
+                                         {{"line", std::to_string(outcome.error->line)},
+                                          {"detail", outcome.error->text}}}});
     } else {
-      check.warnings.emplace_back("CoffeeCNC could only check part of this program.");
+      check.warnings.push_back({"CoffeeCNC could only check part of this program.",
+                                MessageKey{"backend.previewEngine.partialCheck"}});
     }
   }
   if (!facts)
@@ -767,15 +771,19 @@ auto program_check(const PreviewSettings& settings, const PreviewInputs& inputs,
     }
     check.tools.push_back({tool, length});
     if (length == ToolLengthCheck::missing)
-      check.errors.push_back(std::format("T{} has no verified length in the tool table.", tool));
+      check.errors.push_back(
+          {std::format("T{} has no verified length in the tool table.", tool),
+           MessageKey{"backend.previewEngine.noVerifiedLength", {{"tool", std::to_string(tool)}}}});
   }
   check.frames = facts->frames;
   for (const auto& frame : check.frames)
     if (!frame.available) {
       static constexpr std::array names{"G54", "G55",   "G56",   "G57",  "G58",
                                         "G59", "G59.1", "G59.2", "G59.3"};
-      check.errors.push_back(std::format("The {} work origin could not be verified.",
-                                         names.at(static_cast<std::size_t>(frame.wcs - 1))));
+      const auto* wcs = names.at(static_cast<std::size_t>(frame.wcs - 1));
+      check.errors.push_back(
+          {std::format("The {} work origin could not be verified.", wcs),
+           MessageKey{"backend.previewEngine.originUnverified", {{"wcs", wcs}}}});
     }
   check.feed = facts->feed;
   check.spindle = facts->spindle;
@@ -784,13 +792,20 @@ auto program_check(const PreviewSettings& settings, const PreviewInputs& inputs,
   if (facts->inch)
     check.units.push_back(LengthUnit::inch);
   if (facts->feed_per_revolution)
-    check.warnings.emplace_back("Feed per revolution is excluded from the feed range.");
+    check.warnings.push_back({"Feed per revolution is excluded from the feed range.",
+                              MessageKey{"backend.previewEngine.feedPerRevolution"}});
   if (facts->variable_spindle)
-    check.warnings.emplace_back("Constant surface speed prevents checking a fixed spindle range.");
+    check.warnings.push_back({"Constant surface speed prevents checking a fixed spindle range.",
+                              MessageKey{"backend.previewEngine.constantSurfaceSpeed"}});
   if (facts->spindle && settings.max_spindle_rpm > 0 &&
-      facts->spindle->max > settings.max_spindle_rpm)
-    check.errors.push_back(std::format("The program requests {} rpm. The spindle limit is {} rpm.",
-                                       facts->spindle->max, settings.max_spindle_rpm));
+      facts->spindle->max > settings.max_spindle_rpm) {
+    const auto requested = std::format("{}", facts->spindle->max);
+    const auto limit = std::format("{}", settings.max_spindle_rpm);
+    check.errors.push_back(
+        {std::format("The program requests {} rpm. The spindle limit is {} rpm.", requested, limit),
+         MessageKey{"backend.previewEngine.spindleLimit",
+                    {{"requested", requested}, {"limit", limit}}}});
+  }
 
   const auto fits = [&](const std::optional<Bounds>& travel) {
     if (!facts->machine || !travel)
@@ -803,7 +818,8 @@ auto program_check(const PreviewSettings& settings, const PreviewInputs& inputs,
   };
   if (!fits(settings.soft_travel) || !fits(settings.physical_travel)) {
     check.travel = TravelCheck::outside;
-    check.errors.emplace_back("The program exceeds configured machine travel.");
+    check.errors.push_back({"The program exceeds configured machine travel.",
+                            MessageKey{"backend.previewEngine.exceedsTravel"}});
   } else if (complete && facts->machine && settings.physical_travel) {
     check.travel = TravelCheck::fits;
   }

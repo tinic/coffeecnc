@@ -1188,10 +1188,10 @@ auto Session::execute(Queued& request, const Clock& clock) -> Stage {
   if (preview_ != nullptr && decision.allowed) {
     if (const auto* run_command = std::get_if<Run>(&command)) {
       verified = preview_->checked_preview();
-      if (auto reason = check_program_start(request, *run_command, state, *verified); !reason.empty()) {
+      if (auto issue = check_program_start(request, *run_command, state, *verified)) {
         if (!wanted(request))
           return cancelled();
-        decision = {false, {}, std::move(reason), {}};
+        decision = {false, {}, std::move(issue->text), {}, std::move(issue->localization)};
       }
     }
   } else if (decision.allowed) {
@@ -1294,12 +1294,14 @@ auto Session::execute(Queued& request, const Clock& clock) -> Stage {
 
 auto Session::check_program_start(const Queued& request, const Run& command,
                                   const ControllerState& state, const CheckedPreview& check) const
-    -> std::string {
+    -> std::optional<ProgramCheckIssue> {
   if (!check.preview || !check.source.inputs ||
       check.source.inputs->program_file != state.program_file)
-    return "Wait for the program check to finish.";
+    return ProgramCheckIssue{"Wait for the program check to finish.",
+                             MessageKey{"messages.session.waitProgramCheck"}};
   if (command.preview_context && *command.preview_context != check.preview->context)
-    return "The program check changed. Review the current results.";
+    return ProgramCheckIssue{"The program check changed. Review the current results.",
+                             MessageKey{"messages.session.programCheckChanged"}};
   const auto& program_check = check.preview->check;
   if (program_check && !program_check->errors.empty())
     return program_check->errors.front();
@@ -1309,11 +1311,13 @@ auto Session::check_program_start(const Queued& request, const Run& command,
     if (!check.source.program_snapshot || !check.files_changed || !program_check ||
         (check.preview->state != PreviewState::ready &&
          check.preview->state != PreviewState::failed))
-      return "A breakpoint needs a complete program check.";
+      return ProgramCheckIssue{"A breakpoint needs a complete program check.",
+                               MessageKey{"messages.session.breakpointNeedsCheck"}};
     if (std::ranges::none_of(check.preview->segments, [&](const auto& segment) {
           return segment.line == command.breakpoint->line;
         }))
-      return "Choose a motion line in the current program preview.";
+      return ProgramCheckIssue{"Choose a motion line in the current program preview.",
+                               MessageKey{"messages.session.chooseMotionLine"}};
     // Bind the operator's picked text to the checked bytes, including when a program on disk
     // was replaced after the panel loaded its text.
     std::string_view remaining = *check.source.program_snapshot;
@@ -1321,19 +1325,27 @@ auto Session::check_program_start(const Queued& request, const Run& command,
       static_cast<void>(program_line(remaining));
     const auto selected = program_line(remaining);
     if (selected.empty() || selected != command.breakpoint->text)
-      return "The selected program line changed. Reopen the program and choose the line again.";
+      return ProgramCheckIssue{
+          "The selected program line changed. Reopen the program and choose the line again.",
+          MessageKey{"messages.session.selectedLineChanged"}};
   }
   const bool units_mismatch =
       program_check && command.display_units && std::ranges::any_of(program_check->units, [&](LengthUnit unit) {
         return unit != *command.display_units;
       });
   if ((!program_check || !program_check->warnings.empty() || units_mismatch) && !command.confirmed)
-    return "Review the program check warnings before starting.";
+    return ProgramCheckIssue{"Review the program check warnings before starting.",
+                             MessageKey{"messages.session.reviewWarnings"}};
   if (check.files_changed && check.files_changed([&] { return !wanted(request); }))
-    return "The program or tool data changed. Review the new program check.";
+    return ProgramCheckIssue{"The program or tool data changed. Review the new program check.",
+                             MessageKey{"messages.session.programOrToolsChanged"}};
   if (preview_->checked_preview().preview != check.preview)
-    return "The program check changed. Review the current results.";
-  return port_.validate_program_inputs(*check.source.inputs);
+    return ProgramCheckIssue{"The program check changed. Review the current results.",
+                             MessageKey{"messages.session.programCheckChanged"}};
+  auto reason = port_.validate_program_inputs(*check.source.inputs);
+  if (!reason.empty())
+    return ProgramCheckIssue{std::move(reason)};
+  return std::nullopt;
 }
 
 auto Session::plan_restart(Queued& request, PlanRestart command, const ControllerState& state)
@@ -1590,8 +1602,10 @@ auto Session::measure_tool_change(Queued& request, const ControllerState& state)
 
   Stage result;
   result.setter = *measured;
-  const auto cannot_restart = [&](std::string reason) {
-    result.reply = {CommandOutcome::failed, std::move(reason)};
+  const auto cannot_restart = [&](std::string reason, std::optional<MessageKey> localization = {}) {
+    result.reply.outcome = CommandOutcome::failed;
+    result.reply.reason = std::move(reason);
+    result.reply.localization = std::move(localization);
     return result;
   };
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{10};
@@ -1627,8 +1641,10 @@ auto Session::measure_tool_change(Queued& request, const ControllerState& state)
     return cannot_restart("Tool measured. The restart source changed.");
   if (replay.outcome.state != PreviewState::ready || !replay.outcome.check || !replay.files_changed)
     return cannot_restart("Tool measured. The updated program check is unavailable.");
-  if (!replay.outcome.check->errors.empty())
-    return cannot_restart(replay.outcome.check->errors.front());
+  if (!replay.outcome.check->errors.empty()) {
+    const auto& issue = replay.outcome.check->errors.front();
+    return cannot_restart(issue.text, issue.localization);
+  }
   inputs.restart_line = target->line;
   inputs.restart_loaded_tool = tool;
   auto computed = restart_engine_->compute(inputs, [&] { return !maintain(); });

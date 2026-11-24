@@ -316,6 +316,9 @@ export interface ProgramCheck {
   travel: 'unknown' | 'fits' | 'outside'
   errors: string[]
   warnings: string[]
+  /** Optional per-entry catalog metadata in the order of errors and warnings. */
+  errors_localization?: (MessageKey | null)[]
+  warnings_localization?: (MessageKey | null)[]
 }
 
 /**

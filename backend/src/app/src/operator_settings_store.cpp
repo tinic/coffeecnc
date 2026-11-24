@@ -77,9 +77,10 @@ auto OperatorSettingsArchive::read_settings() const -> OperatorSettings {
   const auto file = path(file_name);
   const auto result = files_.read(file, max_operator_settings_bytes);
   if (!result)
-    return unavailable(std::format("{} cannot be read: {}", file, result.error()),
+    return unavailable(std::format("{} cannot be read: {}", file, result.error().text),
                        MessageKey{"backend.operatorSettingsStore.cannotRead",
-                                  {{"file", file}, {"detail", result.error()}}});
+                                  {{"file", file}, {"detail", result.error().text}},
+                                  parameter_localization("detail", result.error().localization)});
   const auto& content = *result;
   if (!content) {
     OperatorPreferences defaults;
@@ -136,23 +137,30 @@ auto OperatorSettingsArchive::apply(const SetOperatorSettings& command) -> ToolM
   const bool language_changed =
       settings_.document && settings_.document->language != command.document.language;
   if (const auto step = replace(file_name, temporary_name, *text); !step)
-    return {CommandOutcome::failed,
-            std::format("Settings were not saved: {}. The saved file is unchanged.", step.error()),
-            false,
-            MessageKey{"backend.operatorSettingsStore.notSaved", {{"detail", step.error()}}}};
-  const auto uncertain = [&](const std::string& detail) -> ToolModelReply {
+    return {
+        CommandOutcome::failed,
+        std::format("Settings were not saved: {}. The saved file is unchanged.", step.error().text),
+        false,
+        MessageKey{"backend.operatorSettingsStore.notSaved",
+                   {{"detail", step.error().text}},
+                   parameter_localization("detail", step.error().localization)}};
+  const auto uncertain = [&](const LocalizedReason& detail) -> ToolModelReply {
     show(read());
     return {CommandOutcome::failed,
             std::format(
                 "The save outcome is uncertain: {}. Displayed settings were read back from disk.",
-                detail),
-            true, MessageKey{"backend.operatorSettingsStore.uncertain", {{"detail", detail}}}};
+                detail.text),
+            true,
+            MessageKey{"backend.operatorSettingsStore.uncertain",
+                       {{"detail", detail.text}},
+                       parameter_localization("detail", detail.localization)}};
   };
   // Only a change of language writes the language file, after the settings file.
   if (language_changed) {
     const auto language = encode_panel_language_file(command.machine_id, command.document.language);
-    const auto step = language ? replace(language_name, language_temporary_name, *language)
-                               : ToolModelFiles::Done{std::unexpected(language.error())};
+    const auto step =
+        language ? replace(language_name, language_temporary_name, *language)
+                 : ToolModelFiles::Done{std::unexpected(LocalizedReason{language.error()})};
     if (!step)
       return uncertain(step.error());
   }

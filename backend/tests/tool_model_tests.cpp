@@ -851,6 +851,21 @@ void archive_reads() {
                         steps(rig.files)));
   }
   {
+    const auto unknown_holder = altered(good, [](Json& value) {
+      value["document"]["assignments"][0]["holder"] = "retired-holder";
+    });
+    Rig rig{unknown_holder};
+    const auto state = Json::parse(encode_tool_models_reason(rig.archive.models()).value());
+    const auto localization = state.at("localization");
+    const auto tool = localization.at("params_localization").at("detail");
+    const auto holder = tool.at("params_localization").at("detail");
+    require(localization.at("key") == "backend.toolModelStore.notUsable" &&
+                tool.at("key") == "backend.toolModels.toolProblem" &&
+                holder.at("key") == "backend.toolModels.unknownHolder" &&
+                has(rig.archive.models().reason, "Unknown tool holder."),
+            "A saved model wraps the typed codec detail and retains the English fallback");
+  }
+  {
     FakeDisk disk;
     disk.files[file] = good;
     FakeToolModelFiles files{disk};
@@ -1401,7 +1416,9 @@ void store_orders_messages() {
     require(invalid && invalid->text == std::string("drill: ") + angle_reason &&
                 invalid->localization ==
                     MessageKey{"backend.toolModels.familyProblem",
-                               {{"family", "drill"}, {"detail", angle_reason}}} &&
+                               {{"family", "drill"}, {"detail", angle_reason}},
+                               parameter_localization(
+                                   "detail", MessageKey{"backend.toolModels.angleRange"})} &&
                 store.submit(PageToken{1}, 4, SetToolModelAssignment{machine, 0, row(0), {}, {}})
                     .has_value(),
             "An invalid command is refused at once");
@@ -1775,6 +1792,10 @@ void on_the_host(const std::filesystem::path& scratch) {
     require(archive.models().availability == ToolModelAvailability::unavailable &&
                 has(archive.models().reason, "cannot be read"),
             "What is not a regular file cannot be read: " + archive.models().reason);
+    const auto state = Json::parse(encode_tool_models_reason(archive.models()).value());
+    require(state.at("localization").at("params_localization").at("detail").at("key") ==
+                "backend.toolModelStore.notRegularFile",
+            "The native read failure retains its storage detail key");
     LocalToolModelFiles blocked_files;
     ToolModelArchive blocked{blocked_files,
                              resolve_tool_model_location(

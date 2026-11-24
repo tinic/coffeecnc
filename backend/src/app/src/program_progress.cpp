@@ -99,11 +99,13 @@ void ProgramProgress::save(PanelReading& reading) {
     step = files_.sync_directory(directory_);
   if (!step) {
     files_.discard(temporary);
-    if (save_error_ != step.error()) {
-      save_error_ = step.error();
+    if (save_error_ != step.error().text) {
+      save_error_ = step.error().text;
       reading.messages.push_back(
           {true, std::format("Program progress could not be saved. {}", save_error_),
-           MessageKey{"backend.programProgress.notSaved", {{"storageError", save_error_}}}});
+           MessageKey{"backend.programProgress.notSaved",
+                      {{"storageError", save_error_}},
+                      parameter_localization("storageError", step.error().localization)}});
     }
     return;
   }

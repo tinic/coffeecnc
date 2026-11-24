@@ -557,8 +557,8 @@ onBeforeUnmount(() => {
           <div class="feature-row">
             <span>{{ t('probe.materialProbe.runout') }}</span>
             <div class="feature-buttons runout">
-              <button class="btn" type="button" :aria-label="t('probe.materialProbe.runoutRingLabel')" @click="openGuide({ kind: 'runout_ring' })">{{ t('probe.materialProbe.runoutRing') }}</button>
-              <button class="btn" type="button" :aria-label="t('probe.materialProbe.runoutPinLabel')" @click="openGuide({ kind: 'runout_pin' })">{{ t('probe.materialProbe.runoutPin') }}</button>
+              <button class="btn" type="button" :disabled="measureOnly" :aria-label="t('probe.materialProbe.runoutRingLabel')" @click="openGuide({ kind: 'runout_ring' })">{{ t('probe.materialProbe.runoutRing') }}</button>
+              <button class="btn" type="button" :disabled="measureOnly" :aria-label="t('probe.materialProbe.runoutPinLabel')" @click="openGuide({ kind: 'runout_pin' })">{{ t('probe.materialProbe.runoutPin') }}</button>
               <button class="btn" type="button" :disabled="!runout" :aria-label="t('probe.materialProbe.runoutClearLabel')" @click="clearRunout">{{ t('probe.materialProbe.runoutClear') }}</button>
             </div>
           </div>

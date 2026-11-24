@@ -315,9 +315,12 @@ describe('measure only', () => {
     vi.mocked(send).mockClear()
     const openFeatures = async (): Promise<ReturnType<VueWrapper['findAll']>> => {
       await fixture.get('.probe-utilities button[aria-haspopup=dialog]').trigger('click')
-      return fixture.findAll('.feature-options button')
+      return fixture.findAll('.feature-options button').filter(button => button.attributes('disabled') === undefined)
     }
     const featureCount = (await openFeatures()).length
+    // The runout calibration is a calibration, as the ball's: not measure-only.
+    for (const label of ['Stylus runout on a ring gauge', 'Stylus runout on a pin gauge'])
+      expect(fixture.get(`.feature-options button[aria-label="${label}"]`).attributes('disabled')).toBeDefined()
     await fixture.get('[role="dialog"] .close, [role="dialog"] button[aria-label="Close"]').trigger('click')
     const surfaceCount = fixture.findAll('.probe-actions button').length
     const start = async (button: ReturnType<VueWrapper['findAll']>[number] | undefined): Promise<void> => {

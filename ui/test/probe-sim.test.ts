@@ -229,7 +229,7 @@ describe('browser probe scene', () => {
     expect(sim.status().offsets.g5x.slice(0, 2).map(value => Math.round(value * 1000) / 1000)).toEqual([155, 108])
     // A 3-point bore is corrected along each heading, also measure-only, and once.
     expect(cycle({ action: 'bore_arc', angles: [0, 120, 240] }).setter?.center_diameter).toBeCloseTo(20)
-    expect(cycle({ action: 'bore_arc', angles: [-90, -45, 0], measure_only: true }).setter?.center_diameter).toBeCloseTo(20)
+    expect(cycle({ action: 'bore_arc', angles: [-60, 30, 120], measure_only: true }).setter?.center_diameter).toBeCloseTo(20)
     // A changed ball diameter voids it; clearing removes it.
     const tool = sim.modal.tools.find(entry => entry.number === 99)
     if (!tool) throw new Error('Missing probe')

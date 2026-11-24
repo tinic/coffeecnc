@@ -1971,10 +1971,11 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
               // LinuxCNC reads the new text only when the program is opened again.
               auto reopened = port_.open_program(*written, still);
               if (reopened.status != ActionStatus::accepted)
-                return {
-                    ActionStatus::failed,
-                    std::format("Saved on disk, but not reopened. {}", reopened.reason),
-                    MessageKey{"messages.session.savedNotReopened", {{"detail", reopened.reason}}}};
+                return {ActionStatus::failed,
+                        std::format("Saved on disk, but not reopened. {}", reopened.reason),
+                        MessageKey{"messages.session.savedNotReopened",
+                                   {{"detail", reopened.reason}},
+                                   parameter_localization("detail", reopened.localization)}};
               return reopened;
             });
           }
@@ -2466,10 +2467,11 @@ void Session::flush_stops() {
     if (stopped.status != ActionStatus::accepted && !known) {
       const std::scoped_lock lock{mutex_};
       const auto axis = std::string(1, letter(axes.at(i)));
-      const auto detail = reply(stopped).reason;
-      problems_.push_back(
-          {true, std::format("Jog stop failed on {}: {}", axis, detail),
-           MessageKey{"messages.session.jogStopFailed", {{"axis", axis}, {"detail", detail}}}});
+      const auto detail = reply(stopped);
+      problems_.push_back({true, std::format("Jog stop failed on {}: {}", axis, detail.reason),
+                           MessageKey{"messages.session.jogStopFailed",
+                                      {{"axis", axis}, {"detail", detail.reason}},
+                                      parameter_localization("detail", detail.localization)}});
     }
   }
 }

@@ -1635,14 +1635,19 @@ void lease_expiry() {
   require(outcome.messages.size() == 1 && !outcome.send_snapshots,
           "A stop that failed is reported");
   const auto message = Json::parse(outcome.messages.front());
-  require(message == Json{{"type", "message"},
-                          {"level", "error"},
-                          {"text", "Jog stop failed on X: LinuxCNC did not answer."},
-                          {"localization",
-                           {{"key", "messages.session.jogStopFailed"},
-                            {"params", {{"axis", "X"}, {"detail", "LinuxCNC did not answer."}}}}},
-                          {"time", (epoch + 20s + 150ms).count()}},
-          "As an operator error, since no request owns it");
+  require(
+      message ==
+          Json{{"type", "message"},
+               {"level", "error"},
+               {"text", "Jog stop failed on X: LinuxCNC did not answer."},
+               {"localization",
+                {{"key", "messages.session.jogStopFailed"},
+                 {"params", {{"axis", "X"}, {"detail", "LinuxCNC did not answer."}}},
+                 {"params_localization",
+                  {{"detail",
+                    {{"key", "messages.session.linuxcncNoAnswer"}, {"params", Json::object()}}}}}}},
+               {"time", (epoch + 20s + 150ms).count()}},
+      "As an operator error, since no request owns it");
 }
 
 void lost_machine_cancels_jogs() {
@@ -3024,6 +3029,23 @@ void editor_saves_over_the_loaded_program() {
                        {"params", {{"detail", "LinuxCNC refused the open."}}}} &&
               disk.files.at(part) == "G0 X2\nM2\n",
           "A reopen failure reports the disk save separately: " + refused_reopen.dump());
+
+  disk.files[part] = before;
+  port.script["open_program"].push_back({ActionStatus::failed, "LinuxCNC did not open the program.",
+                                         MessageKey{"backend.nmlPort.notOpened"}});
+  const auto keyed_reopen = send(save(part, stamp));
+  require(keyed_reopen.at("outcome") == "failed" &&
+              keyed_reopen.at("reason") ==
+                  "Saved on disk, but not reopened. LinuxCNC did not open the program." &&
+              keyed_reopen.at("localization") ==
+                  Json{{"key", "messages.session.savedNotReopened"},
+                       {"params", {{"detail", "LinuxCNC did not open the program."}}},
+                       {"params_localization",
+                        {{"detail",
+                          {{"key", "backend.nmlPort.notOpened"}, {"params", Json::object()}}}}}} &&
+              disk.files.at(part) == "G0 X2\nM2\n",
+          "A keyed reopen failure preserves its catalog detail and fallback: " +
+              keyed_reopen.dump());
 }
 
 void uploads_do_not_replace_the_running_program() {

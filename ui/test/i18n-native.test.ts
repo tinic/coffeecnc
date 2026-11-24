@@ -404,6 +404,19 @@ describe('translateMessage', () => {
       .toBe('Auf dem Datenträger gespeichert, aber nicht erneut geöffnet. emcTaskPlanOpen failed')
   })
 
+  it('translates the known controller detail of a save that could not reopen', async () => {
+    await setLanguage('fr')
+    expect(translateResult({
+      type: 'result', id: 53, outcome: 'failed',
+      reason: 'Saved on disk, but not reopened. LinuxCNC did not open the program.',
+      localization: {
+        key: 'messages.session.savedNotReopened',
+        params: { detail: 'LinuxCNC did not open the program.' },
+        params_localization: { detail: { key: 'backend.nmlPort.notOpened', params: {} } },
+      },
+    })).toBe('Enregistré sur le disque, mais pas rouvert. LinuxCNC n’a pas ouvert le programme.')
+  })
+
   it('keeps data placeholders verbatim, also when they are catalog words', async () => {
     await setLanguage('fr')
     // `two` is a catalog word ("deux"), but here it names a subroutine file.

@@ -333,6 +333,17 @@ auto encoded_messages() -> std::vector<EncodedMessage> {
           "messages.panelFeed.statusCannotShow",
           {{"detail", "status: motion.velocity is not a finite number."}},
           {{"detail", {"messages.wire.notFinite", {{"field", "status: motion.velocity"}}}}}}));
+  messages.emplace_back(encode_message(
+      MessageLevel::error, "Jog stop failed on X: LinuxCNC did not answer.", 1700000001400ms,
+      MessageKey{"messages.session.jogStopFailed",
+                 {{"axis", "X"}, {"detail", "LinuxCNC did not answer."}},
+                 {{"detail", {"messages.session.linuxcncNoAnswer"}}}}));
+  messages.emplace_back(encode_result(
+      53, CommandOutcome::failed,
+      "Saved on disk, but not reopened. LinuxCNC did not open the program.", {}, {}, {},
+      MessageKey{"messages.session.savedNotReopened",
+                 {{"detail", "LinuxCNC did not open the program."}},
+                 {{"detail", {"backend.nmlPort.notOpened"}}}}));
   messages.emplace_back(encode_result(41, CommandOutcome::accepted, ""));
   messages.emplace_back(
       encode_result(42, CommandOutcome::rejected, "Home all configured axes first."));

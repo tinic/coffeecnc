@@ -734,6 +734,7 @@
       "damagedPlan": "準備された復元が破損しています。",
       "stagedMissing": "{path} がありません。",
       "copyNotSaved": "復元前のファイルを保存できませんでした：{detail}",
+      "copyNotSavedFile": "復元前のファイルを保存できませんでした：{path}：{detail}",
       "fileStep": "{path}：{detail}",
       "libHal": "LinuxCNC 独自のライブラリーの HAL ファイル",
       "outsideConfig": "構成フォルダー内のファイルではありません",
@@ -762,6 +763,7 @@
       "restoredGroups": "バックアップを復元しました。{count} 個のファイルを書き込みました。復元前のファイルは {path} にあります。次のファイルは、このユーザーが属さないため、グループを保持できませんでした: {files}。",
       "changedAfter": "{path} は復元の準備後に変更されました。何も書き込んでいません。",
       "notMarked": "復元の開始を記録できませんでした: {detail}",
+      "notMarkedFile": "復元の開始を記録できませんでした: {path}：{detail}",
       "readHere": "{path} はここでは読み取れません",
       "writeHere": "{path} はここでは書き込めません"
     },

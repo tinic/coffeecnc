@@ -734,6 +734,7 @@
       "damagedPlan": "The prepared restore is damaged.",
       "stagedMissing": "{path} is missing.",
       "copyNotSaved": "the files before the restore could not be saved: {detail}",
+      "copyNotSavedFile": "the files before the restore could not be saved: {path}: {detail}",
       "fileStep": "{path}: {detail}",
       "libHal": "a HAL file of LinuxCNC's own library",
       "outsideConfig": "not a file in the configuration folder",
@@ -762,6 +763,7 @@
       "restoredGroups": "The backup was restored: {count} files were written. The files from before the restore are in {path}. These files did not keep their group, which this user is not in: {files}.",
       "changedAfter": "{path} changed after the restore was prepared: nothing was written.",
       "notMarked": "the restore could not be marked as started: {detail}",
+      "notMarkedFile": "the restore could not be marked as started: {path}: {detail}",
       "readHere": "{path} cannot be read here",
       "writeHere": "{path} cannot be written here"
     },

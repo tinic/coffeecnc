@@ -734,6 +734,7 @@
       "damagedPlan": "Die vorbereitete Wiederherstellung ist beschädigt.",
       "stagedMissing": "{path} fehlt.",
       "copyNotSaved": "die Dateien vor der Wiederherstellung konnten nicht gespeichert werden: {detail}",
+      "copyNotSavedFile": "die Dateien vor der Wiederherstellung konnten nicht gespeichert werden: {path}: {detail}",
       "fileStep": "{path}: {detail}",
       "libHal": "eine HAL-Datei aus der Bibliothek von LinuxCNC",
       "outsideConfig": "keine Datei im Konfigurationsordner",
@@ -762,6 +763,7 @@
       "restoredGroups": "Die Sicherung wurde wiederhergestellt: {count} Dateien wurden geschrieben. Die Dateien von vor der Wiederherstellung liegen in {path}. Diese Dateien haben ihre Gruppe nicht behalten, da dieser Benutzer nicht in ihr ist: {files}.",
       "changedAfter": "{path} hat sich geändert, nachdem die Wiederherstellung vorbereitet wurde: nichts wurde geschrieben.",
       "notMarked": "der Beginn der Wiederherstellung konnte nicht vermerkt werden: {detail}",
+      "notMarkedFile": "der Beginn der Wiederherstellung konnte nicht vermerkt werden: {path}: {detail}",
       "readHere": "{path} kann hier nicht gelesen werden",
       "writeHere": "{path} kann hier nicht geschrieben werden"
     },

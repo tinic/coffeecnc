@@ -734,6 +734,7 @@
       "damagedPlan": "准备好的恢复已损坏。",
       "stagedMissing": "缺少 {path}。",
       "copyNotSaved": "无法保存恢复前的文件：{detail}",
+      "copyNotSavedFile": "无法保存恢复前的文件：{path}：{detail}",
       "fileStep": "{path}：{detail}",
       "libHal": "LinuxCNC 自带库中的 HAL 文件",
       "outsideConfig": "不是配置文件夹中的文件",
@@ -762,6 +763,7 @@
       "restoredGroups": "备份已恢复：已写入 {count} 个文件。恢复前的文件保存在 {path}。以下文件未保留其组，因为此用户不在该组中：{files}。",
       "changedAfter": "{path} 在准备恢复后已更改：未写入任何内容。",
       "notMarked": "无法记录恢复已开始：{detail}",
+      "notMarkedFile": "无法记录恢复已开始：{path}：{detail}",
       "readHere": "此处无法读取 {path}",
       "writeHere": "此处无法写入 {path}"
     },

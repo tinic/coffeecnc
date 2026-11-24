@@ -633,6 +633,20 @@ describe('translateMessage', () => {
     })).toBe('La restauration n’a pas abouti : /home/cnc/mill.ini a été remplacé, mais son dossier ne peut pas être synchronisé : Input/output error Les fichiers sont tels qu’avant.')
   })
 
+  it('translates the restore marker write failure and retains the storage detail', async () => {
+    await setLanguage('fr')
+    const path = '/home/cnc/data/restore/applying.json'
+    const error = 'No space left on device'
+    const detail = `the restore could not be marked as started: ${path}: ${error}`
+    expect(translateMessage(`The restore was not completed: ${detail} The files are as they were.`, {
+      key: 'backend.machineData.notCompleted',
+      params: { detail },
+      params_localization: {
+        detail: { key: 'backend.machineData.notMarkedFile', params: { path, detail: error } },
+      },
+    })).toBe("La restauration n’a pas abouti : le début de la restauration n'a pas pu être noté : /home/cnc/data/restore/applying.json : No space left on device Les fichiers sont tels qu’avant.")
+  })
+
   it('translates an unreadable configuration file and keeps the OS detail', async () => {
     await setLanguage('fr')
     const path = '/home/cnc/mill.ini'

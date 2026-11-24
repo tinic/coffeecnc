@@ -110,7 +110,7 @@ describe('the backup dialog', () => {
       await nextTick()
       wrapper?.getComponent(FileBrowser).vm.$emit('pick', folder)
       const command = vi.mocked(send).mock.lastCall?.[0]
-      if (!command || command.type !== 'backup') throw new Error('Missing backup request')
+      if (command?.type !== 'backup') throw new Error('Missing backup request')
       expect(command.directory).toBe(folder)
       return command
     }

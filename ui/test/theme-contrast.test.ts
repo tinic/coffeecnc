@@ -32,13 +32,13 @@ describe('theme contrast', () => {
   // A control that is pressed (or selected, or primary) and disabled shows the disabled look: every
   // state rule after the disabled rule must leave disabled controls out.
   it('lets no pressed, selected or coloured state override a disabled control', () => {
-    const disabledAt = css.indexOf('\n.btn:disabled,')
+    const disabledAt = css.indexOf('\n.btn:disabled,\n.btn[aria-disabled=\'true\'],')
     expect(disabledAt).toBeGreaterThan(0)
     const later = css.slice(disabledAt + 1)
     const rules = [...later.matchAll(/(?:^|\n)([^{}@/]+)\{[^}]*background[^}]*\}/g)].map((m) => m[1] ?? '')
-    const selectors = rules.flatMap((rule) => rule.split(',').map((s) => s.trim()))
+    const selectors = rules.flatMap((rule) => rule.split(/,(?![^()]*\))/).map((s) => s.trim()))
       .filter((s) => /^\.(btn|choice)\b/.test(s) && /\.on\b|aria-pressed|aria-current|\.selected|\.primary|\.go\b|\.warning|\.danger/.test(s))
     expect(selectors.length).toBeGreaterThan(5)
-    for (const selector of selectors) expect(selector, selector).toMatch(/:not\([^)]*:disabled/)
+    for (const selector of selectors) expect(selector, selector).toContain(":not(:disabled, [aria-disabled='true'])")
   })
 })

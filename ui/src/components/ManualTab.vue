@@ -776,7 +776,6 @@ function coolant(which: 'flood' | 'mist'): void {
   color: var(--go);
 }
 
-.btn[aria-disabled="true"] { opacity: .68; }
 
 .side > .mdi {
   display: grid;

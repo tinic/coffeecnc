@@ -12,7 +12,7 @@
   --bar: #c3ccd5; --bar-control: #fff;
   --bar-stop-soft: var(--stop-soft); --bar-warn-soft: var(--warn-soft); --bar-go-soft: var(--go-soft);
   --line: #dce1e5; --line-strong: #dce1e5;
-  --text: #20272c; --text-dim: #465662; --text-faint: #5c6b76; --text-disabled: #6d7984;
+  --text: #20272c; --text-dim: #465662; --text-faint: #5c6b76; --text-disabled: #66727d;
   --dro-zero-opacity: .24;
   --accent: #245bb0; --accent-soft: #c9ddf7; --on-accent: #fff;
   --go: #0f6649; --go-soft: #c3e6d4; --go-action: #0d6243; --on-go: #fff; --warn: #805410; --warn-soft: #f4d79b;
@@ -78,7 +78,7 @@
   --bg: #101e2d; --bg-sunken: #122234; --panel: #1a2e42; --panel-raised: #213951;
   --preview-backdrop: radial-gradient(ellipse at 47% 34%, #27445d, #142c40 80%, #102437);
   --tool-preview-backdrop: radial-gradient(ellipse at 48% 39%, #355470, #1b354c 80%, #12293c);
-  --control: #31495f; --control-hover: #36506a; --control-active: #3f5c78; --field: #2b4155;
+  --control: #344d64; --control-hover: #3a5570; --control-active: #436180; --field: #2e4660;
   --bar: #2a4258; --bar-control: #3f5b75;
   --bar-stop-soft: #4e2238; --bar-warn-soft: #3a2a1a; --bar-go-soft: #173a30;
   --line: #34526c; --line-strong: #476581;
@@ -152,12 +152,12 @@ select {
   touch-action: manipulation;
 }
 
-.btn:hover:not(:disabled), .choice:hover:not(:disabled) {
+.btn:hover:not(:disabled, [aria-disabled='true']), .choice:hover:not(:disabled, [aria-disabled='true']) {
   background: var(--control-hover);
 }
 
-.btn:active:not(:disabled),
-.choice:active:not(:disabled),
+.btn:active:not(:disabled, [aria-disabled='true']),
+.choice:active:not(:disabled, [aria-disabled='true']),
 .btn.held {
   background: var(--control-active);
 }
@@ -168,55 +168,67 @@ input:focus-visible {
   outline-offset: 1px;
 }
 
-/* A disabled control keeps its shape and most of its fill; only the label dims. */
+/* A disabled control keeps its shape and most of its fill; only the label dims. A field keeps
+   all of its fill. */
 .btn:disabled,
+.btn[aria-disabled='true'],
 .choice:disabled {
   color: var(--text-disabled);
-  background: color-mix(in srgb, var(--control) 70%, transparent);
+  background: color-mix(in srgb, var(--control) 80%, transparent);
   cursor: not-allowed;
 }
 
 /* The same mark identifies a selection in tabs, segmented controls and view switches. */
-.btn.on:not(:disabled),
-.btn[aria-pressed='true']:not(:disabled),
+.btn.on:not(:disabled, [aria-disabled='true']),
+.btn[aria-pressed='true']:not(:disabled, [aria-disabled='true']),
 details[open] > summary.btn,
-.choice:not(:disabled):is([aria-current='page'], [aria-pressed='true'], .selected) {
+.choice:not(:disabled, [aria-disabled='true']):is([aria-current='page'], [aria-pressed='true'], .selected) {
   background: var(--accent-soft);
   color: var(--accent);
   font-weight: 650;
 }
 
-.btn.primary:not(:disabled) {
+.btn.primary:not(:disabled, [aria-disabled='true']) {
   background: var(--accent);
   color: var(--on-accent);
 }
 
-.btn.go:not(:disabled) {
+.btn.go:not(:disabled, [aria-disabled='true']) {
   background: var(--go-action);
   color: var(--on-go);
   font-weight: 700;
 }
 
-.btn.go:hover:not(:disabled) {
+.btn.go:hover:not(:disabled, [aria-disabled='true']) {
   background: color-mix(in srgb, var(--go-action) 88%, #000);
 }
 
-.btn.go:active:not(:disabled) {
+.btn.go:active:not(:disabled, [aria-disabled='true']) {
   background: color-mix(in srgb, var(--go-action) 76%, #000);
 }
 
-.btn.warning:not(:disabled) {
+.btn.warning:not(:disabled, [aria-disabled='true']) {
   background: var(--warn-soft);
   color: var(--warn);
 }
 
-.btn.danger:not(:disabled) {
+.btn.danger:not(:disabled, [aria-disabled='true']) {
   background: var(--stop-soft);
   color: var(--stop);
 }
 
-.btn.quiet:not(:disabled) {
+.btn.quiet:not(:disabled, [aria-disabled='true']) {
   color: var(--text-dim);
+}
+
+/* On the raised tone of a band or a bar, a disabled label dims a little further, to stay near
+   3:1 to 4:1. */
+.tinted-band .btn:is(:disabled, [aria-disabled='true']) {
+  color: color-mix(in srgb, var(--text-disabled) 85%, var(--panel-raised));
+}
+
+.bar-surface > .btn:is(:disabled, [aria-disabled='true']) {
+  color: color-mix(in srgb, var(--text-disabled) 85%, var(--bar-control));
 }
 
 /* A tool bar over content: its own tone, raised buttons, and soft fills that keep a tone step. */
@@ -245,11 +257,11 @@ details[open] > summary.btn,
   cursor: pointer;
 }
 
-.list-row:hover:not(:disabled) {
+.list-row:hover:not(:disabled, [aria-disabled='true']) {
   background: var(--control);
 }
 
-.list-row:active:not(:disabled) {
+.list-row:active:not(:disabled, [aria-disabled='true']) {
   background: var(--control-active);
 }
 
@@ -320,7 +332,6 @@ details[open] > summary.btn,
 
 .field:disabled {
   color: var(--text-disabled);
-  background: color-mix(in srgb, var(--field) 70%, transparent);
 }
 
 .chip {

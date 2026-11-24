@@ -21,7 +21,7 @@
 // --replay takes the click paths from an earlier report instead of sweeping, to crop the same
 // controls after a change. Chrome comes from $CHROME, else the usual install paths.
 
-/* global document, window, getComputedStyle -- the page functions below run in the browser */
+/* global document, window, getComputedStyle, PointerEvent -- the page functions below run in the browser */
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
@@ -99,7 +99,7 @@ function pageClickables(noClick = null) {
   }
   window.__sig = sig
   return [...document.querySelectorAll('button, summary, [role=button], label.choice, a.button')]
-    .filter((el) => el.checkVisibility({ opacityProperty: true, visibilityProperty: true }) && !el.matches(':disabled') && !(noClick && el.matches(noClick)))
+    .filter((el) => el.checkVisibility({ opacityProperty: true, visibilityProperty: true }) && !el.matches(':disabled, [aria-disabled="true"]') && !(noClick && el.matches(noClick)))
     .map(sig)
 }
 
@@ -159,9 +159,9 @@ function pageMeasure(themes, allowed) {
       const paint = parse(cs.backgroundColor)
       const own = paint && [paint[0], paint[1], paint[2], paint[3] * Number(cs.opacity)]
       const base = under(el)
-      const disabled = el.matches(':disabled')
+      const disabled = el.matches(':disabled, [aria-disabled="true"]')
       if (row) {
-        if (theme === themes[0] && !el.matches(':disabled')) {
+        if (theme === themes[0] && !el.matches(':disabled, [aria-disabled="true"]')) {
           const box = el.getBoundingClientRect()
           rows.push({ sig: window.__sig(el), at: [box.x + box.width / 2, box.y + box.height / 2] })
         }
@@ -188,8 +188,11 @@ function pageMeasure(themes, allowed) {
   return { findings, rows }
 }
 
-// A list row under the pointer: no outline, and a hover tone of 1.1:1 or more from the surface.
-function pageHover(themes, sig) {
+// A list row in its hover state (forced through DevTools): no outline, and a tone of 1.1:1 or more
+// from the surface. It reads the element DevTools forced, and returns null when that element has
+// left the page or become disabled since: the state moved on, and a disabled row has no hover tone.
+function pageHover(el, themes, sig) {
+  if (!el.isConnected || el.matches(':disabled, [aria-disabled="true"]')) return null
   const parse = (value) => {
     let m = /rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)/.exec(value)
     if (m) return [Number(m[1]) / 255, Number(m[2]) / 255, Number(m[3]) / 255, m[4] === undefined ? 1 : Number(m[4])]
@@ -201,8 +204,6 @@ function pageHover(themes, sig) {
   const lum = (c) => c.slice(0, 3).map((v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4))
     .reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0)
   const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)]; return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05) }
-  const el = [...document.querySelectorAll(':hover')].reverse().find((c) => window.__sig(c) === sig)
-  if (!el) return []
   const under = () => {
     const stack = []
     for (let node = el.parentElement; node; node = node.parentElement) {
@@ -228,7 +229,7 @@ function pageHover(themes, sig) {
     }
     const own = parse(cs.backgroundColor)
     const r = own ? ratio(over(own, surface), surface) : 1
-    if (r < 1.1) reasons.push(`hover tone ${r.toFixed(2)}:1`)
+    if (r < 1.1) reasons.push(`hover tone ${r.toFixed(2)}:1 (${cs.backgroundColor} on ${surface.slice(0, 3).map((v) => Math.round(v * 255)).join(",")}, hover ${String(el.matches(":hover"))}, disabled ${String(el.disabled)})`)
     if (reasons.length > 0) findings.push({ sig, theme, reasons })
   }
   if (original === undefined) delete rootEl.dataset.theme
@@ -250,15 +251,23 @@ async function cdp(port) {
     if (message.method === 'Page.javascriptDialogOpening') ws.send(JSON.stringify({ id: ++id, method: 'Page.handleJavaScriptDialog', params: { accept: true } }))
     if (message.id && pending.has(message.id)) { pending.get(message.id)(message); pending.delete(message.id) }
   }
-  const call = (method, params = {}) => new Promise((resolve) => { const i = ++id; pending.set(i, resolve); ws.send(JSON.stringify({ id: i, method, params })) })
+  // A page that stops answering fails the step instead of stalling the sweep.
+  const call = (method, params = {}) => new Promise((resolve, reject) => {
+    const i = ++id
+    const timer = setTimeout(() => { pending.delete(i); reject(new Error(`${method} timed out`)) }, 20000)
+    pending.set(i, (message) => { clearTimeout(timer); resolve(message) })
+    ws.send(JSON.stringify({ id: i, method, params }))
+  })
   const run = async (fn, ...values) => {
     const reply = await call('Runtime.evaluate', { expression: `(${fn.toString()})(...${JSON.stringify(values)})`, returnByValue: true, awaitPromise: true })
     if (reply.result?.exceptionDetails) throw new Error(reply.result.exceptionDetails.exception?.description ?? 'page error')
     return reply.result?.result?.value
   }
   await call('Page.enable')
+  await call('DOM.enable')
+  await call('CSS.enable')
   await call('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false })
-  return { call, run, close: () => { void call('Page.close'); ws.close() } }
+  return { call, run, close: () => { call('Page.close').catch(() => undefined); setTimeout(() => { ws.close() }, 500) } }
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -271,17 +280,17 @@ async function open(page, base, entry, path) {
   await page.run(pageClickables, noClick)
   for (const step of path) {
     if (step.startsWith('@touch:')) {
-      // A numeric field opens its keypad on a touch release only.
-      const box = await page.run((selector) => {
+      // A numeric field opens its keypad on a touch release only: a touch pointer press and release.
+      const touched = await page.run((selector) => {
         const el = [...document.querySelectorAll(selector)].find((c) => c.checkVisibility())
-        if (!el) return null
+        if (!el) return false
         const r = el.getBoundingClientRect()
-        return [r.x + r.width / 2, r.y + r.height / 2]
+        const at = { clientX: r.x + r.width / 2, clientY: r.y + r.height / 2, pointerId: 7, pointerType: 'touch', isPrimary: true, bubbles: true, cancelable: true }
+        el.dispatchEvent(new PointerEvent('pointerdown', at))
+        el.dispatchEvent(new PointerEvent('pointerup', at))
+        return true
       }, step.slice(7))
-      if (!box) return false
-      await page.call('Emulation.setTouchEmulationEnabled', { enabled: true })
-      await page.call('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: box[0], y: box[1] }] })
-      await page.call('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+      if (!touched) return false
     } else if (step.startsWith('@el:')) {
       const clicked = await page.run((selector) => {
         const el = [...document.querySelectorAll(selector)].find((c) => c.checkVisibility())
@@ -312,17 +321,21 @@ async function main() {
   await server.listen()
   const base = server.resolvedUrls.local[0]
   const profile = `${scratch}profile`
-  const chrome = spawn(chromePath(), ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--hide-scrollbars', '--no-first-run', ...(process.platform === 'linux' ? ['--no-sandbox'] : []), 'about:blank'], { stdio: 'ignore' })
+  const linux = process.platform === 'linux' ? ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'] : []
+  const chrome = spawn(chromePath(), ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--hide-scrollbars', '--no-first-run', ...linux, 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] })
+  let chromeLog = ''
+  chrome.stderr.on('data', (chunk) => { chromeLog = (chromeLog + String(chunk)).slice(-4000) })
   let port = null
-  for (let i = 0; i < 100 && port === null; i++) {
+  for (let i = 0; i < 300 && port === null && chrome.exitCode === null; i++) {
     await sleep(100)
     if (existsSync(`${profile}/DevToolsActivePort`)) port = Number((await readFile(`${profile}/DevToolsActivePort`, 'utf8')).split('\n')[0])
   }
   const findings = new Map()
+  const errors = []
   const cropsDir = option('--crops')
   if (cropsDir) await mkdir(cropsDir, { recursive: true })
   try {
-    if (port === null) throw new Error('Chrome did not start')
+    if (port === null) throw new Error(`Chrome did not start:\n${chromeLog}`)
     const pages = await Promise.all(Array.from({ length: tabs }, () => cdp(port)))
     const replay = option('--replay')
     if (replay) {
@@ -331,7 +344,8 @@ async function main() {
       await Promise.all(pages.map(async (page) => {
         while (next < earlier.length) {
           const item = earlier[next++]
-          if (!(await open(page, base, item.entry, item.path))) { console.log(`not reached: ${item.sig}`); continue }
+          if (!(await open(page, base, item.entry, item.path))) { console.log(`not reached: ${item.name}`); continue }
+          if (item.wait) await sleep(item.wait)
           // An item names its control by signature, or by a selector and a label text.
           const box = await page.run((sig, selector, text) => {
             // A changed class changes the signature; the label and the component still find it.
@@ -354,7 +368,8 @@ async function main() {
       const queue = [...entries.map((entry) => ({ entry, path: [] })), ...specials.map(([entry, step]) => ({ entry, path: [step] }))]
       let active = 0
       let done = 0
-      await Promise.all(pages.map(async (page) => {
+      await Promise.all(pages.map(async (first, slot) => {
+        let page = first
         for (;;) {
           const job = queue.shift()
           if (!job) { if (active === 0) return; await sleep(100); continue }
@@ -374,10 +389,29 @@ async function main() {
             for (const row of measured.rows) {
               if (hovered.has(row.sig)) continue
               hovered.add(row.sig)
-              await page.call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: row.at[0], y: row.at[1] })
-              await sleep(50)
-              for (const finding of await page.run(pageHover, themes, row.sig)) await record(finding, null)
-              await page.call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 })
+              // Force :hover on the row through DevTools: a pointer move is not reliable in headless Chrome.
+              // The force and the reading act on the same element object, so a re-render in between
+              // cannot swap in an element without the forced state.
+              for (let attempt = 0; attempt < 3; attempt++) {
+                const handle = await page.call('Runtime.evaluate', {
+                  expression: `[...document.querySelectorAll('button, summary, [role=button], a.button, label.choice')].find((c) => c.checkVisibility() && !c.matches(':disabled, [aria-disabled="true"]') && window.__sig(c) === ${JSON.stringify(row.sig)})`,
+                })
+                const objectId = handle.result?.result?.objectId
+                if (!objectId) break
+                await page.call('DOM.getDocument', { depth: 0 })
+                const nodeId = (await page.call('DOM.requestNode', { objectId })).result?.nodeId
+                if (!nodeId) break
+                await page.call('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: ['hover'] })
+                const reply = await page.call('Runtime.callFunctionOn', {
+                  objectId, functionDeclaration: `function (themes, sig) { return (${pageHover.toString()})(this, themes, sig) }`, arguments: [{ value: themes }, { value: row.sig }], returnByValue: true,
+                })
+                await page.call('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: [] })
+                if (reply.result?.exceptionDetails) throw new Error(reply.result.exceptionDetails.exception?.description ?? 'page error')
+                const hover = reply.result?.result?.value
+                if (hover === null || hover === undefined) continue
+                for (const finding of hover) await record(finding, null)
+                break
+              }
             }
             if (job.path.length < maxDepth) {
               for (const sig of await page.run(pageClickables, noClick)) {
@@ -387,7 +421,9 @@ async function main() {
               }
             }
           } catch (error) {
-            console.log(`${job.entry} ${job.path.join(' > ')}: ${String(error)}`)
+            errors.push(`${job.entry} ${job.path.join(' > ')}: ${String(error)}`)
+            // A page that stopped answering is replaced; the sweep goes on and reports the step.
+            if (String(error).includes('timed out')) { page.close(); page = await cdp(port); pages[slot] = page }
           } finally {
             active--
           }
@@ -404,12 +440,13 @@ async function main() {
     await sleep(300)
     await rm(profile, { recursive: true, force: true })
   }
+  for (const error of errors) console.log(`error: ${error}`)
   const list = [...findings.values()]
   const report = option('--report')
   if (report) await writeFile(report, JSON.stringify(list, null, 2))
   for (const f of list) console.log(`${f.name} ${f.sig} [${f.themes.join(',')}] ${f.reasons.join('; ')}\n    at ${f.entry} ${f.path.join(' > ')}`)
-  console.log(`findings=${String(list.length)}`)
-  process.exitCode = list.length > 0 ? 1 : 0
+  console.log(`findings=${String(list.length)} errors=${String(errors.length)}`)
+  process.exitCode = list.length > 0 || errors.length > 0 ? 1 : 0
 }
 
 await main()

@@ -3346,8 +3346,8 @@ auto main(int argc, char** argv) -> int {
   if ((scenario != "" && scenario != "material" && scenario != "edge-rotation" &&
        scenario != "features" && scenario != "rotated" && scenario != "runout" &&
        scenario != "runout-pin" && scenario != "runout-arc" && scenario != "measure" &&
-       scenario != "arc" && scenario != "arc-rotated" && scenario != "arc-faults" &&
-       scenario != "height-map" && scenario != "measure-m6") ||
+       scenario != "measure-geometry" && scenario != "arc" && scenario != "arc-rotated" &&
+       scenario != "arc-faults" && scenario != "height-map" && scenario != "measure-m6") ||
       ini.parent_path() != run_dir ||
       (ini.filename() != "coffeecnc_sim.ini" &&
        !(scenario == "edge-rotation" && ini.filename() == "coffeecnc_g0759.ini")))

@@ -322,6 +322,8 @@ struct NmlPort::Impl {
     SetterEpoch epoch;
     std::array<double, 3> tool_offset;
     int tool;
+    std::string tool_row;
+    std::optional<ProbeRunout> runout;
     std::array<double, 3> origin; // in the frame of the work axes: u, v and machine Z
     std::array<bool, 3> axes;
   };
@@ -2297,6 +2299,9 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     return {p[0] * cos_turn - p[1] * sin_turn, p[0] * sin_turn + p[1] * cos_turn, p[2]};
   };
   const auto start_frame = to_frame(request.start);
+  const auto probe_row = table && (request.measure_only || apply_measurement)
+                             ? unique_tool_row(*table, tool)
+                             : std::nullopt;
   // Sets the measured axes of the active work system at `origin`, in the rotated frame (Z is
   // machine Z), and verifies the command against the encoder lag. The probe cycle has already
   // returned to clearance.
@@ -2313,7 +2318,8 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
           after.controller.tool_in_spindle != tool || frame_of(after) != frame ||
           after.tool_offset != before.tool_offset ||
           after.controller.program_units != before.controller.program_units ||
-          impl_->read_tool_table() != table)
+          impl_->read_tool_table() != table ||
+          (apply_measurement && current_runout(impl_->config, table) != runout))
         return std::unexpected<std::string>("Machine or tool table changed before setting the work origin.");
       // G10 L20 applies at the commanded position (see the single faces).
       const auto& commanded = current->motion.traj.position;
@@ -2401,12 +2407,15 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     if (current == nullptr || impl_->status.link() != Link::live || (wanted && !wanted()))
       return std::unexpected("The machine changed before the measurement could be saved.");
     const auto after = to_status(*current, impl_->config, impl_->hal, Link::live);
+    const auto after_table = impl_->read_tool_table();
     if (!ready(*current, after) || frame_of(after) != frame ||
-        after.controller.tool_in_spindle != tool || after.tool_offset != before.tool_offset)
+        after.controller.tool_in_spindle != tool || after.tool_offset != before.tool_offset ||
+        !probe_row || !after_table || unique_tool_row(*after_table, tool) != probe_row ||
+        current_runout(impl_->config, after_table) != runout)
       return std::unexpected("The work frame or tool changed. Probe the feature again.");
     const auto id = ++impl_->next_feature_measurement;
-    impl_->feature_measurement =
-        Impl::FeatureMeasurement{id, frame, epoch, before.tool_offset, tool, origin, axes};
+    impl_->feature_measurement = Impl::FeatureMeasurement{
+        id, frame, epoch, before.tool_offset, tool, std::string(*probe_row), runout, origin, axes};
     // The point applying makes the origin; an axis not measured stays at the start.
     const double depth = probed.empty() ? request.start[2] : probed.back().machine[2];
     const auto point = to_machine({axes[0] ? origin[0] : start_frame[0],
@@ -2431,7 +2440,8 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
       return std::unexpected("Probe the feature again before applying the measurement.");
     const auto measurement = *std::exchange(impl_->feature_measurement, std::nullopt);
     if (measurement.epoch != epoch || measurement.frame != frame || measurement.tool != tool ||
-        measurement.tool_offset != before.tool_offset)
+        measurement.tool_offset != before.tool_offset || !probe_row ||
+        measurement.tool_row != *probe_row || measurement.runout != runout)
       return std::unexpected("The work frame or tool changed. Probe the feature again.");
     if (auto set = set_origin(measurement.origin, measurement.axes); !set)
       return std::unexpected(set.error());

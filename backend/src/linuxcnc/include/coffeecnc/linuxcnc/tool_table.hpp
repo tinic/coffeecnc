@@ -36,6 +36,9 @@ inline constexpr std::size_t max_tool_table_bytes = std::size_t{4} << 20;
 // table it has loaded. Rows without a comment and lines without a T word are left out; of two
 // rows for one tool the first counts.
 [[nodiscard]] auto comments_of(std::string_view table) -> std::map<int, std::string>;
+// The complete row, including its comment, if exactly one row names this tool.
+[[nodiscard]] auto unique_tool_row(std::string_view table, int tool)
+    -> std::optional<std::string_view>;
 [[nodiscard]] auto tool_z(std::string_view table, int tool) -> std::optional<double>;
 [[nodiscard]] auto tool_diameter(std::string_view table, int tool) -> std::optional<double>;
 

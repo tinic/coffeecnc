@@ -659,7 +659,7 @@ void feature_scenarios(NmlPort& port, double scale, const auto& mdi) {
 // the expected point and faces. Applying that measurement must then set the same origin.
 void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& mdi,
                        bool measure = false, const std::string& tool_table = {},
-                       const std::string& programs = {}) {
+                       const std::string& programs = {}, const std::string& runout_file = {}) {
   // The MDI blocks written since `from` that write an offset or the tool table: G10.
   const auto g10_since = [&](std::size_t from) {
     const auto all = port.writes();
@@ -1005,6 +1005,40 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
                   epoch, "work frame or tool");
     mdi(std::format("G21 G10 L2 P2 R{}", degrees));
     mdi(units);
+    // These edits come from another client. Neither the session epoch nor the applied G43
+    // offset changes, so Set must check the table row and correction itself.
+    const auto probe_length = tool_z(table_text(), 99);
+    require(probe_length.has_value(), "T99 has a stored length");
+    const auto edit_tool = [&](const Tool& row) {
+      const auto edit = with_tool(table_text(), row, scale);
+      if (!edit)
+        throw std::runtime_error(edit.error().text);
+      std::ofstream output{tool_table};
+      require(static_cast<bool>(output << *edit << std::flush), "edit the simulated tool table");
+    };
+    const auto original_tool_offset = port.status().tool_offset;
+    const Tool probe_row{99, 99, probe_length.value() * scale, 2, "Ruby probe"};
+    auto updated = probe_row;
+    updated.diameter = 3;
+    refused_after("probe_diameter", [&] { edit_tool(updated); }, epoch, "work frame or tool");
+    edit_tool(probe_row);
+    updated = probe_row;
+    updated.length += 1;
+    refused_after("probe_length", [&] { edit_tool(updated); }, epoch, "work frame or tool");
+    edit_tool(probe_row);
+    require(port.status().tool_offset == original_tool_offset,
+            "editing the saved probe row leaves the applied G43 offset in effect");
+    const ProbeRunout correction{.tool = 99, .table_diameter_mm = 2, .radius_mm = {0.02, -0.03}};
+    const auto save_runout = [&] {
+      std::ofstream output{runout_file};
+      require(static_cast<bool>(output << format_probe_runout(correction) << std::flush),
+              "save a runout correction in the simulation");
+    };
+    refused_after("runout_added", save_runout, epoch, "work frame or tool");
+    refused_after(
+        "runout_removed",
+        [&] { require(std::filesystem::remove(runout_file), "clear the correction"); }, epoch,
+        "work frame or tool");
     const auto none_changed = [] {};
     auto page = epoch;
     ++page.page;
@@ -1033,6 +1067,7 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
         {.action = SetterAction::apply_measurement, .tool = 99, .edge_measurement = first->measured->id},
         epoch, {});
     const bool forgotten_clean = port.writes().size() == forgotten_writes;
+    edit_tool({1, 1, 8, 2, "Unrelated cutter"});
     const auto latest = port.fixed_setter(
         {.action = SetterAction::apply_measurement, .tool = 99, .edge_measurement = second->measured->id},
         epoch, {});
@@ -1040,9 +1075,10 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
                              "second_applied={}",
                              degrees, !forgotten, forgotten_clean ? 0 : 1, latest.has_value())
               << std::endl;
-    require(!forgotten && forgotten.error().contains("Probe the feature again") && forgotten_clean &&
-                latest.has_value() && first->measured->id != second->measured->id,
-            "a new probe action forgets the measurement before it");
+    require(!forgotten && forgotten.error().contains("Probe the feature again") &&
+                forgotten_clean && latest.has_value() &&
+                first->measured->id != second->measured->id,
+            "a new probe action forgets the previous ID; an unrelated tool edit keeps the latest");
     // An action that always writes is refused as a measurement before anything is sent.
     for (const auto action : {SetterAction::ball, SetterAction::touch_off, SetterAction::check}) {
       const auto writes_before = port.writes().size();
@@ -2961,7 +2997,7 @@ void run(const std::string& ini, std::string_view scenario) {
   if (rotated) {
     // Millimetres at +7.5°, inches at -30°: each rotated cycle in both units and turns.
     rotated_scenarios(*port, scale, scale == 1 ? 7.5 : -30, mdi, measure, config->tool_table,
-                      config->program_prefix);
+                      config->program_prefix, config->probe_runout_file());
     return;
   }
   if (runout) {

@@ -461,6 +461,30 @@ describe('browser probe scene', () => {
     expect(left.sim.modal.offsets[0]?.[0]).toBe(x)
   })
 
+  it.each(['diameter', 'length'] as const)('discards a pending measurement after the probe %s changes', (dimension) => {
+    const { sim, cycle, send, result } = scene('left')
+    const id = cycle({ action: 'material', direction: 'x_plus', measure_only: true }).setter?.measured?.measurement_id
+    const probe = sim.modal.tools.find(tool => tool.number === 99)
+    if (id === undefined || !probe) throw new Error('Missing measurement or probe')
+    const offsets = structuredClone(sim.status().offsets)
+    expect(result(send({ type: 'set_tool', tool: { ...probe, [dimension]: probe[dimension] + 1 } }))?.outcome).toBe('accepted')
+    expect(result(send({ type: 'fixed_setter', action: 'apply_measurement', tool: 99, measurement_id: id }))?.reason)
+      .toBe('The work frame or tool changed. Probe the feature again.')
+    expect(sim.status().offsets).toEqual(offsets)
+  })
+
+  it('discards a pending measurement when runout compensation is cleared', () => {
+    const { sim, cycle, send, result } = scene('bore')
+    expect(cycle({ action: 'runout', diameter: 20, outside: false }).setter?.runout).toBeDefined()
+    const id = cycle({ action: 'bore', measure_only: true }).setter?.measured?.measurement_id
+    if (id === undefined) throw new Error('Missing measurement')
+    const offsets = structuredClone(sim.status().offsets)
+    expect(result(send({ type: 'fixed_setter', action: 'clear_runout', tool: 99 }))?.outcome).toBe('accepted')
+    expect(result(send({ type: 'fixed_setter', action: 'apply_measurement', tool: 99, measurement_id: id }))?.reason)
+      .toBe('Probe the feature again before applying the measurement.')
+    expect(sim.status().offsets).toEqual(offsets)
+  })
+
   it('refuses measure_only on a height map as an unexpected field, as the controller does', () => {
     const { sim, send, result } = scene('top')
     const before = structuredClone(sim.status().offsets)

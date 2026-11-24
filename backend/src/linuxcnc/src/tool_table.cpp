@@ -141,26 +141,34 @@ auto comments_of(std::string_view table) -> std::map<int, std::string> {
   return comments;
 }
 
-static auto tool_dimension(std::string_view table, int tool, char axis) -> std::optional<double> {
-  std::optional<double> length;
+auto unique_tool_row(std::string_view table, int tool) -> std::optional<std::string_view> {
+  std::optional<std::string_view> found;
   for (const auto line : lines_of(table)) {
     if (tool_number(line) != tool)
       continue;
-    if (length)
+    if (found)
       return {}; // Do not guess which duplicate row LinuxCNC loaded.
-    length = 0;
-    for (auto word : words_of(line)) {
-      if (letter(word) != axis)
-        continue;
-      word.remove_prefix(1);
-      if (word.starts_with('+'))
-        word.remove_prefix(1);
-      const auto [end, error] = std::from_chars(word.data(), word.data() + word.size(), *length);
-      if (error != std::errc{} || end != word.data() + word.size() || !std::isfinite(*length))
-        return {};
-    }
+    found = line;
   }
-  return length;
+  return found;
+}
+
+static auto tool_dimension(std::string_view table, int tool, char axis) -> std::optional<double> {
+  const auto line = unique_tool_row(table, tool);
+  if (!line)
+    return {};
+  double value{};
+  for (auto word : words_of(*line)) {
+    if (letter(word) != axis)
+      continue;
+    word.remove_prefix(1);
+    if (word.starts_with('+'))
+      word.remove_prefix(1);
+    const auto [end, error] = std::from_chars(word.data(), word.data() + word.size(), value);
+    if (error != std::errc{} || end != word.data() + word.size() || !std::isfinite(value))
+      return {};
+  }
+  return value;
 }
 
 auto tool_z(std::string_view table, int tool) -> std::optional<double> {

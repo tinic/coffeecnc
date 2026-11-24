@@ -29,6 +29,10 @@ using namespace coffeecnc;
 using namespace std::chrono_literals;
 
 namespace {
+
+const LocalizedReason no_machine{"No machine identity is configured ([COFFEECNC] MACHINE_ID): tool "
+                                 "models last until the panel closes.",
+                                 MessageKey{"backend.toolModelStore.noMachineId"}};
 using Json = nlohmann::json;
 
 int checks = 0;
@@ -59,7 +63,7 @@ struct Fixture {
   void open(std::string at = directory) {
     log.reset();
     log = std::make_unique<AlarmLog>(
-        files, std::move(at), "No machine identity configured",
+        files, std::move(at), no_machine,
         [this](PageToken token, std::vector<std::string> messages) {
           const std::scoped_lock lock{delivered_mutex};
           std::ranges::transform(
@@ -225,8 +229,11 @@ void corruption_tolerance() {
   f.files.failures["read " + std::string(file)] = 1;
   f.open();
   view = f.log->view();
-  require(view.reason.find("cannot be read") != std::string::npos,
-          "A file that cannot be read is said");
+  require(view.reason.find("cannot be read") != std::string::npos &&
+              view.localization ==
+                  MessageKey{"backend.alarmLog.cannotRead",
+                             {{"file", file}, {"detail", "it cannot be read: Input/output error"}}},
+          "An unreadable file reports its name and the read error");
 }
 
 void rotation() {
@@ -275,14 +282,19 @@ void full_disk() {
   f.files.failures["append"] = 3;
   f.message("while full 1");
   auto view = f.log->view();
-  require(view.reason.find("No space left on device") != std::string::npos, "A full disk is said");
+  require(view.reason.find("No space left on device") != std::string::npos &&
+              view.localization ==
+                  MessageKey{"backend.alarmLog.notSaved",
+                             {{"detail", "the file cannot be written: No space left on device"}}},
+          "A full disk reports its storage error");
   require(f.texts().back() == "while full 1", "The view still has what was not saved");
   f.message("while full 2"); // a new record tries again at once: fails
   // Space again: a retry or the next record writes what waited, in order.
   f.files.failures.clear();
   f.message("after");
   view = f.log->view();
-  require(view.reason.empty(), "The reason goes once the log is saved again");
+  require(view.reason.empty() && !view.localization,
+          "The reason and key clear once the log is saved again");
   f.open();
   require(f.texts() == std::vector<std::string>{"before", "while full 1", "while full 2", "after"},
           "Nothing is lost or repeated, and the torn halves are skipped");
@@ -306,7 +318,8 @@ void session_only() {
   f.open("");
   f.message("kept in memory");
   const auto view = f.log->view();
-  require(!view.saved && view.reason == "No machine identity configured" && view.session == 1 &&
+  require(!view.saved && view.reason == no_machine.text &&
+              view.localization == no_machine.localization && view.session == 1 &&
               f.texts() == std::vector<std::string>{"kept in memory"},
           "Without a directory the log is kept for this run");
   require(std::ranges::none_of(f.files.calls,
@@ -481,11 +494,15 @@ void writes_only_under_the_lock() {
   require(other.lock(directory).has_value(), "Another CoffeeCNC holds the lock");
   FakeToolModelFiles files{disk};
   {
-    AlarmLog log{files, directory, "", noop};
+    AlarmLog log{files, directory, {}, noop};
     log.posted(page, std::vector{encode_message(MessageLevel::error, "not saved", epoch)}, epoch);
     log.settle();
     const auto view = log.view();
     require(!view.saved && view.reason.find("in use by another CoffeeCNC") != std::string::npos &&
+                view.localization ==
+                    MessageKey{"backend.alarmLog.keptForRun",
+                               {{"directory", directory},
+                                {"detail", "it is in use by another CoffeeCNC."}}} &&
                 view.entries.size() == 1,
             "Without the lock the log is kept for this run only, and says why: " + view.reason);
   }
@@ -493,8 +510,9 @@ void writes_only_under_the_lock() {
           "Nothing is written in a directory another CoffeeCNC holds");
   other.unlock();
   {
-    AlarmLog log{files, directory, "", noop,
-                 [] { return std::optional<std::string>{"the tool models could not lock it"}; }};
+    AlarmLog log{files, directory, {}, noop, [] {
+                   return std::optional<std::string>{"the tool models could not lock it"};
+                 }};
     log.posted(page, std::vector{encode_message(MessageLevel::error, "not saved", epoch)}, epoch);
     log.settle();
     require(!log.view().saved && writes(files) == 0 && files.count("lock") == 1,
@@ -511,7 +529,7 @@ void writes_only_under_the_lock() {
     ToolModelStore store{
         store_files, ToolModelLocation{"G0759", ToolModelAvailability::available, "", directory},
         [](PageToken, const std::vector<std::string>&) {}};
-    AlarmLog log{files, directory, "", noop, [&store]() -> std::optional<std::string> {
+    AlarmLog log{files, directory, {}, noop, [&store]() -> std::optional<std::string> {
                    const auto held = store.held_location();
                    if (held.availability == ToolModelAvailability::available)
                      return std::nullopt;
@@ -546,7 +564,7 @@ void real_files(const std::filesystem::path& root) {
   std::filesystem::create_directories(at);
   LocalToolModelFiles files;
   {
-    AlarmLog log{files, at.string(), "", [](PageToken, const std::vector<std::string>&) {}};
+    AlarmLog log{files, at.string(), {}, [](PageToken, const std::vector<std::string>&) {}};
     log.posted(page, std::vector{encode_message(MessageLevel::error, "on a real disk", epoch)},
                epoch);
     log.settle();
@@ -560,7 +578,7 @@ void real_files(const std::filesystem::path& root) {
               (std::filesystem::perms::owner_read | std::filesystem::perms::owner_write),
           "The log file has mode 0600");
   {
-    AlarmLog log{files, at.string(), "", [](PageToken, const std::vector<std::string>&) {}};
+    AlarmLog log{files, at.string(), {}, [](PageToken, const std::vector<std::string>&) {}};
     log.settle();
     require(log.view().session == 2 && log.view().entries.size() == 1, "It reads back");
   }

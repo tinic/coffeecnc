@@ -437,6 +437,13 @@ auto encoded_messages() -> std::vector<Encoded> {
       {2, 2, 1700000105000, MessageLevel::error, "The machine is off.", "rejected",
        R"({"axis":"x","type":"home"})"}};
   messages.emplace_back(encode_alarm_log(alarms));
+  messages.emplace_back(encode_alarm_log(
+      {true,
+       "The alarm log could not be saved: No space left on device",
+       3,
+       0,
+       {},
+       MessageKey{"backend.alarmLog.notSaved", {{"detail", "No space left on device"}}}}));
   messages.emplace_back(encode_alarm_log({false, "No machine identity configured", 1, 0, {}}));
   messages.emplace_back(
       encode_backup_written({"/media/cnc/STICK/coffeecnc-G0759-20261123-140200.tar.gz",

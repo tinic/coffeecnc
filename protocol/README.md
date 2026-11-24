@@ -49,6 +49,8 @@ An optional `hello.rigid_tap` object exposes `max_rpm` (programmed rpm), `revers
 
 `alarm_log` is sent once after `hello`: what the operator was told before the page was loaded, oldest first, at most 500 entries, of earlier runs of CoffeeCNC and of earlier pages of this run. What is told after it arrives as `message` and `result` as before. Each entry has the run it was told in (`session`, from 1; the message's own `session` is this run), `time`, `level`, `text`, the `outcome` of a result (null for an operator message) and the `command` the result answers, as a panel sent it without its id (null when it is not known; only its `type` when it was longer than 512 bytes). A panel reads `command` defensively: an older panel may have sent it. `storage` is `saved` or `session_only` with the `reason`; `reason` also says when the log cannot be read or written now. `skipped` counts lines of the saved log that could not be read. The panel shows the entries under its own, grouped by run. File format and limits: [backend rules](../docs/backend-rules.md).
 
+The alarm-log snapshot may include top-level `localization` for its storage `reason`. The English reason and the saved JSONL record format are preserved.
+
 ## Version mismatch
 
 A hello with a different protocol version puts the panel in an incompatible connection state. It clears controller snapshots and ignores subsequent messages until a compatible hello arrives; fresh status is then required to show a live connection again. New commands are rejected locally with a result and an operator message.

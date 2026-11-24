@@ -465,7 +465,6 @@
       "workOriginChanged": "El origen de pieza ha cambiado. Revise una nueva comprobación del programa.",
       "restartContextChanged": "La alimentación de la máquina, el programa o el sistema de coordenadas de pieza han cambiado.",
       "restartSelectWcs": "Esta línea se ejecuta en {wcs}. Seleccione {wcs} y vuelva a elegir la línea.",
-      "restartSelectRequiredWcs": "Esta línea se ejecuta en {wcs}. Seleccione ese sistema de coordenadas de trabajo y vuelva a elegir la línea.",
       "remainStopped": "La máquina debe permanecer parada en la posición mostrada en la vista previa.",
       "removeProbe": "Retire el palpador antes de ejecutar un programa desde una línea.",
       "restartSpindleLimit": "La velocidad del husillo para el reinicio supera el límite de la máquina.",

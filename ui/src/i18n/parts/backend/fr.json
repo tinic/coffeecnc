@@ -465,7 +465,6 @@
       "workOriginChanged": "L’origine pièce a changé. Examinez une nouvelle vérification du programme.",
       "restartContextChanged": "La mise sous tension, le programme ou le système de coordonnées pièce a changé.",
       "restartSelectWcs": "Cette ligne s’exécute dans {wcs}. Sélectionnez {wcs}, puis choisissez de nouveau la ligne.",
-      "restartSelectRequiredWcs": "Cette ligne s’exécute dans {wcs}. Sélectionnez ce système de coordonnées de travail, puis choisissez de nouveau la ligne.",
       "remainStopped": "La machine doit rester arrêtée à la position affichée dans l’aperçu.",
       "removeProbe": "Retirez le palpeur avant d’exécuter un programme à partir d’une ligne.",
       "restartSpindleLimit": "La vitesse de broche de reprise dépasse la limite de la machine.",

@@ -315,8 +315,15 @@ describe('native and store sentences', () => {
       expect(i18n.global.te(key, 'en'), key).toBe(true)
       let parameter = 0
       let argumentIndex = 0
-      const formatted = fallback.replace(/\{(?::[^{}]*)?\}/g,
-        () => args[argumentIndex++] ?? markers[parameter++] ?? '{}')
+      const bound = new Map<number, string>()
+      const formatted = fallback.replace(/\{(\d+)?(?::[^{}]*)?\}/g, (_, position: string | undefined) => {
+        const index = position === undefined ? argumentIndex++ : Number(position)
+        const existing = args[index] ?? bound.get(index)
+        if (existing !== undefined) return existing
+        const marker = markers[parameter++] ?? '{}'
+        bound.set(index, marker)
+        return marker
+      })
       expect(i18n.global.t(key as never, params, { locale: 'en' }), key).toBe(formatted)
       expect(parameter, key).toBe(names.length)
     }

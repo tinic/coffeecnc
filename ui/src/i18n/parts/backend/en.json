@@ -465,7 +465,6 @@
       "workOriginChanged": "The work origin changed. Review a fresh program check.",
       "restartContextChanged": "Machine power, the program or the work coordinate system changed.",
       "restartSelectWcs": "This line runs in {wcs}. Select {wcs}, then choose the line again.",
-      "restartSelectRequiredWcs": "This line runs in {wcs}. Select that work coordinate system, then choose the line again.",
       "remainStopped": "The machine must remain stopped at the position shown in the preview.",
       "removeProbe": "Remove the touch probe before running a program from a line.",
       "restartSpindleLimit": "The restart spindle speed exceeds the machine limit.",

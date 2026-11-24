@@ -332,10 +332,10 @@ auto encoded_messages() -> std::vector<Encoded> {
   messages.emplace_back(
       encode_result(48, CommandOutcome::failed, "A program named part.ngc exists already.", {}, {},
                     {}, MessageKey{"backend.programEdit.exists", {{"name", "part.ngc"}}}));
-  messages.emplace_back(encode_result(
-      57, CommandOutcome::rejected,
-      "This line runs in G55. Select that work coordinate system, then choose the line again.", {},
-      {}, RefusalMessage{"backend.nmlPort.restartSelectRequiredWcs", {{"wcs", "G55"}}}));
+  messages.emplace_back(
+      encode_result(57, CommandOutcome::rejected,
+                    "This line runs in G55. Select G55, then choose the line again.", {}, {},
+                    RefusalMessage{"backend.nmlPort.restartSelectWcs", {{"wcs", "G55"}}}));
   const RestartPoint restart{.line = 25,
                              .tool = 98,
                              .h = 98,

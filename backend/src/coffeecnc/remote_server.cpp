@@ -111,9 +111,6 @@ using Stream = beast::basic_stream<tcp, net::any_io_executor, InboundBytes>;
 constexpr std::size_t client_control_header = 6;
 // A control frame that is still arriving, at most 125 payload bytes.
 constexpr std::size_t max_partial_control = client_control_header + 125;
-// How long part of a frame may wait for the rest. TCP can split a pong or a close.
-constexpr auto partial_input_timeout = 2s;
-
 auto comparable(address value) -> address {
   if (value.is_v4())
     return value;
@@ -181,7 +178,7 @@ struct RemoteServer::Impl {
   class Client;
 
   Impl(const std::string& directory, std::uint16_t port, std::span<const std::string> aliases,
-       Upload receive);
+       Upload receive, RemoteServerTiming deadlines);
   ~Impl();
   void stop();
   void accept();
@@ -210,6 +207,7 @@ struct RemoteServer::Impl {
 
   const std::string ui_directory;
   const Upload upload;
+  const RemoteServerTiming timing;
   std::optional<net::thread_pool> upload_worker;
   bool upload_active{};
   Snapshot staged{};
@@ -301,7 +299,7 @@ private:
 
   void write_file(const std::shared_ptr<FileTransfer>& transfer) {
     // The stream's timeout is per write. Progress keeps a slow LAN download alive.
-    socket_.expires_after(io_timeout);
+    socket_.expires_after(owner_.timing.file_write_timeout);
     http::async_write_some(socket_, transfer->serializer,
       [self = shared_from_this(), transfer](Error error, std::size_t) -> void {
         if (error || transfer->serializer.is_done())
@@ -573,8 +571,8 @@ private:
   }
 
   // Input that pongs do not explain. Beast skips empty non-final fragments without completing a
-  // read, and they reset its idle timeout. One control frame can still be arriving, but not for
-  // longer than partial_input_timeout.
+  // read, and they reset its idle timeout. TCP can split a control frame, so wait for the rest
+  // until the partial-frame deadline.
   [[nodiscard]] auto sent_input(const websocket::stream<Stream>& viewer) -> bool {
     const auto unexplained = viewer.next_layer().rate_policy().received() - input_start_ - pong_bytes_;
     if (unexplained == 0) {
@@ -585,7 +583,7 @@ private:
     if (!partial_since_)
       partial_since_ = now;
     return unexplained > max_partial_control ||
-           now - partial_since_.value_or(now) > partial_input_timeout;
+           now - partial_since_.value_or(now) > owner_.timing.partial_frame_timeout;
   }
 
   void send() {
@@ -670,8 +668,9 @@ private:
 };
 
 RemoteServer::Impl::Impl(const std::string& directory, std::uint16_t port,
-                         std::span<const std::string> aliases, Upload receive)
-    : ui_directory(directory), upload(std::move(receive)) {
+                         std::span<const std::string> aliases, Upload receive,
+                         RemoteServerTiming deadlines)
+    : ui_directory(directory), upload(std::move(receive)), timing(deadlines) {
   if (upload)
     upload_worker.emplace(1);
   Error error;
@@ -796,8 +795,9 @@ void RemoteServer::Impl::accept() {
 }
 
 RemoteServer::RemoteServer(const std::string& ui_directory, std::uint16_t port,
-                           std::span<const std::string> aliases, Upload upload)
-    : impl_(std::make_unique<Impl>(ui_directory, port, aliases, std::move(upload))) {}
+                           std::span<const std::string> aliases, Upload upload,
+                           RemoteServerTiming timing)
+    : impl_(std::make_unique<Impl>(ui_directory, port, aliases, std::move(upload), timing)) {}
 RemoteServer::~RemoteServer() = default;
 auto RemoteServer::port() const -> std::uint16_t { return impl_->listening_port; }
 void RemoteServer::stop() { impl_->stop(); }

@@ -302,6 +302,9 @@ void rigid_tapping_reversal_bounds() {
   reject(prelude + "G33.1 X2 Z-4 K1\nM2\n", "Z-only move");
 
   const auto subroutine = rig.preview("G21 G90\nG0 Z3\nS300 M4\nM51 P0\no<tap> call\nM2\n");
+  const auto check_key = subroutine.check && !subroutine.check->errors.empty()
+                             ? subroutine.check->errors.front().localization
+                             : std::nullopt;
   require(subroutine.error && subroutine.error->line == 5 &&
               subroutine.error->text ==
                   "tap.ngc line 2: rigid tapping requires clockwise spindle rotation (M3)" &&
@@ -309,11 +312,8 @@ void rigid_tapping_reversal_bounds() {
               subroutine.error->localization->key == "backend.previewEngine.helperSource" &&
               subroutine.error->localization->params_localization.at("detail") ==
                   MessageParameterKey{"backend.previewEngine.rigidTapDirection"} &&
-              subroutine.check && !subroutine.check->errors.empty() &&
-              subroutine.check->errors.front().localization &&
-              subroutine.check->errors.front().localization->key ==
-                  "backend.previewEngine.helperLineAndSource" &&
-              subroutine.check->errors.front().localization->params_localization.at("detail") ==
+              check_key && check_key->key == "backend.previewEngine.helperLineAndSource" &&
+              check_key->params_localization.at("detail") ==
                   MessageParameterKey{"backend.previewEngine.rigidTapDirection"},
           "A helper error keeps the subroutine location and translated reason in Program Check: " +
               text_of(subroutine));

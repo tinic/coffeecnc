@@ -603,10 +603,14 @@ void ToolModelStore::stop() {
   thread_.join();
 }
 
-auto ToolModelStore::held_location() -> ToolModelLocation {
+auto ToolModelStore::shared_lock_failure() -> std::optional<LocalizedReason> {
   std::unique_lock lock{mutex_};
   opened_.wait(lock, [this]() -> bool { return held_.has_value(); });
-  return held_ ? *held_ : ToolModelLocation{};
+  if (!held_)
+    return LocalizedReason{};
+  if (held_->availability == ToolModelAvailability::available)
+    return std::nullopt;
+  return LocalizedReason{held_->reason, held_->localization};
 }
 
 auto ToolModelStore::submit(PageToken page, RequestId id, ToolModelCommand command)

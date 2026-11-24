@@ -894,20 +894,37 @@ void motion_settings() {
   require(defaulted && near(defaulted->motion_tolerances.probe_position_mm, 0.1) &&
               near(defaulted->motion_tolerances.probe_off_line_mm, 0.5) &&
               near(defaulted->motion_tolerances.probe_backlash_mm, 0.5) &&
-              near(defaulted->motion_tolerances.restart_position_mm, 0.5),
+              near(defaulted->motion_tolerances.restart_position_mm, 0.5) &&
+              near(defaulted->motion_tolerances.height_map_z_lag_mm, 0.15),
           "the G0759 motion tolerances remain the defaults");
   const auto tuned = load(with(std::string(g0759), rpm, "MAX_SPINDLE_RPM = 1500\n"
       "PROBE_OFF_LINE_TOLERANCE_MM = 0.2\nPROBE_BACKLASH_TOLERANCE_MM = 0.3\n"
-      "PROBE_POSITION_TOLERANCE_MM = 0.04\nRESTART_POSITION_TOLERANCE_MM = 0.23\n"));
+      "PROBE_POSITION_TOLERANCE_MM = 0.04\nRESTART_POSITION_TOLERANCE_MM = 0.23\n"
+      "HEIGHT_MAP_Z_LAG_TOLERANCE_MM = 0.2\n"));
   require(tuned && near(tuned->motion_tolerances.probe_off_line_mm, 0.2) &&
               near(tuned->motion_tolerances.probe_backlash_mm, 0.3) &&
               near(tuned->motion_tolerances.probe_position_mm, 0.04) &&
-              near(tuned->motion_tolerances.restart_position_mm, 0.23),
+              near(tuned->motion_tolerances.restart_position_mm, 0.23) &&
+              near(tuned->motion_tolerances.height_map_z_lag_mm, 0.2),
           "each motion tolerance can be tuned independently");
   const auto invalid = load(with(std::string(g0759), rpm, "MAX_SPINDLE_RPM = 1500\n"
       "PROBE_POSITION_TOLERANCE_MM = nan\n"));
   require(!invalid && has(invalid.error(), "PROBE_POSITION_TOLERANCE_MM"),
           "an invalid tolerance names the key");
+  const auto loose_lag = load(with(std::string(g0759), rpm, "MAX_SPINDLE_RPM = 1500\n"
+      "HEIGHT_MAP_Z_LAG_TOLERANCE_MM = 2\n"));
+  require(!loose_lag && has(loose_lag.error(), "HEIGHT_MAP_Z_LAG_TOLERANCE_MM") &&
+              has(loose_lag.error(), "0.5"),
+          "a height-map Z lag above the 0.5 mm default backlash tolerance is refused");
+  const auto lag_over_backlash = load(with(std::string(g0759), rpm, "MAX_SPINDLE_RPM = 1500\n"
+      "PROBE_BACKLASH_TOLERANCE_MM = 0.1\nHEIGHT_MAP_Z_LAG_TOLERANCE_MM = 0.15\n"));
+  require(!lag_over_backlash && has(lag_over_backlash.error(), "HEIGHT_MAP_Z_LAG_TOLERANCE_MM") &&
+              has(lag_over_backlash.error(), "PROBE_BACKLASH_TOLERANCE_MM"),
+          "a height-map Z lag above the configured backlash tolerance is refused");
+  const auto lag_at_backlash = load(with(std::string(g0759), rpm, "MAX_SPINDLE_RPM = 1500\n"
+      "HEIGHT_MAP_Z_LAG_TOLERANCE_MM = 0.5\n"));
+  require(lag_at_backlash && near(lag_at_backlash->motion_tolerances.height_map_z_lag_mm, 0.5),
+          "a height-map Z lag equal to the backlash tolerance is accepted");
 
   auto paused = with(std::string(g0759), "MAX_VELOCITY = 12.5\n",
                      "MAX_VELOCITY = 12.5\nMAX_ACCELERATION = 10\nOFFSET_AV_RATIO = 0.2\n");

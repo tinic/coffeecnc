@@ -57,6 +57,10 @@ FIXED_SETTER = no
 # PROBE_OFF_LINE_TOLERANCE_MM = 0.5
 # PROBE_BACKLASH_TOLERANCE_MM = 0.5
 # PROBE_POSITION_TOLERANCE_MM = 0.1
+# How far the Z encoder may differ from the command (in either direction) when a height map's
+# next point starts, after the last point's retract. Every other probe allows none. It must not
+# be above PROBE_BACKLASH_TOLERANCE_MM.
+# HEIGHT_MAP_Z_LAG_TOLERANCE_MM = 0.15
 # RESTART_POSITION_TOLERANCE_MM = 0.5
 # The side-probing approach used for corners, bosses, and the ball calibration gauge.
 # TOUCH_PROBE_CORNER_REACH_MM = 10

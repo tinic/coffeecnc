@@ -84,6 +84,20 @@ auto encode_result(RequestId id, CommandOutcome outcome, std::string_view reason
       message["setter"]["feature_size"]["x"] = *width;
     if (const auto width = setter->feature_size[1])
       message["setter"]["feature_size"]["y"] = *width;
+    if (const auto& map = setter->height_map) {
+      auto points = Json::array();
+      // A point a partial map did not reach is null.
+      std::ranges::transform(map->points, std::back_inserter(points), [](const auto& point) {
+        return point.measured ? Json{{"work", point.work}, {"machine", point.machine}} : Json(nullptr);
+      });
+      message["setter"]["height_map"] = {{"wcs", map->wcs},
+                                         {"columns", map->columns},
+                                         {"rows", map->rows},
+                                         {"rotation", map->rotation_deg},
+                                         {"points", std::move(points)}};
+      if (map->partial)
+        message["setter"]["height_map"]["partial"] = *map->partial;
+    }
     if (const auto& measured = setter->measured) {
       const auto direction = [](ProbeDirection d) {
         switch (d) {

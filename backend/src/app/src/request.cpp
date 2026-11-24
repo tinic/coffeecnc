@@ -420,6 +420,7 @@ auto command(const Json& object) -> Command {
                                               {"boss_arc", SetterAction::boss_arc},
                                               {"angle", SetterAction::angle},
                                               {"apply_angle", SetterAction::apply_angle},
+                                              {"height_map", SetterAction::height_map},
                                               {"apply_measurement", SetterAction::apply_measurement}});
     FixedSetterRequest request{action};
     if (action == SetterAction::apply_angle || action == SetterAction::apply_measurement) {
@@ -452,6 +453,13 @@ auto command(const Json& object) -> Command {
       } else if (action == SetterAction::boss) {
         fields(object, {"id", "type", "action", "tool", "x", "y", "z", "diameter"}, {"measure_only"});
         request.gauge_width_mm = number(object, "diameter");
+      } else if (action == SetterAction::height_map) {
+        fields(object, {"id", "type", "action", "tool", "x", "y", "z", "x_min", "y_min", "x_max",
+                        "y_max", "step", "clearance"});
+        request.grid_mm = {number(object, "x_min"), number(object, "y_min"), number(object, "x_max"),
+                           number(object, "y_max")};
+        request.step_mm = number(object, "step");
+        request.clearance_mm = number(object, "clearance");
       } else if (action == SetterAction::bore_arc || action == SetterAction::boss_arc) {
         if (action == SetterAction::boss_arc) {
           fields(object, {"id", "type", "action", "tool", "x", "y", "z", "angles", "diameter"},

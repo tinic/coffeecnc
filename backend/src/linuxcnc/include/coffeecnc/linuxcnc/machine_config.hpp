@@ -32,6 +32,10 @@ struct MotionTolerances {
   double probe_off_line_mm{0.5};
   double probe_backlash_mm{0.5};
   double probe_position_mm{0.1};
+  // A height map's later points: how far the Z encoder may differ from the command, in either
+  // direction, at the start after the last point's retract (0.125 mm on the G0759). Other probes
+  // allow none. It may not be above probe_backlash_mm.
+  double height_map_z_lag_mm{0.15};
   double restart_position_mm{0.5};
 };
 

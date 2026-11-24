@@ -25,6 +25,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -83,11 +84,14 @@ void wire(double scale, bool g0759) {
   halcmd("net sim-enable sim-probe-estop.out iocontrol.0.emc-enable-in");
 }
 
-void wire_z_feedback() {
+// `load_sum`: false when the caller has loaded sum2 with sim-z-feedback among its names already
+// (HAL loads a component once).
+void wire_z_feedback(bool load_sum = true) {
   // Report the motor's commanded position plus the backlash in the last positive Z move.
   // The offset starts at zero and the test enables it only for one probe cycle.
   halcmd("loadrt mux2 names=sim-z-backlash");
-  halcmd("loadrt sum2 names=sim-z-feedback");
+  if (load_sum)
+    halcmd("loadrt sum2 names=sim-z-feedback");
   halcmd("addf sim-z-backlash servo-thread");
   halcmd("addf sim-z-feedback servo-thread");
   halcmd("unlinkp joint.2.motor-pos-fb");
@@ -1555,6 +1559,330 @@ void arc_scenarios(NmlPort& port, double scale, double degrees, const auto& mdi,
   require(port.status().g5x == g54, "three-point probing changes only the active work system");
 }
 
+// Z height map (#247). The simulated top is the plane Z = 12 + 0.01 u - 0.02 v (machine Z, mm),
+// with (u, v) the commanded machine XY turned into the G55 axes: HAL trips where the commanded Z
+// is below it. Z0 of G55 is at machine Z 12, so each point's work Z must read 0.01 u - 0.02 v.
+// The grid is work X -5..15, Y -4..12 at 10 mm: 3 x 3 points, first in G55 unrotated, then in
+// G55 rotated `degrees` with the Z encoder lagging 0.125 mm after each retract. Then the refusals
+// before any motion, and the maps that stop: a position change, an early trip, a miss, a stop, an
+// E-stop and a top too close under the clearance.
+void height_map_scenarios(NmlPort& port, HalShared& shared, double scale, double degrees,
+                          const auto& mdi) {
+  checked(port.set_tool({98, 98, 50, 0, "Setter reference"}, {}));
+  checked(port.set_tool({99, 99, 45, 2, "Ruby probe"}, {}));
+  constexpr double slope_u = 0.01;
+  constexpr double slope_v = -0.02;
+  const auto machine = [&] {
+    const auto axes = port.status().controller.axes;
+    return std::array{axes[0].machine, axes[1].machine, axes[2].machine};
+  };
+  SetterEpoch epoch{1, 1, 1, 0};
+  for (const int tool : {98, 99}) {
+    mdi(std::format("M61 Q{}", tool));
+    mdi(std::format("G43 H{}", tool));
+    mdi("G21 G90 G53 G0 X0 Y0 Z20");
+    ++epoch.tool;
+    halcmd(std::format("setp sim-tool-setter.max {}", (tool == 98 ? 10 : 12) / scale));
+    const auto touched = port.fixed_setter({SetterAction::touch_off, tool, machine()}, epoch, {});
+    require(touched.has_value(), touched ? "the reference and probe have known lengths" : touched.error());
+  }
+  mdi("G21 G90 G54");
+  const auto g54 = port.status().g5x;
+  halcmd("loadrt sum2 names=sim-map-plane,sim-map-height,sim-z-feedback");
+  halcmd("loadrt near names=sim-map-below");
+  for (const auto* part : {"sim-map-plane", "sim-map-height", "sim-map-below"})
+    halcmd(std::format("addf {} servo-thread", part));
+  halcmd("net sim-map-mx axis.x.pos-cmd sim-map-plane.in0");
+  halcmd("net sim-map-my axis.y.pos-cmd sim-map-plane.in1");
+  halcmd("net sim-setter-z sim-map-height.in0");
+  halcmd("net sim-map-w sim-map-plane.out sim-map-height.in1");
+  halcmd("setp sim-map-height.gain1 -1");
+  halcmd("net sim-map-d sim-map-height.out sim-map-below.in1");
+  // Z less the plane's rise within [-100, 12].
+  halcmd(std::format("setp sim-map-below.in2 {:.12f}", -44 / scale));
+  halcmd(std::format("setp sim-map-below.difference {:.12f}", 56 / scale));
+  halcmd("setp sim-map-below.scale 1");
+  halcmd("unlinkp motion.probe-input");
+  halcmd("unlinkp coffeecnc.probe-input");
+  halcmd("net sim-map-top sim-map-below.out motion.probe-input coffeecnc.probe-input");
+
+  // Z feedback with the reversal backlash of the G0759, off until a scenario sets it.
+  wire_z_feedback(false);
+  const auto set_lag = [&](double mm) {
+    halcmd(std::format("setp sim-z-backlash.in1 {:.12f}", mm / scale));
+    // The encoder lags only after an upward move, which every scenario ends with.
+    wait_for(port, [&](const NmlStatus& s) {
+      return std::abs(s.controller.axes[2].machine - s.commanded_position[2] - mm) < 0.001;
+    });
+  };
+  // G55 turned `turn`, with G92 taken at machine X0 Y0 Z20, so a point's machine XY depends only
+  // on its work XY: unrotated, the top at work X, Y is 0.01 (X - 2) - 0.02 (Y - 3).
+  const auto frame = [&](double turn) {
+    const double c = std::cos(turn * std::numbers::pi / 180);
+    const double s = std::sin(turn * std::numbers::pi / 180);
+    // The plane follows the work axes: its rise is slope_u u + slope_v v.
+    halcmd(std::format("setp sim-map-plane.gain0 {:.12f}", slope_u * c - slope_v * s));
+    halcmd(std::format("setp sim-map-plane.gain1 {:.12f}", slope_u * s + slope_v * c));
+    mdi(std::format("G21 G10 L2 P2 X5 Y-7 Z2 R{}", turn));
+    mdi("G55");
+    mdi("G21 G90 G53 G0 X0 Y0 Z20");
+    mdi("G92 X2 Y3 Z4");
+    mdi("G21 G10 L20 P0 Z8"); // Z0 at machine Z 12.
+    mdi(scale == 1 ? "G21 G91" : "G20 G91");
+  };
+  const auto map_request = [&](const std::array<double, 4>& grid, double step, double clearance) {
+    FixedSetterRequest request{.action = SetterAction::height_map, .tool = 99, .start = machine()};
+    request.grid_mm = grid;
+    request.step_mm = step;
+    request.clearance_mm = clearance;
+    return request;
+  };
+  // `z_lag`: from the first point's first touch on, the Z encoder reads this much below the
+  // command after every upward move, so every later point starts lagged.
+  const auto map = [&](double turn, double z_lag) {
+    const double c = std::cos(turn * std::numbers::pi / 180);
+    const double s = std::sin(turn * std::numbers::pi / 180);
+    frame(turn);
+    const auto before = port.status();
+    const auto request = map_request({-5, -4, 15, 12}, 10, 3);
+    const auto writes = port.writes().size();
+    bool lagging = false;
+    const auto result = port.fixed_setter(request, epoch, [&] {
+      const auto pins = shared.view(HalShared::Clock::now());
+      if (z_lag != 0 && !lagging && pins && pins->probe_cycle_active && pins->probe_input.value_or(false)) {
+        halcmd(std::format("setp sim-z-backlash.in1 {:.12f}", z_lag / scale));
+        lagging = true;
+      }
+      return true;
+    });
+    if (!result || !result->height_map)
+      throw std::runtime_error(std::format("height map at {}° with {} mm Z lag: {}", turn, z_lag,
+                                           result ? "no map" : result.error()));
+    const auto& points = result->height_map->points;
+    bool ok = result->height_map->columns == 3 && result->height_map->rows == 3 && points.size() == 9 &&
+              result->height_map->wcs == 2 && !result->height_map->partial &&
+              std::abs(result->height_map->rotation_deg - turn) < 1e-6 && port.status().g5x == before.g5x &&
+              port.status().g92 == before.g92 && port.writes().size() > writes;
+    // The rig left G91 active: the map restores it.
+    const bool incremental = std::ranges::contains(port.status().active_codes, "G91");
+    double worst = 0;
+    for (std::size_t i = 0; i < points.size(); ++i) {
+      const auto& point = points.at(i);
+      const double x = -5 + 10.0 * static_cast<double>(i % 3);
+      const double y = -4 + 8.0 * static_cast<double>(i / 3);
+      const double u = c * point.machine[0] + s * point.machine[1];
+      const double v = -s * point.machine[0] + c * point.machine[1];
+      const double expected = slope_u * u + slope_v * v;
+      worst = std::max(worst, std::abs(point.work[2] - expected));
+      ok = ok && std::abs(point.work[0] - x) < 0.01 && std::abs(point.work[1] - y) < 0.01 &&
+           std::abs(point.work[2] - expected) < 0.01 &&
+           std::abs(point.machine[2] - (12 + expected)) < 0.01;
+      std::cout << std::format("fact=height_map rotation={} point={} work_x={:.4f} work_y={:.4f} "
+                               "work_z_expected={:.4f} work_z_measured={:.4f} machine_z_measured={:.4f}",
+                               turn, i, point.work[0], point.work[1], expected, point.work[2],
+                               point.machine[2])
+                << std::endl;
+    }
+    // The probe ends at the clearance, work Z 3, less the encoder lag of the last retract.
+    const double end_z = port.status().work[2];
+    std::cout << std::format("fact=height_map rotation={} z_lag={} points={} worst_z_error={:.4f} "
+                             "end_work_z={:.4f} g5x_unchanged={} g92_unchanged={} g91_restored={} "
+                             "reported_rotation={:.9f} partial={} grid_ok={}",
+                             turn, z_lag, points.size(), worst, end_z, port.status().g5x == before.g5x,
+                             port.status().g92 == before.g92, incremental, result->height_map->rotation_deg,
+                             result->height_map->partial.has_value(), ok)
+              << std::endl;
+    require(ok && incremental && std::abs(end_z - 3 - z_lag) < 0.03,
+            std::format("the height map at {}° with {} mm Z lag probes every point of the grid, writes "
+                        "nothing and restores G91",
+                        turn, z_lag));
+    set_lag(0);
+  };
+  map(0, 0);
+  // Each later point starts after a retract, with the Z encoder 0.125 mm below the command as on
+  // the G0759, within the map's 0.15 mm (HEIGHT_MAP_Z_LAG_TOLERANCE_MM's default).
+  map(degrees, -0.125);
+
+  // Refused before any motion: a grid point beyond the travel, the search depth below the travel
+  // (clearance work Z -45 is machine Z -33, the search ends at -53 below Z min -50), and too many
+  // points. The point is named in the machine's units.
+  const std::string unit = scale == 1 ? "mm" : "in";
+  frame(0);
+  for (const auto& [grid, step, clearance, reason] :
+       {std::tuple{std::array{-5.0, -4.0, 300.0, 12.0}, 10.0, 3.0, std::format(" {} is outside the configured travel", unit)},
+        std::tuple{std::array{-5.0, -4.0, 15.0, 12.0}, 10.0, -45.0,
+                   std::format("Grid point X{} Y{} {} is outside the configured travel at the clearance or the search depth.",
+                               scale == 1 ? "-5.000" : "-0.1969", scale == 1 ? "-4.000" : "-0.1575", unit)},
+        std::tuple{std::array{-5.0, -4.0, 15.0, 12.0}, 1.0, 3.0, std::string("2 to 150 points")}}) {
+    const auto writes = port.writes().size();
+    const auto refused = port.fixed_setter(map_request(grid, step, clearance), epoch, {});
+    std::cout << std::format("fact=height_map action=refused x_max={} step={} clearance={} refused={} writes={} "
+                             "reason=\"{}\"",
+                             grid[2], step, clearance, !refused, port.writes().size() - writes,
+                             refused ? "" : refused.error())
+              << std::endl;
+    require(!refused && refused.error().contains(reason) && port.writes().size() == writes,
+            refused ? "expected a refused height map" : refused.error());
+  }
+
+  // Stopped maps. Each runs a single row of three points (work Y -4, X -5, 5 and 15; tops 0.07,
+  // 0.17 and 0.27) and keeps the points measured before it stopped.
+  struct Watch {
+    HalShared& shared;
+    int ended{};        // probe cycles (points) finished
+    bool active{};      // a probe cycle runs
+    bool touching{};    // and the probe touches
+    void operator()() {
+      const auto pins = shared.view(HalShared::Clock::now());
+      const bool now = pins && pins->probe_cycle_active;
+      if (active && !now)
+        ++ended;
+      active = now;
+      touching = now && pins->probe_input.value_or(false);
+    }
+  };
+  const auto count = [](const SetterState::HeightMap& m) {
+    return std::ranges::count_if(m.points, [](const auto& point) { return point.measured; });
+  };
+  const auto at_rest = [&] {
+    const auto first = machine();
+    std::this_thread::sleep_for(300ms);
+    const auto second = machine();
+    return std::ranges::all_of(std::array{0, 1, 2}, [&](int i) {
+      return std::abs(first.at(static_cast<std::size_t>(i)) - second.at(static_cast<std::size_t>(i))) < 0.001;
+    });
+  };
+  const auto reset = [&] {
+    checked(port.set_machine_state(MachineState::off, {}));
+    checked(port.set_machine_state(MachineState::on, {}));
+    checked(port.set_task_mode(TaskMode::mdi, {}));
+    mdi("G21 G90 G94 G40");
+  };
+  // Runs the row with `during` called whenever the port asks whether the map is still wanted;
+  // returns the result and whether the machine was still on afterwards.
+  const auto stopped_map = [&](std::string_view name, double clearance, const auto& during,
+                               std::size_t expected_points, std::string_view reason) {
+    frame(0);
+    Watch watch{shared};
+    const auto result = port.fixed_setter(map_request({-5, -4, 15, -4}, 10, clearance), epoch,
+                                          [&] { watch(); return during(watch); });
+    const bool on = port.status().controller.machine == MachineState::on;
+    const bool rest = at_rest();
+    const auto points = result && result->height_map ? count(*result->height_map) : 0;
+    const std::string why = !result ? result.error()
+                            : result->height_map && result->height_map->partial ? *result->height_map->partial
+                                                                                 : "";
+    std::cout << std::format("fact=height_map action={} machine_on={} at_rest={} points={} partial={} reason=\"{}\"",
+                             name, on, rest, points, result && result->height_map && result->height_map->partial,
+                             why)
+              << std::endl;
+    const bool partial = expected_points > 0;
+    require(rest && why.contains(reason) &&
+                (partial ? result && result->height_map && result->height_map->partial &&
+                               static_cast<std::size_t>(points) == expected_points &&
+                               result->height_map->points.at(0).measured &&
+                               std::abs(result->height_map->points.at(0).work[2] - 0.07) < 0.01
+                         : !result),
+            std::format("a height map {} with no further motion and {} measured point(s)", name, expected_points));
+    return on;
+  };
+  const auto never = [](const Watch&) { return true; };
+
+  // Any other probe stays strict: a single Z top refuses to start with the same 0.125 mm between
+  // the command and the encoder, before it descends, and writes nothing.
+  frame(0);
+  set_lag(-0.125);
+  {
+    const auto g5x = port.status().g5x;
+    const auto single = port.fixed_setter({SetterAction::material, 99, machine(), ProbeDirection::z_top}, epoch, {});
+    std::cout << std::format("fact=height_map action=single_z_top_with_lag z_lag=-0.125 refused={} g5x_unchanged={} "
+                             "reason=\"{}\"",
+                             !single, port.status().g5x == g5x, single ? "" : single.error())
+              << std::endl;
+    require(!single && single.error().contains("Probe input, position or feed controls changed before descent.") &&
+                port.status().g5x == g5x,
+            "a single Z top still refuses 0.125 mm between the commanded and the measured Z");
+  }
+  reset();
+  set_lag(0);
+
+  // A real move: the Z encoder 0.2 mm off the command between the points, beyond the map's
+  // 0.15 mm allowance. The map stops before the second point moves anything.
+  bool lagged = false;
+  require(stopped_map("refuses_a_position_change", 3,
+                      [&](const Watch& watch) {
+                        if (watch.ended == 1 && !lagged) {
+                          halcmd(std::format("setp sim-z-backlash.in1 {:.12f}", -0.2 / scale));
+                          std::this_thread::sleep_for(100ms);
+                          lagged = true;
+                        }
+                        return true;
+                      },
+                      1, "The machine moved between the height map points."),
+          "a Z lag beyond the backlash allowance leaves the machine on");
+  set_lag(0);
+
+  // An early trip: the feed down to clearance work Z 0.05 meets the 0.07 top of the first point.
+  require(!stopped_map("trips_early_on_the_descent", 0.05, never, 0,
+                       "Could not lower the probe to the search height"),
+          "an early trip stops the machine");
+  reset();
+
+  // A missed trip: no top under the second point. The missed search returns to its start.
+  bool lowered = false;
+  require(stopped_map("misses_a_point", 3,
+                      [&](const Watch& watch) {
+                        if (watch.ended == 1 && !lowered) {
+                          halcmd(std::format("setp sim-map-below.in2 {:.12f}", -1000 / scale));
+                          lowered = true;
+                        }
+                        return true;
+                      },
+                      1, "No probe contact within the search travel"),
+          "a miss leaves the machine on");
+  halcmd(std::format("setp sim-map-below.in2 {:.12f}", -44 / scale));
+
+  // Stop (the panel's abort) and E-stop while the second point's search touches.
+  require(!stopped_map("stops_on_abort", 3, [](const Watch& watch) { return !(watch.ended == 1 && watch.touching); },
+                       1, "the request was withdrawn"),
+          "a stop mid-grid stops the machine");
+  reset();
+  bool estopped = false;
+  require(!stopped_map("stops_on_estop", 3,
+                       [&](const Watch& watch) {
+                         if (watch.ended == 1 && watch.touching && !estopped) {
+                           halcmd("unlinkp sim-probe-estop.in1");
+                           halcmd("setp sim-probe-estop.in1 0");
+                           estopped = true;
+                         }
+                         return true;
+                       },
+                       1, "Point X"),
+          "an E-stop mid-grid stops the machine");
+  halcmd("net estop-loop sim-probe-estop.in1");
+  reset();
+
+  // Item 4: the third top (0.27) is 0.93 mm under clearance work Z 1.2, within the 1 mm latch
+  // back-off. The next traverse would skim it: the map stops with three of its six points.
+  frame(0);
+  {
+    const auto result = port.fixed_setter(map_request({-5, -4, 15, 4}, 10, 1.2), epoch, {});
+    const auto points = result && result->height_map ? count(*result->height_map) : 0;
+    const std::string why = result && result->height_map && result->height_map->partial
+                                ? *result->height_map->partial : result ? "" : result.error();
+    std::cout << std::format("fact=height_map action=margin points={} machine_on={} reason=\"{}\"", points,
+                             port.status().controller.machine == MachineState::on, why)
+              << std::endl;
+    require(result && result->height_map && points == 3 && result->height_map->points.at(2).measured &&
+                !result->height_map->points.at(3).measured && why.starts_with("The top at X") &&
+                why.contains(std::format(" {} below the clearance Z, within the ", unit)) &&
+                why.contains("Raise the clearance Z."),
+            "a top within the latch back-off of the clearance stops the map with the points so far");
+  }
+  mdi("G54");
+  require(port.status().g5x == g54, "the height map changes no work system");
+}
+
 void edge_rotations(NmlPort& port, double scale, const auto& mdi) {
   checked(port.set_tool({99, 99, 45, 2, "Ruby probe"}, {}));
   mdi("M61 Q99");
@@ -1883,6 +2211,7 @@ void run(const std::string& ini, std::string_view scenario) {
   const bool measure = scenario == "measure";
   const bool rotated = scenario == "rotated" || measure;
   const bool arc = scenario == "arc" || scenario == "arc-rotated" || scenario == "arc-faults";
+  const bool height_map = scenario == "height-map";
   const bool g0759 = std::filesystem::path(ini).filename() == "coffeecnc_g0759.ini";
   auto config = load_machine_config(ini);
   if (!config)
@@ -1895,7 +2224,7 @@ void run(const std::string& ini, std::string_view scenario) {
   config->fixed_setter = FixedSetterLimits{15, 240, reference_tool, 0.5, 12, 60, 1};
   if (scenario == "measure-m6")
     config->fixed_setter->travel_mm = 30;
-  if (material || edge || features || rotated || arc)
+  if (material || edge || features || rotated || arc || height_map)
     config->touch_probe_tool = 99;
   // The runner recreates the table, but retains files beside it between runs.
   std::filesystem::remove(std::filesystem::path(config->tool_table).parent_path() /
@@ -1950,6 +2279,11 @@ void run(const std::string& ini, std::string_view scenario) {
     // Millimetres unrotated and at +7.5°, inches at -30°; the faults at +7.5° in millimetres.
     arc_scenarios(*port, scale, scenario == "arc" ? 0 : scale == 1 ? 7.5 : -30, mdi,
                   scenario == "arc-faults", shared, config->tool_table);
+    return;
+  }
+  if (height_map) {
+    // Unrotated, then +7.5° in mm and -30° in inch.
+    height_map_scenarios(*port, shared, scale, scale == 1 ? 7.5 : -30, mdi);
     return;
   }
   if (scenario == "measure-m6") {
@@ -2235,7 +2569,7 @@ auto main(int argc, char** argv) -> int {
   if ((scenario != "" && scenario != "material" && scenario != "edge-rotation" &&
        scenario != "features" && scenario != "rotated" && scenario != "measure" &&
        scenario != "arc" && scenario != "arc-rotated" && scenario != "arc-faults" &&
-       scenario != "measure-m6") ||
+       scenario != "height-map" && scenario != "measure-m6") ||
       ini.parent_path() != run_dir ||
       (ini.filename() != "coffeecnc_sim.ini" &&
        !(scenario == "edge-rotation" && ini.filename() == "coffeecnc_g0759.ini")))

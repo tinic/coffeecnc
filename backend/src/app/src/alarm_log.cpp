@@ -54,6 +54,12 @@ auto localization_of(const Json& value, std::string_view field) -> std::optional
       if (message.params.contains(name))
         if (auto parameter = message_parameter_from_json(key))
           message.params_localization.emplace(name, std::move(*parameter));
+  const auto lists = metadata->find("params_lists");
+  if (lists != metadata->end() && lists->is_object())
+    for (const auto& [name, items] : lists->items())
+      if (message.params.contains(name))
+        if (auto list = message_list_from_json(items))
+          message.params_lists.emplace(name, std::move(*list));
   return message;
 }
 

@@ -16,6 +16,7 @@
     "no": "Não",
     "off": "Desligado",
     "saving": "A guardar…",
+    "detailListSeparator": "; ",
     "listSeparator": ", "
   }
 }

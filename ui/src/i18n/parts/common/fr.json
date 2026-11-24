@@ -16,6 +16,7 @@
     "no": "Non",
     "off": "Arrêt",
     "saving": "Enregistrement…",
+    "detailListSeparator": "; ",
     "listSeparator": ", "
   }
 }

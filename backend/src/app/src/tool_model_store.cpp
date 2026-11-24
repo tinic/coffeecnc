@@ -76,42 +76,40 @@ auto changed(ToolModelDocument document, const ToolModelCommand& command)
 
 auto resolve_tool_model_location(const ToolModelSettings& settings) -> ToolModelLocation {
   ToolModelLocation location;
-  if (!settings.machine_id) {
-    location.reason = "No machine identity is configured ([COFFEECNC] MACHINE_ID): tool models "
-                      "last until the panel closes.";
-    location.localization = MessageKey{"backend.toolModelStore.noMachineId"};
+  const auto with_reason = [&](LocalizedReason reason) -> ToolModelLocation {
+    location.reason = std::move(reason.text);
+    location.localization = std::move(reason.localization);
     return location;
-  }
+  };
+  if (!settings.machine_id)
+    return with_reason({"No machine identity is configured ([COFFEECNC] MACHINE_ID): tool models "
+                        "last until the panel closes.",
+                        MessageKey{"backend.toolModelStore.noMachineId"}});
   location.availability = ToolModelAvailability::unavailable;
-  if (!valid_machine_id(*settings.machine_id)) {
-    location.reason =
-        std::format("[COFFEECNC] MACHINE_ID is not valid: use 1 to 64 of the characters A-Z a-z "
-                    "0-9 _ and -, the first a letter or a digit. {}",
-                    not_saved);
-    location.localization = MessageKey{"backend.toolModelStore.invalidMachineId"};
-    return location;
-  }
+  if (!valid_machine_id(*settings.machine_id))
+    return with_reason(
+        {std::format("[COFFEECNC] MACHINE_ID is not valid: use 1 to 64 of the characters A-Z a-z "
+                     "0-9 _ and -, the first a letter or a digit. {}",
+                     not_saved),
+         MessageKey{"backend.toolModelStore.invalidMachineId"}});
   location.machine_id = settings.machine_id;
   std::string root;
   if (settings.data_directory) {
     const auto* configured = absolute(settings.data_directory);
-    if (configured == nullptr) {
-      location.reason =
-          std::format("[COFFEECNC] DATA_DIRECTORY is not an absolute path. {}", not_saved);
-      location.localization = MessageKey{"backend.toolModelStore.dataDirectoryNotAbsolute"};
-      return location;
-    }
+    if (configured == nullptr)
+      return with_reason(
+          {std::format("[COFFEECNC] DATA_DIRECTORY is not an absolute path. {}", not_saved),
+           MessageKey{"backend.toolModelStore.dataDirectoryNotAbsolute"}});
     root = *configured;
   } else if (const auto* xdg = absolute(settings.xdg_data_home)) {
     root = *xdg + "/coffeecnc";
   } else if (const auto* home = absolute(settings.home)) {
     root = *home + "/.local/share/coffeecnc";
   } else {
-    location.reason = std::format("Neither XDG_DATA_HOME nor HOME is an absolute path: set "
-                                  "[COFFEECNC] DATA_DIRECTORY. {}",
-                                  not_saved);
-    location.localization = MessageKey{"backend.toolModelStore.noDataHome"};
-    return location;
+    return with_reason({std::format("Neither XDG_DATA_HOME nor HOME is an absolute path: set "
+                                    "[COFFEECNC] DATA_DIRECTORY. {}",
+                                    not_saved),
+                        MessageKey{"backend.toolModelStore.noDataHome"}});
   }
   location.availability = ToolModelAvailability::available;
   location.directory = root + '/' + *settings.machine_id;
@@ -294,18 +292,18 @@ auto LocalToolModelFiles::append(const std::string& path, std::string_view bytes
 
 ToolModelArchive::ToolModelArchive(ToolModelFiles& files, ToolModelLocation location)
     : files_(files), location_(std::move(location)) {
+  auto reason = location_.availability == ToolModelAvailability::available
+                    ? LocalizedReason{"Tool model settings have not been opened yet.",
+                                      MessageKey{"backend.toolModelStore.notOpenedYet"}}
+                    : LocalizedReason{location_.reason, location_.localization};
   show({location_.machine_id,
         0,
         location_.availability == ToolModelAvailability::session_only
             ? ToolModelAvailability::session_only
             : ToolModelAvailability::unavailable,
-        location_.availability == ToolModelAvailability::available
-            ? std::string("Tool model settings have not been opened yet.")
-            : location_.reason,
+        std::move(reason.text),
         {},
-        location_.availability == ToolModelAvailability::available
-            ? std::optional<MessageKey>{MessageKey{"backend.toolModelStore.notOpenedYet"}}
-            : location_.localization});
+        std::move(reason.localization)});
 }
 
 auto ToolModelArchive::path(std::string_view name) const -> std::string {

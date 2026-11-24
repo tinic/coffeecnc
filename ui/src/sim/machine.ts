@@ -197,7 +197,7 @@ export interface SimOptions {
   /** Replaces the built-in program directory. */
   files?: Map<string, string>
   /** Policy-only test configuration; this does not model another machine's mechanics. */
-  capabilities?: Partial<Pick<Hello, 'max_jog_velocity' | 'axis_max_jog_velocity' | 'homing_required'>>
+  capabilities?: Partial<Pick<Hello, 'max_jog_velocity' | 'axis_max_jog_velocity' | 'homing_required' | 'max_spindle_rpm'>>
 }
 
 export class SimMachine {
@@ -1235,7 +1235,10 @@ export class SimMachine {
           if (this.preview.context !== command.preview_context || this.preview.state === 'pending')
             return reject('The program check changed. Review the current results.')
           const check = this.preview.check
-          if (check?.errors[0]) return reject(check.errors[0])
+          if (check?.errors[0]) {
+            const refusal = check.errors_localization?.[0]
+            return reject(check.errors[0], refusal?.key, refusal?.params)
+          }
           const warnings = !check || check.warnings.length > 0 ||
             check.units.some((unit) => command.display_units !== undefined && unit !== command.display_units)
           if (warnings && !command.confirmed) return reject('Review the program check warnings before starting.')
@@ -1433,6 +1436,12 @@ export class SimMachine {
       refused('The fixed setter is unavailable in this simulator scene.')
       return
     }
+    // As the controller's policy: an action that writes never runs as a measurement (#247).
+    const measureOnly = (command as { measure_only?: unknown }).measure_only === true
+    if (measureOnly && ['status', 'touch_off', 'check', 'ball', 'apply_angle', 'apply_measurement'].includes(command.action)) {
+      this.emit({ type: 'result', id, ...reject('This probe action always writes its result.', 'messages.policy.probeAlwaysWrites') })
+      return
+    }
     if (command.action === 'status') {
       this.emit({ type: 'result', id, outcome: 'accepted', reason: '', setter: probe.state(this.modal) })
       return
@@ -1440,7 +1449,7 @@ export class SimMachine {
     const blocked = this.notOn('probe') ?? this.busy('probe')
     const tool = this.modal.tools.find(row => row.number === this.toolInSpindle)
     const start = this.reported()
-    const confirmed = command.action === 'apply_angle' || [command.x, command.y, command.z].every(
+    const confirmed = command.action === 'apply_angle' || command.action === 'apply_measurement' || [command.x, command.y, command.z].every(
       (value, axis) => Math.abs(value - (start[axis] ?? Infinity)) <= 0.1,
     )
     if (blocked !== null || command.tool !== tool?.number || !this.allHomed() || !this.inPosition() ||

@@ -130,6 +130,28 @@ void protocol_forms() {
   require(ridge.action == SetterAction::ridge && ridge.direction == ProbeDirection::y_plus &&
               ridge.gauge_width_mm == 25.4,
           "Ridge requests carry the axis and approximate width in millimetres");
+  for (const auto* action : {R"("action":"material","direction":"z_top")", R"("action":"pocket")",
+                             R"("action":"bore")", R"("action":"boss","diameter":20)",
+                             R"("action":"slot","axis":"x")",
+                             R"("action":"corner","x_direction":"x_plus","y_direction":"y_plus")"}) {
+    const auto measure = body<FixedSetterRequest>(std::format(
+        R"({{"id":42,"type":"fixed_setter",{},"tool":99,"x":1,"y":2,"z":3,"measure_only":true}})",
+        action));
+    require(measure.measure_only, std::format("{} can probe without writing an offset", action));
+  }
+  require(!body<FixedSetterRequest>(
+               R"({"id":42,"type":"fixed_setter","action":"bore","tool":99,"x":1,"y":2,"z":3})")
+               .measure_only,
+          "A probe writes its result unless measure_only is given");
+  rejected(R"({"id":42,"type":"fixed_setter","action":"ball","tool":99,"x":1,"y":2,"z":3,"gauge_width":20,"measure_only":true})", 42);
+  rejected(R"({"id":42,"type":"fixed_setter","action":"touch_off","tool":98,"x":1,"y":2,"z":3,"measure_only":true})", 42);
+  rejected(R"({"id":42,"type":"fixed_setter","action":"bore","tool":99,"x":1,"y":2,"z":3,"measure_only":1})", 42);
+  const auto apply = body<FixedSetterRequest>(
+      R"({"id":42,"type":"fixed_setter","action":"apply_measurement","tool":99,"measurement_id":7})");
+  require(apply.action == SetterAction::apply_measurement && apply.edge_measurement == 7 &&
+              apply.tool == 99,
+          "Applying a measurement names the controller's measurement ID");
+  rejected(R"({"id":42,"type":"fixed_setter","action":"apply_measurement","tool":99,"measurement_id":0})", 42);
   rejected(R"({"id":42,"type":"fixed_setter","action":"slot","tool":99,"x":1,"y":2,"z":3,"axis":"z"})", 42);
   rejected(R"({"id":42,"type":"fixed_setter","action":"ridge","tool":99,"x":1,"y":2,"z":3,"axis":"x"})", 42);
   const auto tool =

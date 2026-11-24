@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 
 namespace coffeecnc {
 namespace {
@@ -44,8 +45,11 @@ auto encode_result(RequestId id, CommandOutcome outcome, std::string_view reason
   if (outcome == CommandOutcome::rejected && refusal)
     message["refusal"] = {{"key", refusal->key}, {"params", refusal->params}};
   // A refusal following a command already sent (for example a mode change) is a failure.
-  const auto& key = !localization && outcome != CommandOutcome::rejected ? refusal : localization;
-  if (outcome != CommandOutcome::accepted && key)
+  const auto& key =
+      !localization && outcome != CommandOutcome::rejected && outcome != CommandOutcome::accepted
+          ? refusal
+          : localization;
+  if (key && (outcome != CommandOutcome::accepted || !reason.empty()))
     message["localization"] = {{"key", key->key}, {"params", key->params}};
   if (setter) {
     auto measurement = Json(nullptr);
@@ -76,6 +80,39 @@ auto encode_result(RequestId id, CommandOutcome outcome, std::string_view reason
       message["setter"]["feature_size"]["x"] = *width;
     if (const auto width = setter->feature_size[1])
       message["setter"]["feature_size"]["y"] = *width;
+    if (const auto& measured = setter->measured) {
+      const auto direction = [](ProbeDirection d) {
+        switch (d) {
+        case ProbeDirection::z_top:
+          return "z_top";
+        case ProbeDirection::x_minus:
+          return "x_minus";
+        case ProbeDirection::x_plus:
+          return "x_plus";
+        case ProbeDirection::y_minus:
+          return "y_minus";
+        case ProbeDirection::y_plus:
+          return "y_plus";
+        }
+        return "z_top";
+      };
+      auto faces = Json::array();
+      std::ranges::transform(measured->faces, std::back_inserter(faces), [&](const auto& face) {
+        return Json{
+            {"direction", direction(face.direction)}, {"work", face.work}, {"machine", face.machine}};
+      });
+      auto work = Json::object();
+      for (std::size_t axis = 0; axis < measured->work.size(); ++axis)
+        if (const auto value = measured->work[axis])
+          work[std::string(1, "xyz"[axis])] = *value;
+      auto& out = message["setter"]["measured"];
+      out = {{"wcs", measured->wcs}, {"axes", measured->axes}, {"work", std::move(work)},
+             {"faces", std::move(faces)}};
+      if (measured->id != 0)
+        out["measurement_id"] = measured->id;
+      if (measured->machine)
+        out["machine"] = *measured->machine;
+    }
     if (const auto& material = setter->material)
       message["setter"]["material"] = {{"wcs", material->wcs},
                                        {"axis", material->corner ? std::string{"XY"}

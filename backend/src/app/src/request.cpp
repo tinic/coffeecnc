@@ -417,9 +417,10 @@ auto command(const Json& object) -> Command {
                                               {"bore", SetterAction::bore},
                                               {"boss", SetterAction::boss},
                                               {"angle", SetterAction::angle},
-                                              {"apply_angle", SetterAction::apply_angle}});
+                                              {"apply_angle", SetterAction::apply_angle},
+                                              {"apply_measurement", SetterAction::apply_measurement}});
     FixedSetterRequest request{action};
-    if (action == SetterAction::apply_angle) {
+    if (action == SetterAction::apply_angle || action == SetterAction::apply_measurement) {
       fields(object, {"id", "type", "action", "tool", "measurement_id"});
       request.tool = integer(object, "tool");
       request.edge_measurement = positive_id(object, "measurement_id");
@@ -427,7 +428,7 @@ auto command(const Json& object) -> Command {
     }
     if (action != SetterAction::status) {
       if (action == SetterAction::material) {
-        fields(object, {"id", "type", "action", "tool", "x", "y", "z", "direction"});
+        fields(object, {"id", "type", "action", "tool", "x", "y", "z", "direction"}, {"measure_only"});
         request.direction = choice<ProbeDirection>(object, "direction",
                                                    {{"z_top", ProbeDirection::z_top},
                                                     {"x_minus", ProbeDirection::x_minus},
@@ -438,7 +439,8 @@ auto command(const Json& object) -> Command {
         fields(object, {"id", "type", "action", "tool", "x", "y", "z", "gauge_width"});
         request.gauge_width_mm = number(object, "gauge_width");
       } else if (action == SetterAction::angle) {
-        fields(object, {"id", "type", "action", "tool", "x", "y", "z", "direction", "spacing"});
+        fields(object, {"id", "type", "action", "tool", "x", "y", "z", "direction", "spacing"},
+               {"measure_only"});
         request.direction = choice<ProbeDirection>(object, "direction",
                                                    {{"x_minus", ProbeDirection::x_minus},
                                                     {"x_plus", ProbeDirection::x_plus},
@@ -446,26 +448,32 @@ auto command(const Json& object) -> Command {
                                                     {"y_plus", ProbeDirection::y_plus}});
         request.gauge_width_mm = number(object, "spacing");
       } else if (action == SetterAction::boss) {
-        fields(object, {"id", "type", "action", "tool", "x", "y", "z", "diameter"});
+        fields(object, {"id", "type", "action", "tool", "x", "y", "z", "diameter"}, {"measure_only"});
         request.gauge_width_mm = number(object, "diameter");
       } else if (action == SetterAction::slot || action == SetterAction::ridge) {
         if (action == SetterAction::ridge) {
-          fields(object, {"id", "type", "action", "tool", "x", "y", "z", "axis", "width"});
+          fields(object, {"id", "type", "action", "tool", "x", "y", "z", "axis", "width"},
+                 {"measure_only"});
           request.gauge_width_mm = number(object, "width");
         } else {
-          fields(object, {"id", "type", "action", "tool", "x", "y", "z", "axis"});
+          fields(object, {"id", "type", "action", "tool", "x", "y", "z", "axis"}, {"measure_only"});
         }
         request.direction = choice<ProbeDirection>(
             object, "axis", {{"x", ProbeDirection::x_plus}, {"y", ProbeDirection::y_plus}});
       } else if (action == SetterAction::corner || action == SetterAction::inside_corner) {
-        fields(object, {"id", "type", "action", "tool", "x", "y", "z", "x_direction", "y_direction"});
+        fields(object, {"id", "type", "action", "tool", "x", "y", "z", "x_direction", "y_direction"},
+               {"measure_only"});
         request.direction = choice<ProbeDirection>(
             object, "x_direction", {{"x_minus", ProbeDirection::x_minus}, {"x_plus", ProbeDirection::x_plus}});
         request.y_direction = choice<ProbeDirection>(
             object, "y_direction", {{"y_minus", ProbeDirection::y_minus}, {"y_plus", ProbeDirection::y_plus}});
+      } else if (action == SetterAction::pocket || action == SetterAction::bore) {
+        fields(object, {"id", "type", "action", "tool", "x", "y", "z"}, {"measure_only"});
       } else {
         fields(object, {"id", "type", "action", "tool", "x", "y", "z"});
       }
+      if (object.contains("measure_only"))
+        request.measure_only = boolean(object, "measure_only");
       request.tool = integer(object, "tool");
       request.start = {number(object, "x"), number(object, "y"), number(object, "z")};
     } else {

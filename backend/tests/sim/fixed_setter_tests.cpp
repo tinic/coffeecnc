@@ -3398,6 +3398,12 @@ void run(const std::string& ini, std::string_view scenario) {
                 failed.error().text.contains("tolerance") && intact(),
             std::format("a {} tool fails after retract and keeps its table and offset ({})",
                         direction, failed ? "unexpected pass" : failed.error().text));
+    const auto& failure = failed.error().localization;
+    require(failure && failure->key == "backend.nmlPort.checkFailed" &&
+                failure->params.at("tool") == std::to_string(check.tool) &&
+                failure->params.at("direction") == direction &&
+                failure->params.at("tolerance") == "0.1",
+            "The length failure carries the tool, direction and configured tolerance");
   }
   halcmd(std::format("setp sim-tool-setter.max {}", 12 / scale));
   const auto unstable = port->fixed_setter(repeat, epoch, [&]() {

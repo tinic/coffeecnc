@@ -75,6 +75,17 @@ void command_results() {
   const auto feature = Json::parse(encode_result(42, CommandOutcome::accepted, "", slot)).at("setter");
   require(feature.at("feature_size") == Json{{"y", 12.5}} && feature.at("material").at("axis") == "Y",
           "Slot response reports the physical width in millimetres for the measured axis only");
+  SetterState arc{};
+  arc.material = SetterState::Material{2, 'X', true};
+  arc.center_diameter = 16;
+  arc.arc_span_deg = 120;
+  arc.center_uncertainty_mm = 0.005;
+  const auto arc_json = Json::parse(encode_result(42, CommandOutcome::accepted, "", arc)).at("setter");
+  require(arc_json.at("center_diameter") == 16 && arc_json.at("arc_span") == 120 &&
+              arc_json.at("center_uncertainty") == 0.005 &&
+              arc_json.at("material").at("axis") == "XY",
+          "A three-point result reports the diameter, the arc the contacts covered and the "
+          "centre uncertainty");
   SetterState bore{};
   bore.center_diameter = 16;
   bore.measured = SetterState::Measured{

@@ -41,6 +41,8 @@ function text(): string {
   if (props.measured.machine) lines.push(`${t('probe.materialProbe.resultMachine')}: ${triple(props.measured.machine)} ${unit.value}`)
   if (props.result.center_diameter !== undefined)
     lines.push(`${t('probe.materialProbe.resultDiameter')}: ${length(props.result.center_diameter)} ${unit.value}`)
+  if (props.result.center_uncertainty !== undefined)
+    lines.push(`${t('probe.materialProbe.resultUncertainty')}: ±${length(props.result.center_uncertainty)} ${unit.value}`)
   if (size.value) lines.push(`${t('probe.materialProbe.resultSize')}: ${size.value} ${unit.value}`)
   if (angle.value) lines.push(`${t('probe.materialProbe.resultAngle')}: ${angle.value}`)
   for (const face of props.measured.faces) {
@@ -77,6 +79,9 @@ async function copy(): Promise<void> {
         </template>
         <template v-if="result.center_diameter !== undefined">
           <dt>{{ t('probe.materialProbe.resultDiameter') }}</dt><dd>{{ length(result.center_diameter) }} {{ unit }}</dd>
+        </template>
+        <template v-if="result.center_uncertainty !== undefined">
+          <dt>{{ t('probe.materialProbe.resultUncertainty') }}</dt><dd>±{{ length(result.center_uncertainty) }} {{ unit }}</dd>
         </template>
         <template v-if="size"><dt>{{ t('probe.materialProbe.resultSize') }}</dt><dd>{{ size }} {{ unit }}</dd></template>
         <template v-if="angle"><dt>{{ t('probe.materialProbe.resultAngle') }}</dt><dd>{{ angle }}</dd></template>

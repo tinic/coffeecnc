@@ -180,6 +180,52 @@ describe('recess and ridge setup', () => {
     expect(fixture.get('.setter-band.blocked p').text()).toContain('+Y face')
   })
 
+  it('probes a 3-point bore along the entered directions and refuses a set too close together', async () => {
+    const fixture = await choose('3-point bore')
+    const fields = fixture.findAll('.arc-angles input')
+    expect(fields.map(field => (field.element as HTMLInputElement).value)).toEqual(['0', '120', '240'])
+    await fields[1]?.setValue('5')
+    expect(fixture.get('.start-probe').attributes('disabled')).toBeDefined()
+    // An 80° arc is below the 90° minimum; 90° is enough.
+    await fields[0]?.setValue('-80')
+    await fields[1]?.setValue('-40')
+    await fields[2]?.setValue('0')
+    expect(fixture.get('.start-probe').attributes('disabled')).toBeDefined()
+    expect(fixture.get('.arc-angles small').text()).toContain('covering at least 90°')
+    await fields[0]?.setValue('-90')
+    await fields[1]?.setValue('-45')
+    await fixture.get('.start-probe').trigger('click')
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'fixed_setter', action: 'bore_arc', angles: [-90, -45, 0],
+      tool: 99, x: 0, y: 0, z: 0 })
+    expect(fixture.get('.setter-band.busy p').text()).toBe('Probing three bore walls…')
+    await answer({ outcome: 'accepted', reason: '', setter: { calibration: null, measurement: null,
+      material: { wcs: 2, axis: 'XY' }, center_diameter: 16, arc_span: 117.3, center_uncertainty: 0.0053 } })
+    expect(fixture.get('.setter-band.done p').text())
+      .toBe('G55 X0 Y0 set at the circle centre, Ø 16.000 mm, from contacts over 117°. Centre estimated ±0.005 mm (latch repeatability only).')
+  })
+
+  it('shows the clearance and depth rows for a 3-point boss, probed from beside it, not for a bore', async () => {
+    for (const [label, beside] of [['3-point boss', true], ['3-point bore', false]] as const) {
+      const fixture = await choose(label)
+      const limits = fixture.get('.limits').text()
+      expect(limits.includes('Traverse clearance'), label).toBe(beside)
+      expect(limits.includes('Ball centre at contact'), label).toBe(beside)
+      // Only gross faults change the diameter enough: the operator can check it first.
+      expect(fixture.text().includes('use Measure only to check the reported diameter'), label).toBe(beside)
+      fixture.unmount()
+      wrapper = undefined
+    }
+  })
+
+  it('asks a 3-point boss for its approximate diameter as well', async () => {
+    const fixture = await choose('3-point boss')
+    expect(fixture.get('.start-probe').attributes('disabled')).toBeDefined()
+    await fixture.get('.dimension input').setValue('30mm')
+    await fixture.get('.start-probe').trigger('click')
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'fixed_setter', action: 'boss_arc', angles: [0, 120, 240],
+      diameter: 30, tool: 99, x: 0, y: 0, z: 0 })
+  })
+
   it('reports a one-axis ridge width in the display units', async () => {
     panel.unit = 'inch'
     const fixture = await choose('ridge across Y')
@@ -191,6 +237,45 @@ describe('recess and ridge setup', () => {
     await answer({ outcome: 'accepted', reason: '', setter: { calibration: null, measurement: null,
       material: { wcs: 2, axis: 'Y' }, feature_size: { y: 12.7 } } })
     expect(fixture.get('.setter-band.done p').text()).toBe('G55 Y0 set at the ridge centre · 0.5000 in')
+  })
+})
+
+describe('measure only', () => {
+  // Every probe button the panel offers, found from the rendered panel: a new action that does
+  // not carry measure_only fails here instead of writing an offset while Measure only is on.
+  it('sends measure_only on every probe action except the ball calibration', async () => {
+    panel.hello = { ...hello, fixed_setter: {
+      reference_tool: 98, travel_mm: 15, feed_mm_min: 240, xy_tolerance_mm: 0.5, material_features: true,
+    } }
+    const setter = setterState.value
+    if (!setter) throw new Error('Missing setter status')
+    const fixture = wrapper = mount(MaterialProbeControls, { props: { tool: 99 }, global })
+    await answer({ outcome: 'accepted', reason: '', setter })
+    await fixture.get('.measure-only').trigger('click')
+    expect(fixture.get('.calibrate').attributes('disabled')).toBeDefined()
+    vi.mocked(send).mockClear()
+    const openFeatures = async (): Promise<ReturnType<VueWrapper['findAll']>> => {
+      await fixture.get('.probe-utilities button[aria-haspopup=dialog]').trigger('click')
+      return fixture.findAll('.feature-options button')
+    }
+    const featureCount = (await openFeatures()).length
+    await fixture.get('[role="dialog"] .close, [role="dialog"] button[aria-label="Close"]').trigger('click')
+    const surfaceCount = fixture.findAll('.probe-actions button').length
+    const start = async (button: ReturnType<VueWrapper['findAll']>[number] | undefined): Promise<void> => {
+      if (!button) throw new Error('Missing probe button')
+      await button.trigger('click')
+      if (fixture.find('.dimension input').exists()) await fixture.get('.dimension input').setValue('20mm')
+      await fixture.get('.start-probe').trigger('click')
+      const request = vi.mocked(send).mock.lastCall?.[0]
+      expect(request, JSON.stringify(request)).toMatchObject({ type: 'fixed_setter', measure_only: true })
+      await answer({ outcome: 'failed', reason: 'No probe contact within the search travel.' })
+    }
+    for (let index = 0; index < featureCount; index++) await start((await openFeatures())[index])
+    for (let index = 0; index < surfaceCount; index++) await start(fixture.findAll('.probe-actions button')[index])
+    const actions = vi.mocked(send).mock.calls.map(([request]) => 'action' in request ? request.action : '')
+    expect(actions).toHaveLength(featureCount + surfaceCount)
+    expect(new Set(actions)).toEqual(new Set(['bore', 'boss', 'angle', 'pocket', 'corner', 'inside_corner', 'bore_arc',
+      'boss_arc', 'slot', 'ridge', 'material']))
   })
 })
 

@@ -3,7 +3,8 @@ import { computed, defineAsyncComponent, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { translateMessage } from '../i18n/messages'
 import type { FixedSetterLimits } from '../protocol'
-import { angleChoiceLabel, angleChoices, guideInput, probeGuide, type AngleEdge, type ProbeGuideTarget } from '../probe-guide'
+import { angleChoiceLabel, angleChoices, defaultArcAngles, guideInput, probeGuide, type AngleEdge, type ProbeGuideTarget } from '../probe-guide'
+import { arcAnglesValid, arcMinSeparation, arcMinSpan, type Angles } from '../arc'
 import { parseNumericExpression } from '../numeric-expression'
 import { vNumeric } from '../numeric-input'
 import ModalDialog from './ModalDialog.vue'
@@ -16,14 +17,23 @@ const props = defineProps<{
   ruby?: boolean
   startBlocked?: string | null
 }>()
-const emit = defineEmits<{ start: [value: number, angle: AngleEdge]; close: [] }>()
+const emit = defineEmits<{ start: [value: number, angle: AngleEdge, angles: Angles]; close: [] }>()
 const { t } = useI18n()
 const angle = ref<AngleEdge>('y_plus')
 const input = computed(() => guideInput(props.target))
 const text = ref(input.value?.initial ?? '')
 const value = computed(() => parseNumericExpression(text.value, 'mm'))
-const plan = computed(() => probeGuide(props.target, props.limits, angle.value, value.value))
+const arcTarget = computed(() => props.target.kind === 'bore_arc' || props.target.kind === 'boss_arc')
+const arcText = ref(defaultArcAngles.map(String))
+const arcAngles = computed((): Angles | null => {
+  const values = arcText.value.map((entry) => parseNumericExpression(entry, '°'))
+  const [a, b, c] = values
+  return a === null || b === null || c === null || a === undefined || b === undefined || c === undefined ? null : [a, b, c]
+})
+const plan = computed(() => probeGuide(props.target, props.limits, angle.value, value.value,
+  arcAngles.value !== null && arcAnglesValid(arcAngles.value) ? arcAngles.value : defaultArcAngles))
 const valid = computed(() => {
+  if (arcTarget.value && (arcAngles.value === null || !arcAnglesValid(arcAngles.value))) return false
   const field = input.value
   if (field === undefined) return true
   if (value.value === null) return false
@@ -31,7 +41,7 @@ const valid = computed(() => {
   return length >= field.min && length <= field.max
 })
 const material = computed(() => !['teach', 'measure', 'check'].includes(props.target.kind))
-const outside = computed(() => ['corner', 'boss', 'ball', 'ridge'].includes(props.target.kind))
+const outside = computed(() => ['corner', 'boss', 'boss_arc', 'ball', 'ridge'].includes(props.target.kind))
 const travel = computed(() => material.value ? props.limits?.material_travel_mm : props.limits?.travel_mm)
 const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches // i18n-ignore
 const playing = ref(!reduced)
@@ -50,7 +60,7 @@ function unavailable(): void {
   playing.value = false
 }
 function start(): void {
-  if (valid.value && !props.startBlocked) emit('start', value.value ?? 0, angle.value)
+  if (valid.value && !props.startBlocked) emit('start', value.value ?? 0, angle.value, arcAngles.value ?? defaultArcAngles)
 }
 </script>
 
@@ -80,6 +90,15 @@ function start(): void {
             {{ angleChoiceLabel(choice.travel) }}
           </button>
         </div>
+        <fieldset v-if="arcTarget" class="arc-angles">
+          <legend>{{ t('probe.guide.inputAngles') }}</legend>
+          <input
+            v-for="(_, index) in arcText" :key="index" v-model="arcText[index]" v-numeric type="text" class="field mono"
+            inputmode="decimal" autocomplete="off" data-numeric-unit="°" :data-numeric-action="t('probe.guideDialog.setValue')"
+            :aria-label="t('probe.guideDialog.arcDirection', { n: String(index + 1) })"
+          />
+          <small>{{ t('probe.guideDialog.arcRange', { separation: arcMinSeparation, span: arcMinSpan }) }}</small>
+        </fieldset>
         <label v-if="input" class="dimension">
           <span>{{ t('probe.guideDialog.inputLabel', { label: input.label }) }}</span>
           <input
@@ -133,6 +152,10 @@ p { margin: 0; line-height: 1.42; font-size: 13px; }
 .dimension { display: grid; grid-template-columns: auto 92px; gap: 3px 8px; align-items: center; font-size: 12px; }
 .dimension input { height: 44px; min-width: 0; padding-inline: 8px; }
 .dimension small { grid-column: 1 / -1; color: var(--text-dim); }
+.arc-angles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px 6px; margin: 0; padding: 0; border: 0; font-size: 12px; }
+.arc-angles legend { padding: 0 0 3px; }
+.arc-angles input { height: 44px; min-width: 0; padding-inline: 8px; }
+.arc-angles small { grid-column: 1 / -1; color: var(--text-dim); }
 .limits { display: grid; grid-template-columns: auto auto; gap: 5px 8px; margin: 0; font-size: 12px; }
 .limits dt { color: var(--text-dim); }
 .limits dd { margin: 0; text-align: right; white-space: nowrap; }

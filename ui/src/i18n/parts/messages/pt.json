@@ -164,6 +164,7 @@
       "missingField": "Falta um campo obrigatório: {field}.",
       "unexpectedField": "Campo inesperado no pedido.",
       "expectedString": "Era esperada uma cadeia: {field}.",
+      "expectedAngles": "Eram esperados três ângulos de apalpação em graus.",
       "nulInString": "NUL não é permitido nas cadeias do pedido.",
       "expectedNumber": "Era esperado um número: {field}.",
       "expectedFinite": "Era esperado um número finito: {field}.",

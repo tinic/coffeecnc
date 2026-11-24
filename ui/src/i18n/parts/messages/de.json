@@ -164,6 +164,7 @@
       "missingField": "Pflichtfeld fehlt: {field}.",
       "unexpectedField": "Unerwartetes Feld in der Anfrage.",
       "expectedString": "Zeichenkette erwartet: {field}.",
+      "expectedAngles": "Drei Antastwinkel in Grad erwartet.",
       "nulInString": "NUL ist in Zeichenketten der Anfrage nicht erlaubt.",
       "expectedNumber": "Zahl erwartet: {field}.",
       "expectedFinite": "Endliche Zahl erwartet: {field}.",

@@ -372,7 +372,8 @@ void program_text() {
   const auto read = [&files, &store](std::string content) -> ProgramText {
     files.file(in_root("p.ngc"), std::move(content));
     const auto program = store.read_program("p.ngc", 9);
-    require(program.has_value(), "The program reads: " + program.error_or(LocalizedReason{}).text);
+    require(program.has_value(),
+            "The program reads: " + program.error_or(ProgramReadError{}).reason.text);
     return program ? *program : ProgramText{};
   };
 

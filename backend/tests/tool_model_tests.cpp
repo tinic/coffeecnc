@@ -1466,7 +1466,8 @@ void store_orders_messages() {
                 got.at(0).second.at(0).at("machine_id") ==
                     (where.machine_id ? Json(*where.machine_id) : Json(nullptr)),
             "and its snapshot says why");
-    require(got.at(0).second.size() == 2 && !got.at(0).second.at(0).contains("localization") &&
+    require(where.localization && got.at(0).second.size() == 2 &&
+                got.at(0).second.at(0).size() == 6 &&
                 got.at(0).second.at(1).at("type") == "tool_models_reason" &&
                 got.at(0).second.at(1).at("reason") == where.reason &&
                 got.at(0).second.at(1).at("localization").at("key") == where.localization->key,

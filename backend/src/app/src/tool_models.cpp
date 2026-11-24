@@ -51,12 +51,14 @@ auto index(ToolFamily family) -> std::size_t { return static_cast<std::size_t>(f
 
 class Invalid : public std::runtime_error {
 public:
-  Invalid(std::string reason, MessageKey localization)
+  Invalid(std::string reason, std::optional<MessageKey> localization)
       : std::runtime_error(std::move(reason)), localization_(std::move(localization)) {}
-  [[nodiscard]] auto localization() const -> const MessageKey& { return localization_; }
+  [[nodiscard]] auto localization() const -> const std::optional<MessageKey>& {
+    return localization_;
+  }
 
 private:
-  MessageKey localization_;
+  std::optional<MessageKey> localization_;
 };
 
 // The members of an object that has exactly these.
@@ -570,7 +572,7 @@ auto decode_tool_model_file(std::string_view text)
            read_overrides(entry.at("overrides")), std::move(holder)});
     }
     if (const auto error = tool_document_error(result.document); !error.empty())
-      throw Invalid(error.text, *error.localization);
+      throw Invalid(error.text, error.localization);
     std::ranges::sort(result.document.assignments, {},
                       [](const ToolModelAssignment& a) -> int { return a.tool.number; });
     return result;

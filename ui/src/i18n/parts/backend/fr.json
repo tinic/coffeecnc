@@ -265,6 +265,7 @@
       "cannotRead": "Impossible de lire le fichier."
     },
     "nmlPort": {
+      "circleCheckSensitivity": "Répartissez les contacts de vérification autour du cercle. Avec cette disposition, un mauvais contact peut passer inaperçu.",
       "circleCheckResidual": "Échec de la vérification du cercle. Le plus grand écart de contact était de {residual} mm, au-delà de 0,02 mm. Nettoyez la surface et palpez à nouveau.",
       "circleCheckFit": "Échec de la vérification du cercle. Les contacts ne donnent pas de cercle exploitable. Vérifiez la surface et palpez à nouveau.",
       "circleCheckAngle": "Choisissez un angle de vérification à au moins 10° des autres contacts.",

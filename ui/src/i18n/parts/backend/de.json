@@ -265,6 +265,7 @@
       "cannotRead": "Die Datei kann nicht gelesen werden."
     },
     "nmlPort": {
+      "circleCheckSensitivity": "Verteilen Sie die Prüfkontakte über den Kreis. Bei dieser Anordnung kann ein fehlerhafter Kontakt unentdeckt bleiben.",
       "circleCheckResidual": "Kreisprüfung fehlgeschlagen. Die größte Kontaktabweichung betrug {residual} mm und lag über 0,02 mm. Reinigen Sie die Fläche und tasten Sie erneut.",
       "circleCheckFit": "Kreisprüfung fehlgeschlagen. Die Kontakte ergeben keinen brauchbaren Kreis. Prüfen Sie die Fläche und tasten Sie erneut.",
       "circleCheckAngle": "Wählen Sie einen Prüfwinkel mit mindestens 10° Abstand zu den anderen Kontakten.",

@@ -27,13 +27,15 @@ struct Normal {
     rhs[1] += row[1] * value;
   }
 
-  [[nodiscard]] auto solve() const -> std::optional<Point> {
+  [[nodiscard]] auto solve(Point target) const -> std::optional<Point> {
     const double det = xx * yy - xy * xy;
     const double trace = xx + yy;
     if (!std::isfinite(det) || !(det > 1e-12 * trace * trace))
       return std::nullopt;
-    return Point{(yy * rhs[0] - xy * rhs[1]) / det, (xx * rhs[1] - xy * rhs[0]) / det};
+    return Point{(yy * target[0] - xy * target[1]) / det, (xx * target[1] - xy * target[0]) / det};
   }
+
+  [[nodiscard]] auto solve() const -> std::optional<Point> { return solve(rhs); }
 };
 
 struct RadialFit {
@@ -70,6 +72,39 @@ auto radial_fit(std::span<const Point> points, Point centre) -> std::optional<Ra
     fit.update.add({units.at(i)[0] - mean[0], units.at(i)[1] - mean[1]}, error);
   }
   return fit;
+}
+
+// Eliminating the average radius leaves centred unit directions. For each row, the
+// diagonal of the projection onto radius and centre is 1/N + row * inverse(normal) * row.
+auto quality(std::span<Point> units, std::span<const double> spreads)
+    -> std::optional<CircleQuality> {
+  Point mean{};
+  const double count = static_cast<double>(units.size());
+  for (const auto& u : units) {
+    mean[0] += u[0] / count;
+    mean[1] += u[1] / count;
+  }
+  Normal normal;
+  for (auto& u : units) {
+    u[0] -= mean[0];
+    u[1] -= mean[1];
+    normal.add(u, 0);
+  }
+  double sensitivity = 1;
+  double variance = 0;
+  for (std::size_t i = 0; i < units.size(); ++i) {
+    const auto& row = units[i];
+    const auto gain = normal.solve(row);
+    if (!gain)
+      return std::nullopt;
+    const auto own_residual = 1 - 1 / count - row[0] * (*gain)[0] - row[1] * (*gain)[1];
+    sensitivity = std::min(sensitivity, own_residual);
+    if (!spreads.empty()) {
+      const double sigma = contact_sigma(spreads[i]);
+      variance += sigma * sigma * ((*gain)[0] * (*gain)[0] + (*gain)[1] * (*gain)[1]);
+    }
+  }
+  return CircleQuality{sensitivity, 1.96 * std::sqrt(variance)};
 }
 
 } // namespace
@@ -117,6 +152,35 @@ auto fit_probe_circle(std::span<const std::array<double, 2>> points) -> std::opt
       return std::nullopt;
   }
   return std::nullopt;
+}
+
+auto planned_circle_residual_gain(std::span<const double> headings) -> std::optional<double> {
+  if (headings.size() < 4 || headings.size() > 5)
+    return std::nullopt;
+  std::array<Point, 5> units{};
+  for (std::size_t i = 0; i < headings.size(); ++i) {
+    const double angle = std::remainder(headings[i], 360.0) * std::numbers::pi / 180;
+    if (!std::isfinite(angle))
+      return std::nullopt;
+    units.at(i) = {std::cos(angle), std::sin(angle)};
+  }
+  const auto found = quality(std::span{units}.first(headings.size()), {});
+  return found ? std::optional{found->min_residual_gain} : std::nullopt;
+}
+
+auto measured_circle_quality(std::span<const std::array<double, 2>> points, Point centre,
+                             std::span<const double> spreads) -> std::optional<CircleQuality> {
+  if (points.size() < 4 || points.size() > 5 || points.size() != spreads.size())
+    return std::nullopt;
+  std::array<Point, 5> units{};
+  for (std::size_t i = 0; i < points.size(); ++i) {
+    const Point r{points[i][0] - centre[0], points[i][1] - centre[1]};
+    const double distance = std::hypot(r[0], r[1]);
+    if (!(distance > 0) || !std::isfinite(distance))
+      return std::nullopt;
+    units.at(i) = {r[0] / distance, r[1] / distance};
+  }
+  return quality(std::span{units}.first(points.size()), spreads);
 }
 
 } // namespace coffeecnc

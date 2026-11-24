@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { translateMessage } from '../i18n/messages'
 import type { FixedSetterLimits } from '../protocol'
 import { angleChoiceLabel, angleChoices, defaultArcAngles, guideInput, probeGuide, type AngleEdge, type ProbeGuideTarget } from '../probe-guide'
-import { arcAnglesValid, arcMinSeparation, arcMinSpan, checkAngleValid, circleRays, type Angles } from '../arc'
+import { arcAnglesValid, arcMinSeparation, arcMinSpan, checkAngleValid, circleMinResidualGain, circleRays, largestGapMiddle, plannedCircleGain, type Angles } from '../arc'
 import { parseNumericExpression } from '../numeric-expression'
 import { vNumeric } from '../numeric-input'
 import ModalDialog from './ModalDialog.vue'
@@ -38,15 +38,17 @@ const checkAngle = computed(() => {
   const angle = parseNumericExpression(checkText.value, '°')
   return angle === null ? null : angle % 360
 })
-const checkValid = computed(() => checkAngle.value !== null &&
-  checkAngleValid(checkAngle.value, arcTarget.value ? arcAngles.value ?? defaultArcAngles : circleRays))
+const primaryAngles = computed(() => arcTarget.value ? arcAngles.value ?? defaultArcAngles : circleRays)
+const checkValid = computed(() => checkAngle.value !== null && checkAngleValid(checkAngle.value, primaryAngles.value))
+const sensitive = computed(() => checkAngle.value !== null &&
+  plannedCircleGain([...primaryAngles.value, checkAngle.value]) >= circleMinResidualGain)
 const enabledCheck = computed(() => canCheck.value && checking.value)
 const plan = computed(() => probeGuide(props.target, props.limits, angle.value, value.value,
   arcAngles.value !== null && arcAnglesValid(arcAngles.value) ? arcAngles.value : defaultArcAngles,
   enabledCheck.value && checkValid.value ? checkAngle.value ?? undefined : undefined))
 const valid = computed(() => {
   if (arcTarget.value && (arcAngles.value === null || !arcAnglesValid(arcAngles.value))) return false
-  if (enabledCheck.value && !checkValid.value) return false
+  if (enabledCheck.value && (!checkValid.value || !sensitive.value)) return false
   const field = input.value
   if (field === undefined) return true
   if (value.value === null) return false
@@ -71,6 +73,21 @@ function select(index: number): void {
 function unavailable(): void {
   graphicsAvailable.value = false
   playing.value = false
+}
+let usingQuarterTurns = false
+function toggleCheck(): void {
+  if (checking.value) {
+    if (usingQuarterTurns && arcAngles.value?.every((value, index) => value === circleRays[index]))
+      arcText.value = defaultArcAngles.map(String)
+    checking.value = false
+    return
+  }
+  // The ordinary 120° preset plus a single extra point cannot reach the sensitivity threshold.
+  // Offer quarter turns for this preset, and keep the operator's own directions when edited.
+  usingQuarterTurns = arcTarget.value && arcAngles.value?.every((value, index) => value === defaultArcAngles[index]) === true
+  if (usingQuarterTurns) arcText.value = circleRays.slice(0, 3).map(String)
+  checkText.value = String(largestGapMiddle(primaryAngles.value))
+  checking.value = true
 }
 function start(): void {
   if (valid.value && !props.startBlocked) {
@@ -125,7 +142,7 @@ function start(): void {
           <small>{{ input.signed ? t('probe.guideDialog.rangeSigned', { min: input.min, max: input.max }) : t('probe.guideDialog.range', { min: input.min, max: input.max }) }}</small>
         </label>
         <div v-if="canCheck" class="check-circle">
-          <button class="btn" type="button" :aria-pressed="checking" @click="checking = !checking">
+          <button class="btn" type="button" :aria-pressed="checking" @click="toggleCheck">
             {{ t('probe.guideDialog.checkCircle') }}
           </button>
           <div v-if="checking" class="check-angle">
@@ -136,6 +153,7 @@ function start(): void {
             <span aria-hidden="true">°</span>
           </div>
           <small v-if="checking && !checkValid">{{ t('probe.guideDialog.checkAngleRange', { separation: arcMinSeparation }) }}</small>
+          <small v-else-if="checking && !sensitive">{{ t('backend.nmlPort.circleCheckSensitivity') }}</small>
         </div>
         <dl v-if="travel || limits" class="limits">
           <template v-if="travel"><dt>{{ t('probe.guideDialog.searchTravel') }}</dt><dd>{{ t('probe.guideDialog.travelMax', { value: travel }) }}</dd></template>
@@ -167,14 +185,15 @@ function start(): void {
 </template>
 
 <style scoped>
-.guide-grid { display: grid; flex: 1; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 16px; min-height: 0; }
-.guide-visual { display: grid; grid-template-rows: minmax(205px, 1fr) auto; min-width: 0; min-height: 350px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.guide-grid { display: grid; flex: 1; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); gap: 16px; min-height: 0; }
+.guide-visual { display: grid; grid-template-rows: minmax(0, 1fr) auto; min-width: 0; min-height: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
 .timeline { display: flex; align-items: center; gap: 6px; padding: 6px; border-top: 1px solid var(--line); background: var(--panel); }
 .phase-count { padding-left: 4px; white-space: nowrap; color: var(--accent); font-size: 11px; }
 .phase-name { flex: 1; min-width: 0; font-size: 12px; line-height: 1.2; }
 .timeline button { flex: none; min-height: 44px; min-width: 44px; padding-inline: 7px; }
 .timeline button.play { width: 58px; }
-.guide-instructions { display: flex; flex-direction: column; gap: 11px; min-width: 0; }
+.guide-instructions { display: flex; flex-direction: column; gap: 11px; min-width: 0; min-height: 0; overflow: auto; }
+.guide-instructions > * { flex-shrink: 0; }
 h3 { margin: 0 0 6px; font-size: 13px; font-weight: 650; }
 p { margin: 0; line-height: 1.42; font-size: 13px; }
 .edge-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
@@ -203,11 +222,12 @@ p { margin: 0; line-height: 1.42; font-size: 13px; }
 .start-block { align-self: center; margin-right: auto; color: var(--warn); }
 .start-probe { min-width: 132px; min-height: 44px; }
 @media (max-width: 730px) {
-  .guide-grid { grid-template-columns: 1fr; }
+  .guide-grid { grid-template-columns: 1fr; grid-template-rows: auto auto; }
+  .guide-visual { min-height: 300px; }
+  .guide-instructions { overflow: visible; }
 }
 @media (max-height: 820px) {
-  .guide-visual { min-height: 325px; }
-  .guide-instructions { gap: 7px; }
+  .guide-instructions { gap: 6px; }
   h3 { margin-bottom: 4px; }
   .limits { row-gap: 3px; }
 }

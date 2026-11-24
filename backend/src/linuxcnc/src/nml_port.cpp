@@ -2754,6 +2754,20 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     headings.at(primary) = extra;
   }
   const auto directions = std::span{headings}.first(primary + (check_circle ? 1U : 0U));
+  const auto refuse_origin = [&](LocalizedReason reason) {
+    SetterState state{calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,
+                      std::move(current_marks)};
+    state.origin_refusal = std::move(reason);
+    return state;
+  };
+  const auto weak_circle = [&] {
+    return refuse_origin({"Spread the check contacts around the circle. A bad contact can be "
+                          "hidden by the current layout.",
+                          MessageKey{"backend.nmlPort.circleCheckSensitivity"}});
+  };
+  if (check_circle &&
+      planned_circle_residual_gain(directions).value_or(0) < circle_min_residual_gain)
+    return weak_circle();
   // Every radial search is checked against the configured travel before the first
   // move: the search start and endpoint of each direction in machine space, and for a boss the
   // lift to clearance at each start and the traverse at that height. probe_fixed_setter checks
@@ -2796,30 +2810,30 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
   // it, the start must lie inside it, the centre must be certain enough from the latch spread
   // of each contact, and a boss must be about the diameter entered.
   const auto arc_origin = [&](const std::array<std::array<double, 2>, 5>& contacts,
-                              const std::array<double, 3>& latch_spreads,
+                              const std::array<double, 5>& latch_spreads,
                               double ball_offset) -> std::expected<SetterState, std::string> {
     const std::array first_three{contacts[0], contacts[1], contacts[2]};
     std::optional<Circle> circle;
+    std::optional<CircleQuality> verified;
     if (check_circle) {
-      const auto fit = fit_probe_circle(std::span{contacts}.first(directions.size()));
-      if (!fit || fit->max_residual_mm > circle_check_limit_mm) {
-        SetterState state{calibration ? std::optional{calibration->plane} : std::nullopt,
-                          std::nullopt, std::move(current_marks)};
-        if (fit) {
-          const auto residual = std::format("{:.3f}", fit->max_residual_mm);
-          state.origin_refusal = LocalizedReason{
-              std::format("Circle check failed. The largest contact error was {} mm, over 0.02 mm. "
-                          "Clean the surface and probe again.",
-                          residual),
-              MessageKey{"backend.nmlPort.circleCheckResidual", {{"residual", residual}}}};
-        } else {
-          state.origin_refusal =
-              LocalizedReason{"Circle check failed. The contacts do not give a usable circle. "
+      const auto points = std::span{contacts}.first(directions.size());
+      const auto fit = fit_probe_circle(points);
+      if (!fit)
+        return refuse_origin({"Circle check failed. The contacts do not give a usable circle. "
                               "Check the surface and probe again.",
-                              MessageKey{"backend.nmlPort.circleCheckFit"}};
-        }
-        return state;
+                              MessageKey{"backend.nmlPort.circleCheckFit"}});
+      if (fit->max_residual_mm > circle_check_limit_mm) {
+        const auto residual = std::format("{:.3f}", fit->max_residual_mm);
+        return refuse_origin(
+            {std::format("Circle check failed. The largest contact error was {} mm, over 0.02 mm. "
+                         "Clean the surface and probe again.",
+                         residual),
+             MessageKey{"backend.nmlPort.circleCheckResidual", {{"residual", residual}}}});
       }
+      verified = measured_circle_quality(points, fit->circle.centre,
+                                         std::span{latch_spreads}.first(directions.size()));
+      if (!verified || verified->min_residual_gain < circle_min_residual_gain)
+        return weak_circle();
       circle = fit->circle;
     } else {
       circle = circle_through(first_three);
@@ -2841,9 +2855,10 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
           "by more than 0.5 mm or 10 %. Check that all three touched the boss, then probe "
           "again.",
           2 * surface, request.gauge_width_mm));
-    std::array<double, 3> sigma{};
-    std::ranges::transform(latch_spreads, sigma.begin(), contact_sigma);
-    const auto uncertainty = arc_centre_uncertainty(first_three, circle->centre, sigma);
+    const std::array sigma{contact_sigma(latch_spreads[0]), contact_sigma(latch_spreads[1]),
+                           contact_sigma(latch_spreads[2])};
+    const auto uncertainty = verified ? std::optional{verified->centre_uncertainty_mm}
+                                      : arc_centre_uncertainty(first_three, circle->centre, sigma);
     if (!uncertainty || !(*uncertainty <= arc_max_centre_uncertainty_mm))
       return std::unexpected(std::format(
           "The estimated centre uncertainty from latch repeatability is {:.3f} mm, more than "
@@ -3122,7 +3137,7 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     if (auto travel = arc_searches_in_travel({}, 0, std::nullopt); !travel)
       return std::unexpected(travel.error());
     std::array<std::array<double, 2>, 5> contacts{};
-    std::array<double, 3> spreads{};
+    std::array<double, 5> spreads{};
     for (std::size_t i = 0; i < directions.size(); ++i) {
       const auto* s = impl_->stat();
       if (s == nullptr || impl_->status.link() != Link::live)
@@ -3144,8 +3159,7 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
             std::format("Contact {} at {:.1f}°: {}", i + 1, heading, contact.error()));
       const auto at = to_frame(contact->machine);
       contacts.at(i) = {at[0], at[1]};
-      if (i < spreads.size())
-        spreads.at(i) = contact->latch_spread_mm;
+      spreads.at(i) = contact->latch_spread_mm;
       record_heading(heading, contact->machine, radius);
     }
     return arc_origin(contacts, spreads, radius);
@@ -3232,7 +3246,7 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
       if (auto travel = arc_searches_in_travel(approaches, 180, clearance); !travel)
         return std::unexpected(travel.error());
       std::array<std::array<double, 2>, 5> contacts{};
-      std::array<double, 3> spreads{};
+      std::array<double, 5> spreads{};
       for (std::size_t i = 0; i < directions.size(); ++i) {
         const auto from = i == 0 ? std::optional{request.start} : here();
         if (!from)
@@ -3253,8 +3267,7 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
               std::format("Contact {} at {:.1f}°: {}", i + 1, heading, contact.error()));
         const auto at = to_frame(contact->machine);
         contacts.at(i) = {at[0], at[1]};
-        if (i < spreads.size())
-          spreads.at(i) = contact->latch_spread_mm;
+        spreads.at(i) = contact->latch_spread_mm;
         record_heading(heading + 180, contact->machine, radius);
       }
       return arc_origin(contacts, spreads, -radius);

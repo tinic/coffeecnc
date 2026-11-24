@@ -2093,7 +2093,7 @@ void arc_scenarios(NmlPort& port, double scale, double degrees, const auto& mdi,
                                   .check_angle_deg = extra};
       };
       probe_input(inside ? "sim-arc-wall" : "sim-arc-boss");
-      at(4, -2);
+      at(3.6, -1.7); // a sound circle still fits from off centre
       const auto clear = port.fixed_setter(request(true), epoch, {});
       if (!clear || !clear->measured)
         throw std::runtime_error(clear ? "the sound circle did not yield a measurement"
@@ -2138,6 +2138,63 @@ void arc_scenarios(NmlPort& port, double scale, double degrees, const auto& mdi,
                         : refused.error());
       }
       box(1000, 1001, 1000, 1001);
+    }
+    at(4, -2);
+    probe_input("sim-arc-wall");
+    FixedSetterRequest bore{.action = three ? SetterAction::bore_arc : SetterAction::bore,
+                            .tool = 99,
+                            .start = machine(),
+                            .angles_deg = primary,
+                            .check_angle_deg = extra};
+    if (three) {
+      auto partial = bore;
+      partial.angles_deg = {195, 240, 285};
+      partial.check_angle_deg = 217.5;
+      const auto writes = port.writes().size();
+      const auto rejected = port.fixed_setter(partial, epoch, {});
+      require(rejected && rejected->origin_refusal && rejected->origin_refusal->localization &&
+                  rejected->origin_refusal->localization->key ==
+                      "backend.nmlPort.circleCheckSensitivity" &&
+                  port.writes().size() == writes,
+              "a narrow partial arc is refused before motion");
+      partial.angles_deg = {0, 80, 170};
+      partial.check_angle_deg = 250;
+      partial.measure_only = true;
+      const auto sound = port.fixed_setter(partial, epoch, {});
+      require(sound && sound->measured && sound->measured->faces.size() == 4,
+              "an adequately spread partial arc passes its check");
+      at(4, -2);
+      bore.start = machine();
+      box(-1, 1, -100, -6.7);
+      probe_input("sim-arc-wall-notch");
+      const auto before = port.status().g5x;
+      const auto missed_writes = port.writes().size();
+      const auto missed = port.fixed_setter(bore, epoch, {});
+      require(!missed && missed.error().contains("Contact 4") && port.status().g5x == before &&
+                  g10_since(missed_writes) == 0,
+              "a missed verification contact aborts without writing");
+    } else {
+      int completed = 0;
+      bool active = false;
+      bool stopped = false;
+      std::optional<HalShared::Clock::time_point> fifth;
+      const auto before = port.status().g5x;
+      const auto writes = port.writes().size();
+      const auto result = port.fixed_setter(bore, epoch, [&] {
+        const auto now = HalShared::Clock::now();
+        const auto pins = shared.view(now);
+        const bool running = pins && pins->probe_cycle_active;
+        if (active && !running)
+          ++completed;
+        active = running;
+        if (completed >= 4 && running && !fifth)
+          fifth = now;
+        stopped = stopped || (fifth && now - *fifth >= 250ms);
+        return !stopped;
+      });
+      require(stopped && !result && result.error().contains("Contact 5") &&
+                  port.status().g5x == before && g10_since(writes) == 0,
+              "Stop during the extra search aborts without writing");
     }
     return;
   }

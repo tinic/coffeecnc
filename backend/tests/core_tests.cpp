@@ -344,6 +344,22 @@ void circle_verification() {
   };
   check(std::array{0.0, 120.0, 240.0, 60.0});
   check(std::array{0.0, 90.0, 180.0, 270.0, 45.0});
+  const std::array quarters{0.0, 90.0, 180.0, 270.0};
+  const auto stable = planned_circle_residual_gain(quarters);
+  require(stable && std::abs(*stable - 0.25) < 1e-9,
+          "four evenly spaced contacts retain a quarter of each error");
+  for (const auto& weak :
+       {std::array{0.0, 120.0, 240.0, 60.0}, std::array{195.0, 240.0, 285.0, 217.5}}) {
+    const auto gain = planned_circle_residual_gain(weak);
+    require(gain && *gain < circle_min_residual_gain,
+            "unbalanced full and partial arcs are refused before moving");
+  }
+  const std::array cardinal{std::array{7.0, 0.0}, std::array{0.0, 7.0}, std::array{-7.0, 0.0},
+                            std::array{0.0, -7.0}};
+  const auto quiet = measured_circle_quality(cardinal, {0, 0}, std::array{0.0, 0.0, 0.0, 0.0});
+  const auto noisy = measured_circle_quality(cardinal, {0, 0}, std::array{0.0, 0.0, 0.0, 0.01});
+  require(quiet && noisy && noisy->centre_uncertainty_mm > quiet->centre_uncertainty_mm,
+          "the verification contact's latch spread contributes to the uncertainty");
   const std::array line{std::array{0.0, 0.0}, std::array{1.0, 1.0}, std::array{2.0, 2.0},
                         std::array{3.0, 3.0}};
   require(!fit_probe_circle(line), "collinear verification contacts are rejected");

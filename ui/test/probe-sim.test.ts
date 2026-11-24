@@ -437,9 +437,9 @@ describe('browser probe scene', () => {
 
   it.each([
     ['bore', { action: 'bore', check_angle: 45 }, 5],
-    ['bore', { action: 'bore_arc', angles: [0, 120, 240], check_angle: 60 }, 4],
+    ['bore', { action: 'bore_arc', angles: [0, 90, 180], check_angle: 270 }, 4],
     ['boss', { action: 'boss', diameter: 24, check_angle: 45 }, 5],
-    ['boss', { action: 'boss_arc', angles: [0, 120, 240], diameter: 24, check_angle: 60 }, 4],
+    ['boss', { action: 'boss_arc', angles: [0, 90, 180], diameter: 24, check_angle: 270 }, 4],
   ] as const)('adds an opt-in check contact to the %s before offering Set', (setup, mode, count) => {
     const { sim, cycle, send, result } = scene(setup)
     const before = structuredClone(sim.status().offsets)
@@ -458,6 +458,14 @@ describe('browser probe scene', () => {
     const before = structuredClone(sim.status().offsets)
     expect(result(submit({ action: 'bore', check_angle: 4 }))?.reason)
       .toBe('Choose a check angle at least 10° from the other contacts.')
+    expect(sim.status().offsets).toEqual(before)
+  })
+
+  it('refuses a weak four-contact layout before moving', () => {
+    const { sim, submit, result } = scene('bore')
+    const before = structuredClone(sim.status().offsets)
+    expect(result(submit({ action: 'bore_arc', angles: [0, 120, 240], check_angle: 60 }))?.reason)
+      .toContain('A bad contact can be hidden')
     expect(sim.status().offsets).toEqual(before)
   })
 

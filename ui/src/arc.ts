@@ -79,11 +79,56 @@ export function measuredSpan(points: readonly [Point, Point, Point], centre: Poi
 /** The fifth ray for a regular bore or boss. Angles are relative to work +X. */
 export const circleRays = [0, 90, 180, 270] as const
 export const circleCheckLimit = 0.02
+export const circleMinResidualGain = 0.2
 export function checkAngleValid(angle: number, primary: readonly number[]): boolean {
   return Number.isFinite(angle) && primary.every(value => {
     const delta = ((angle - value) % 360 + 360) % 360
     return Math.min(delta, 360 - delta) >= arcMinSeparation
   })
+}
+
+export function largestGapMiddle(primary: readonly number[]): number {
+  const degrees = primary.map(value => (value % 360 + 360) % 360).sort((a, b) => a - b)
+  let largest = -1, middle = 45
+  degrees.forEach((angle, index) => {
+    const next = degrees[index + 1] ?? (degrees[0] ?? 0) + 360
+    if (next - angle > largest) {
+      largest = next - angle
+      middle = (angle + largest / 2) % 360
+    }
+  })
+  return middle
+}
+
+export function plannedCircleGain(headings: readonly number[]): number {
+  const unit = headings.map(heading => {
+    const angle = (heading % 360) * Math.PI / 180
+    return [Math.cos(angle), Math.sin(angle)] as const
+  })
+  return circleQuality(unit, []).gain
+}
+
+export function measuredCircleQuality(points: readonly Point[], centre: Point): CircleQuality {
+  const unit = points.map(([x, y]) => {
+    const length = Math.hypot(x - centre[0], y - centre[1])
+    return [(x - centre[0]) / length, (y - centre[1]) / length] as const
+  })
+  return circleQuality(unit, unit.map(() => 0))
+}
+
+interface CircleQuality { gain: number; uncertainty: number }
+function circleQuality(unit: readonly Point[], spreads: readonly number[]): CircleQuality {
+  const size = unit.length
+  const [mx, my] = unit.reduce<Point>(([x, y], [u, v]) => [x + u / size, y + v / size], [0, 0])
+  const rows = unit.map(([x, y]) => [x - mx, y - my] as const)
+  let gain = 1, variance = 0
+  for (const [i, [x, y]] of rows.entries()) {
+    const move = solve2(rows, rows.map((_, j) => Number(i === j)))
+    if (!move) return { gain: 0, uncertainty: Infinity }
+    gain = Math.min(gain, 1 - 1 / size - x * move[0] - y * move[1])
+    if (spreads.length > 0) variance += contactSigma(spreads[i] ?? 0) ** 2 * (move[0] ** 2 + move[1] ** 2)
+  }
+  return { gain, uncertainty: 1.96 * Math.sqrt(variance) }
 }
 
 interface CircleFit { centre: Point; radius: number; maxResidual: number }

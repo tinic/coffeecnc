@@ -265,6 +265,7 @@
       "cannotRead": "无法读取文件。"
     },
     "nmlPort": {
+      "circleCheckSensitivity": "请将校验触点分散到圆周上。当前布局可能掩盖错误触点。",
       "circleCheckResidual": "圆校验失败。最大触点偏差为 {residual} mm，超过 0.02 mm。请清洁表面后重新测量。",
       "circleCheckFit": "圆校验失败。触点无法拟合出有效的圆。请检查表面后重新测量。",
       "circleCheckAngle": "请选择与其他触点至少相差 10° 的校验角度。",

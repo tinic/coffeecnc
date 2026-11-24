@@ -4,7 +4,8 @@ import { toWork, type Modal } from './gcode'
 import { heightGrid } from '../height-map'
 import {
   arcAnglesValid, arcCentreUncertainty, arcMaxCentreUncertainty, arcMinMeasuredSpan, bossDiameterPlausible, circleThrough, contactSigma,
-  checkAngleValid, circleCheckLimit, circleRays, fitProbeCircle, measuredSpan,
+  checkAngleValid, circleCheckLimit, circleMinResidualGain, circleRays, fitProbeCircle, measuredCircleQuality,
+  measuredSpan, plannedCircleGain,
 } from '../arc'
 
 type XY = [number, number]
@@ -512,6 +513,8 @@ export class SimProbe {
       if (check !== undefined && !checkAngleValid(check, primary))
         return 'Choose a check angle at least 10° from the other contacts.'
       const headings = check === undefined ? primary : [...primary, check]
+      const weakLayout = 'Spread the check contacts around the circle. A bad contact can be hidden by the current layout.'
+      if (check !== undefined && plannedCircleGain(headings) < circleMinResidualGain) return weakLayout
       const inside = command.action === 'bore_arc' || command.action === 'bore'
       const diameter = 'diameter' in command ? command.diameter : 0
       if (inside && (radiusFrom(start, bore) >= boreRadius - rubyRadius ||
@@ -547,6 +550,10 @@ export class SimProbe {
           failureKey: { key: 'backend.nmlPort.circleCheckResidual', params: { residual } },
         }
       }
+      const verified = fit ? measuredCircleQuality(contacts, fit.centre) : null
+      if (verified && verified.gain < circleMinResidualGain)
+        return { ...result(() => ({})), failure: weakLayout,
+          failureKey: { key: 'backend.nmlPort.circleCheckSensitivity', params: {} } }
       const circle = fit ?? circleThrough([a, b, c])
       const span = circle ? measuredSpan([a, b, c], circle.centre) : 0
       if (!circle || span < arcMinMeasuredSpan)
@@ -558,7 +565,7 @@ export class SimProbe {
         return `The contacts give a boss of Ø ${(2 * surface).toFixed(3)} mm, which differs from the entered Ø ${diameter.toFixed(3)} mm by more than 0.5 mm or 10 %. Check that all three touched the boss, then probe again.`
       // The simulated latch repeats exactly: each contact counts with the 1 µm floor.
       const sigma = contactSigma(0)
-      const uncertainty = arcCentreUncertainty([a, b, c], circle.centre, [sigma, sigma, sigma])
+      const uncertainty = verified?.uncertainty ?? arcCentreUncertainty([a, b, c], circle.centre, [sigma, sigma, sigma])
       if (uncertainty === null || uncertainty > arcMaxCentreUncertainty)
         return `The estimated centre uncertainty from latch repeatability is ${(uncertainty ?? Infinity).toFixed(3)} mm, more than 0.02 mm: the contacts cover ${span.toFixed(1)}° with a latch spread up to 0.0000 mm. Spread the angles further and probe again.`
       const offset = origin(corner(circle.centre[0], circle.centre[1]), 'XY')

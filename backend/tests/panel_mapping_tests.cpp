@@ -354,18 +354,25 @@ struct Rig {
   int reads{};
   std::filesystem::path program{scratch / "part.ngc"};
   NmlPanelSource source{
-      config, mailbox, [this]() -> std::optional<std::vector<LoadedTool>> { return loaded; },
+      config,
+      mailbox,
+      [this]() -> std::optional<std::vector<LoadedTool>> { return loaded; },
       [this](std::string_view path,
-             std::uint64_t revision) -> std::expected<ProgramText, LocalizedReason> {
+             std::uint64_t revision) -> std::expected<ProgramText, ProgramReadError> {
         ++reads;
         now += read_time;
         if (path.ends_with("refused.ngc"))
           return std::unexpected(
-              LocalizedReason{"Path is outside the program directory.",
-                              MessageKey{"backend.programStore.outsideDirectory"}});
+              ProgramReadError{{"Path is outside the program directory.",
+                                MessageKey{"backend.programStore.outsideDirectory"}}});
+        if (path.ends_with("unreadable.ngc"))
+          return std::unexpected(ProgramReadError{
+              {"The file cannot be read.", MessageKey{"backend.fileSystem.cannotRead"}},
+              ProgramReadError::Stage::contents});
         return ProgramText{revision, std::string(path), {"G0 X1", "M2"}, false, "0"};
       },
-      &loads, [this]() -> NmlPanelSource::Clock::time_point { return now; }};
+      &loads,
+      [this]() -> NmlPanelSource::Clock::time_point { return now; }};
 
   explicit Rig(std::string parameter_file = {}) : config{machine(std::move(parameter_file))} {
     write(config.tool_table, "T1 P1 Z50 D6 ;end mill\nT2 P2 Z40 D3\n");
@@ -601,6 +608,18 @@ void source_program_loads() {
   rig.mailbox.put(rig.status(), rig.now);
   r = rig.source.read();
   require(r.program && r.program->revision == 5, "Loaded again after none: a new revision");
+
+  s.program_file = (scratch / "unreadable.ngc").string();
+  r = rig.step(s);
+  require(!r.program && r.messages.size() == 1 && r.messages[0].error &&
+              r.messages[0].text ==
+                  "The text of " + s.program_file +
+                      " cannot be shown: Program cannot be read: The file cannot be read." &&
+              r.messages[0].localization ==
+                  MessageKey{"backend.nmlPanelSource.programReadFailed",
+                             {{"file", s.program_file}, {"detail", "The file cannot be read."}},
+                             {{"detail", {"backend.fileSystem.cannotRead"}}}},
+          "An unreadable file keeps its path and the English notice alongside the read key");
 }
 
 // Task's line counters belong to task, not to a load: the status reports what was attributed

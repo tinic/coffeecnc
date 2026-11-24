@@ -2,6 +2,7 @@
 #define COFFEECNC_CORE_PANEL_SOURCE_HPP
 
 #include <coffeecnc/core/controller_port.hpp>
+#include <coffeecnc/core/message_key.hpp>
 #include <coffeecnc/core/panel_messages.hpp>
 #include <coffeecnc/core/preview.hpp>
 
@@ -52,9 +53,15 @@ struct PanelReading {
   std::shared_ptr<const OffsetHistory> offset_history;
 };
 
+struct ProgramReadError {
+  enum class Stage : std::uint8_t { resolve, contents };
+  LocalizedReason reason;
+  Stage stage{Stage::resolve};
+};
+
 // The text of a program for the `program` message: ProgramStore::read_program, handed to an
 // adapter that must not depend on the app layer.
-using ProgramReader = std::function<std::expected<ProgramText, LocalizedReason>(
+using ProgramReader = std::function<std::expected<ProgramText, ProgramReadError>(
     std::string_view path, std::uint64_t revision)>;
 
 // A read-only view of the controller for the publisher thread, its only caller. Never touches

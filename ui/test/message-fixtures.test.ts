@@ -1065,6 +1065,19 @@ const examples = [
   {
     "type": "message",
     "level": "error",
+    "text": "The text of /home/cnc/part.ngc cannot be shown: Program cannot be read: The file cannot be read.",
+    "time": 1700000001700,
+    "localization": {
+      "key": "backend.nmlPanelSource.programReadFailed",
+      "params": { "file": "/home/cnc/part.ngc", "detail": "The file cannot be read." },
+      "params_localization": {
+        "detail": { "key": "backend.fileSystem.cannotRead", "params": {} }
+      }
+    }
+  },
+  {
+    "type": "message",
+    "level": "error",
     "text": "Joint 0 on limit switch error",
     "time": 1700000000123
   },

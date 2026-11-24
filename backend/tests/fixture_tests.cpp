@@ -331,6 +331,14 @@ auto encoded_messages() -> std::vector<EncodedMessage> {
           "backend.nmlPanelSource.textNotShown",
           {{"file", "/home/cnc/outside.ngc"}, {"detail", "Path is outside the program directory."}},
           {{"detail", {"backend.programStore.outsideDirectory"}}}}));
+  messages.emplace_back(encode_message(
+      MessageLevel::error,
+      "The text of /home/cnc/part.ngc cannot be shown: Program cannot be read: "
+      "The file cannot be read.",
+      1700000001700ms,
+      MessageKey{"backend.nmlPanelSource.programReadFailed",
+                 {{"file", "/home/cnc/part.ngc"}, {"detail", "The file cannot be read."}},
+                 {{"detail", {"backend.fileSystem.cannotRead"}}}}));
   messages.emplace_back(
       encode_message(MessageLevel::error, "Joint 0 on limit switch error", 1700000000123ms));
   messages.emplace_back(encode_message(MessageLevel::info, "T1 restored in the spindle.",

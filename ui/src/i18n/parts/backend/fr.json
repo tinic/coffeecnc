@@ -636,7 +636,8 @@
     "nmlPanelSource": {
       "toolTableUnreadable": "Impossible de lire le fichier de table d’outils {file} : la table d’outils n’est pas affichée.",
       "toolTableMemory": "Impossible de lire la table d’outils de LinuxCNC.",
-      "textNotShown": "Impossible d’afficher le texte de {file} : {detail}"
+      "textNotShown": "Impossible d’afficher le texte de {file} : {detail}",
+      "programReadFailed": "Impossible d’afficher le texte de {file} : Impossible de lire le programme : {detail}"
     },
     "controllerPort": {
       "estopStatus": "Impossible de lire l’état de LinuxCNC ; l’arrêt d’urgence n’a pas été confirmé.",

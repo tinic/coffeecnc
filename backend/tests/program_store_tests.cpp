@@ -297,7 +297,8 @@ void open_rules() {
             std::format("Opening \"{}\" is refused with \"{}\" but got \"{}\"", path, reason,
                         refused.error_or(LocalizedReason{"a path"}).text));
     const auto unread = store.read_program(path, 1);
-    require(!unread && unread.error() == refused.error(),
+    require(!unread && unread.error().reason == refused.error() &&
+                unread.error().stage == ProgramReadError::Stage::resolve,
             "Reading \"" + path + "\" is refused with the same reason and key");
   }
   for (const auto& call : files.calls)
@@ -459,11 +460,9 @@ void unreadable_program_text() {
   files.file(in_root("blocked.ngc"), "M2\n");
   files.unreadable_files.push_back(in_root("blocked.ngc"));
   const auto blocked = store.read_program("blocked.ngc", 9);
-  require(!blocked &&
-              blocked.error() == LocalizedReason{"Program cannot be read: Permission denied",
-                                                 MessageKey{"backend.programStore.cannotRead",
-                                                            {{"detail", "Permission denied"}}}},
-          "The program read error carries a key and the filesystem detail.");
+  require(!blocked && blocked.error().reason == LocalizedReason{"Permission denied"} &&
+              blocked.error().stage == ProgramReadError::Stage::contents,
+          "The program read error preserves the opaque filesystem detail and its stage.");
 }
 
 // The same rules on the host's file system, in a directory made for the test.
@@ -526,7 +525,7 @@ void on_the_host(const std::filesystem::path& scratch) {
            "sub/../../outside/secret.ngc", "/etc/hosts"}) {
     require(store.resolve_program(path).error_or(LocalizedReason{}).text == outside_reason,
             "Opening outside the root is refused: " + path);
-    require(store.read_program(path, 1).error_or(LocalizedReason{}).text == outside_reason,
+    require(store.read_program(path, 1).error_or(ProgramReadError{}).reason.text == outside_reason,
             "Reading outside the root is refused: " + path);
   }
   require(store.resolve_program("part.ngc") == top + "/part.ngc" &&
@@ -557,8 +556,10 @@ void on_the_host(const std::filesystem::path& scratch) {
   require(files.read(top + "/part.ngc", 5) == "G0 X1" &&
               files.read(top + "/part.ngc", 1000).value_or("").size() == 17 &&
               files.read(top + "/part.ngc", 0) == "" &&
-              !files.read(top + "/missing", 10).has_value(),
-          "read returns at most the limit, and fails for a missing file");
+              files.read(top + "/missing", 10).error_or(LocalizedReason{}) ==
+                  LocalizedReason{"The file cannot be opened.",
+                                  MessageKey{"backend.fileSystem.cannotOpen"}},
+          "read returns at most the limit, and carries the key when opening a file fails");
   const auto few = files.names(top, 2);
   const auto all = files.names(top, 100);
   require(few && few->names.size() == 2 && few->more && all && !all->more &&

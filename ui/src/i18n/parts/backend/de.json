@@ -223,6 +223,9 @@
       "damaged": "Der gespeicherte Verlauf der Nullpunktverschiebungen war beschädigt und beginnt leer.",
       "notSaved": "Der Verlauf der Nullpunktverschiebungen konnte nicht gespeichert werden: {detail}"
     },
+    "programProgress": {
+      "notSaved": "Der Programmfortschritt konnte nicht gespeichert werden. {storageError}"
+    },
     "programStore": {
       "noDirectory": "Kein Programmverzeichnis konfiguriert.",
       "pathEmpty": "Der Pfad ist leer.",

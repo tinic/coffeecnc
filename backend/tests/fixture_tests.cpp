@@ -354,6 +354,12 @@ auto encoded_messages() -> std::vector<Encoded> {
       52, CommandOutcome::failed, "Tool measured. The updated program check is unavailable.", {},
       {}, {}, MessageKey{"backend.toolChangeMeasurement.measuredCheckUnavailable"}));
 
+  constexpr auto storage_error = "the temporary file cannot be made: Permission denied";
+  messages.emplace_back(encode_message(
+      MessageLevel::error, std::string("Program progress could not be saved. ") + storage_error,
+      1700000001500ms,
+      MessageKey{"backend.programProgress.notSaved", {{"storageError", storage_error}}}));
+
   Directory top;
   top.path = "/home/cnc/nc_files";
   top.entries = {{"fixtures", EntryKind::directory, 0, 1700000000000},

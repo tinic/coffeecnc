@@ -223,6 +223,9 @@
       "damaged": "El historial de decalajes guardado estaba dañado y empieza vacío.",
       "notSaved": "No se pudo guardar el historial de decalajes: {detail}"
     },
+    "programProgress": {
+      "notSaved": "No se pudo guardar el progreso del programa. {storageError}"
+    },
     "programStore": {
       "noDirectory": "No hay ningún directorio de programas configurado.",
       "pathEmpty": "La ruta está vacía.",

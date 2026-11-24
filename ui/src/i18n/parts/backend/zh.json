@@ -223,6 +223,9 @@
       "damaged": "已保存的偏置历史已损坏，历史从空开始。",
       "notSaved": "无法保存偏置历史：{detail}"
     },
+    "programProgress": {
+      "notSaved": "无法保存程序进度。{storageError}"
+    },
     "programStore": {
       "noDirectory": "未配置程序目录。",
       "pathEmpty": "路径为空。",

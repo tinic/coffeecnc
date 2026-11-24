@@ -223,6 +223,9 @@
       "damaged": "O histórico de deslocamentos guardado estava danificado e começa vazio.",
       "notSaved": "Não foi possível guardar o histórico de deslocamentos: {detail}"
     },
+    "programProgress": {
+      "notSaved": "Não foi possível guardar o progresso do programa. {storageError}"
+    },
     "programStore": {
       "noDirectory": "Não está configurado nenhum diretório de programas.",
       "pathEmpty": "O caminho está vazio.",

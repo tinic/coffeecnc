@@ -1176,6 +1176,16 @@ const examples = [
     }
   },
   {
+    "type": "message",
+    "level": "error",
+    "text": "Program progress could not be saved. the temporary file cannot be made: Permission denied",
+    "time": 1700000001500,
+    "localization": {
+      "key": "backend.programProgress.notSaved",
+      "params": { "storageError": "the temporary file cannot be made: Permission denied" }
+    }
+  },
+  {
     "type": "directory",
     "path": "/home/cnc/nc_files",
     "parent": null,

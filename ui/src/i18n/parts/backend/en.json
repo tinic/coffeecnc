@@ -223,6 +223,9 @@
       "damaged": "The saved offset history was damaged and starts empty.",
       "notSaved": "The offset history could not be saved: {detail}"
     },
+    "programProgress": {
+      "notSaved": "Program progress could not be saved. {storageError}"
+    },
     "programStore": {
       "noDirectory": "No program directory is configured.",
       "pathEmpty": "Path is empty.",

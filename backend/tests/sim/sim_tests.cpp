@@ -1131,8 +1131,12 @@ void delayed_start(Rig& rig, Reason reason, std::string_view name) {
     detail += std::format(" press={} echo_at_decision={} teleop_at_decision={} reply_at_decision={}",
                           press, echo_at_decision, teleop_at_decision,
                           reply_at_decision ? reply_at_decision->text() : "none");
-    for (const auto& write : writes)
-      detail += std::format(" write={}#{}@{:.3f}ms", write.type, write.serial, ms(write.at));
+    detail = std::accumulate(writes.begin(), writes.end(), std::move(detail),
+                             [&ms](std::string trace, const NmlPort::Written& write) {
+                               trace += std::format(" write={}#{}@{:.3f}ms", write.type,
+                                                    write.serial, ms(write.at));
+                               return trace;
+                             });
   }
   check(std::format("delayed_start_{}", name), passed, detail);
   if (reason == Reason::page_end) {

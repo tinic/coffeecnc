@@ -125,6 +125,7 @@
       "tooManyAssignments": "刀具模型分配超过 1001 个。",
       "unknownHolder": "未知刀柄。",
       "assignedTwice": "被分配了多次。",
+      "familyProblem": "{family}: {detail}",
       "toolProblem": "刀具 {tool}：{detail}",
       "overridesEmpty": "删除分配时，overrides 必须为空。",
       "chooseHolder": "请为刀具模型分配选择支持的刀柄。",

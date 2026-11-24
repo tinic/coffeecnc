@@ -690,6 +690,11 @@
     "machineData": {
       "notWritten": "バックアップは書き込まれませんでした：{detail}",
       "cannotRead": "{path} を読み込めません：{detail}",
+      "configNotOpened": "{path} を開けません：{detail}",
+      "configNotRelative": "{path} は {root} の下にある単純なパスではありません",
+      "configParentOutside": "{path} はシンボリックリンクを経由しているか、{root} の下にありません",
+      "configLinkTooLong": "{path} を読み取れません：シンボリックリンクが長すぎます",
+      "configNotRegular": "{path} は通常のファイルではありません",
       "tooLarge": "{path} は 16 MiB を超えています。",
       "archiveTooLarge": "アーカイブは 64 MiB を超えています。",
       "missing": "{path} は存在しません。",

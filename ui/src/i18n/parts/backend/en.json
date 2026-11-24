@@ -690,6 +690,11 @@
     "machineData": {
       "notWritten": "The backup was not written: {detail}",
       "cannotRead": "{path} cannot be read: {detail}",
+      "configNotOpened": "{path} cannot be opened: {detail}",
+      "configNotRelative": "{path} is not a plain path beneath {root}",
+      "configParentOutside": "{path} is reached through a symbolic link or is not beneath {root}",
+      "configLinkTooLong": "{path} cannot be read: link too long",
+      "configNotRegular": "{path} is not a regular file",
       "tooLarge": "{path} is larger than 16 MiB.",
       "archiveTooLarge": "The archive is larger than 64 MiB.",
       "missing": "{path} does not exist.",

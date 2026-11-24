@@ -496,6 +496,44 @@ void refusal_states() {
           "A file that changed after its check is refused");
 }
 
+void configuration_read_failure_is_localized() {
+  Fixture f;
+  const auto read_error = [](const std::string& path) -> MessageParameterKey {
+    return {"backend.machineData.cannotRead", {{"path", path}, {"detail", "Input/output error"}}};
+  };
+  const std::string ini_detail = std::string(ini) + " cannot be read: Input/output error";
+  f.files.failures["read_beneath"] = 1;
+  const auto backup = f.machine->backup(usb);
+  require(backup.outcome == CommandOutcome::failed &&
+              backup.reason == "The backup was not written: " + ini_detail &&
+              backup.localization == MessageKey{"backend.machineData.notWritten",
+                                                {{"detail", ini_detail}},
+                                                {{"detail", read_error(ini)}}},
+          "Backup passes through the file read reason alongside its original text");
+
+  const std::string path = f.backup()["path"];
+  f.files.failures["read_beneath"] = 1;
+  const auto check = f.check(path);
+  require(check.localization && check.localization->key == "backend.machineData.unreachable" &&
+              check.localization->params_localization.at("detail") == read_error(ini),
+          "Restore inspection passes through the file read reason");
+
+  f.disk.files[tools] = "T1 P1 Z99 D6\n";
+  f.stage(path);
+  const std::string tool_detail = std::string(tools) + " cannot be read: Input/output error";
+  f.files.failures["read_beneath"] = 1;
+  const auto applied = apply_staged_restore(f.files, data, now + 60s);
+  require(!applied && applied.error() == tool_detail && f.disk.files[tools] == "T1 P1 Z99 D6\n",
+          "A file read failure stops the prepared restore before it writes");
+  f.open();
+  const auto notice = f.machine->take_notice();
+  require(notice && notice->error &&
+              notice->localization == MessageKey{"backend.machineData.notCompleted",
+                                                 {{"detail", tool_detail}},
+                                                 {{"detail", read_error(tools)}}},
+          "The file read reason survives for the next startup");
+}
+
 void restore_and_apply() {
   Fixture f;
   const std::string path = f.backup()["path"];
@@ -1163,9 +1201,9 @@ void helper_holds_linuxcnc_lock() {
 }
 
 // A file that read_beneath found; the check fails when it did not.
-auto found(const std::expected<std::optional<ToolModelFiles::Found>, std::string>& read)
+auto found(const std::expected<std::optional<ToolModelFiles::Found>, LocalizedReason>& read)
     -> ToolModelFiles::Found {
-  require(read.has_value(), "The file is read: " + (read ? std::string{} : read.error()));
+  require(read.has_value(), "The file is read: " + (read ? std::string{} : read.error().text));
   const auto& file = *read;
   require(file.has_value(), "The file exists");
   return file.value_or(ToolModelFiles::Found{});
@@ -1201,9 +1239,12 @@ void real_files(const std::filesystem::path& base) {
   LocalToolModelFiles files;
   const auto dir = configs.string();
   auto read = files.read_beneath(dir, "hal/custom.hal", 100);
-  require(!read && read.error().find("symbolic link") != std::string::npos,
+  require(!read && read.error().text.find("symbolic link") != std::string::npos &&
+              read.error().localization ==
+                  MessageKey{"backend.machineData.configParentOutside",
+                             {{"path", dir + "/hal/custom.hal"}, {"root", dir}}},
           "A file through a linked subfolder is not read: " +
-              (read ? std::string{} : read.error()));
+              (read ? std::string{} : read.error().text));
   auto replaced = files.replace_beneath(dir, "hal/custom.hal", "written\n", 0644, std::nullopt);
   require(!replaced && !replaced.error().renamed &&
               read_real(outside / "custom.hal") == "outside\n" &&
@@ -1253,11 +1294,15 @@ void real_files(const std::filesystem::path& base) {
   }
   // Re-review #274, 3: a folder that is not there.
   require(files.folder_exists_beneath(dir, "missing/x.hal") ==
-                  std::expected<bool, std::string>{false} &&
-              files.folder_exists_beneath(dir, "x.hal") == std::expected<bool, std::string>{true},
+                  std::expected<bool, LocalizedReason>{false} &&
+              files.folder_exists_beneath(dir, "x.hal") ==
+                  std::expected<bool, LocalizedReason>{true},
           "A missing folder is told from one that exists");
-  require(!files.folder_exists_beneath(dir, "hal/x.hal").has_value(),
-          "A folder reached through a link is an error");
+  const auto folder = files.folder_exists_beneath(dir, "hal/x.hal");
+  require(!folder && folder.error().localization ==
+                         MessageKey{"backend.machineData.configParentOutside",
+                                    {{"path", dir + "/hal/x.hal"}, {"root", dir}}},
+          "A folder lookup carries the same localizable reason");
   std::filesystem::remove_all(root);
 }
 
@@ -1376,6 +1421,7 @@ auto main(int argc, char** argv) -> int {
     hal_role_is_bounded();
     machine_id_required();
     refusal_states();
+    configuration_read_failure_is_localized();
     restore_and_apply();
     var_decided_after_exit();
     abandoned_and_changed_targets();

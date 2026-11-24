@@ -385,6 +385,15 @@ auto encoded_messages() -> std::vector<EncodedMessage> {
                  {{"detail", "LinuxCNC did not open the program."}},
                  {{"detail", {"backend.nmlPort.notOpened"}}}}));
   messages.emplace_back(encode_result(41, CommandOutcome::accepted, ""));
+  messages.emplace_back(encode_result(
+      89, CommandOutcome::failed,
+      "The backup was not written: /home/cnc/mill.ini cannot be read: Input/output error", {}, {},
+      {},
+      MessageKey{"backend.machineData.notWritten",
+                 {{"detail", "/home/cnc/mill.ini cannot be read: Input/output error"}},
+                 {{"detail",
+                   {"backend.machineData.cannotRead",
+                    {{"path", "/home/cnc/mill.ini"}, {"detail", "Input/output error"}}}}}}));
   messages.emplace_back(encode_result(58, CommandOutcome::rejected,
                                       "This line is inside a canned cycle.", {}, {},
                                       RefusalMessage{"backend.previewRestart.cannedCycle"}));

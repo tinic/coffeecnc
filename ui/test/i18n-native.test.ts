@@ -33,6 +33,7 @@ const adapter = import.meta.glob<string>([
   '../../backend/src/linuxcnc/src/preview_wire.cpp',
   '../../backend/src/linuxcnc/src/preview_wire.cpp',
   '../../backend/src/app/src/machine_data.cpp',
+  '../../backend/src/app/src/beneath_files.cpp',
   '../../backend/src/app/src/backup_archive.cpp',
   '../../backend/src/app/src/restore_helper.cpp',
   '../../backend/src/app/src/operator_settings_store.cpp',
@@ -586,6 +587,20 @@ describe('translateMessage', () => {
         detail: { key: 'backend.machineData.stale', params: { age: '181', limit: '120' } },
       },
     })).toBe("La restauration n’a pas abouti : La restauration a été préparée 181 s avant la fin de CoffeeCNC, plus de 120 s : rien n'a été écrit. Les fichiers sont tels qu’avant.")
+  })
+
+  it('translates an unreadable configuration file and keeps the OS detail', async () => {
+    await setLanguage('fr')
+    const path = '/home/cnc/mill.ini'
+    const error = 'Input/output error'
+    const detail = `${path} cannot be read: ${error}`
+    expect(translateMessage(`The backup was not written: ${detail}`, {
+      key: 'backend.machineData.notWritten',
+      params: { detail },
+      params_localization: {
+        detail: { key: 'backend.machineData.cannotRead', params: { path, detail: error } },
+      },
+    })).toBe('La sauvegarde n’a pas été écrite : /home/cnc/mill.ini ne peut pas être lu : Input/output error')
   })
 
   it('shows English text as it is in English', () => {

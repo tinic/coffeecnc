@@ -5,6 +5,7 @@
 #include <coffeecnc/app/response.hpp>
 #include <coffeecnc/app/session.hpp>
 #include <coffeecnc/app/tool_models.hpp>
+#include <coffeecnc/core/message_key.hpp>
 #include <coffeecnc/core/tool_models.hpp>
 
 #include <condition_variable>
@@ -12,6 +13,7 @@
 #include <cstdint>
 #include <deque>
 #include <expected>
+#include <format>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -137,18 +139,22 @@ public:
   // to none).
   [[nodiscard]] virtual auto read_beneath(const std::string& root, const std::string& relative,
                                           std::size_t limit)
-      -> std::expected<std::optional<Found>, std::string> {
+      -> std::expected<std::optional<Found>, LocalizedReason> {
     static_cast<void>(relative);
     static_cast<void>(limit);
-    return std::unexpected(root + " cannot be read here");
+    return std::unexpected(
+        LocalizedReason{std::format("{} cannot be read here", root),
+                        MessageKey{"backend.machineData.readHere", {{"path", root}}}});
   }
   // The folder that would hold that file exists (reached as read_beneath reaches it). An error:
   // it cannot be told, or a component on the way is a link.
   [[nodiscard]] virtual auto folder_exists_beneath(const std::string& root,
                                                    const std::string& relative)
-      -> std::expected<bool, std::string> {
+      -> std::expected<bool, LocalizedReason> {
     static_cast<void>(relative);
-    return std::unexpected(root + " cannot be read here");
+    return std::unexpected(
+        LocalizedReason{std::format("{} cannot be read here", root),
+                        MessageKey{"backend.machineData.readHere", {{"path", root}}}});
   }
   // Replaces that file by a regular file holding `bytes`, with permission bits `mode` and, when
   // given, group `group`: a temporary file beside it (`<name>.coffeecnc-tmp`), write, fsync,
@@ -209,9 +215,9 @@ public:
   void discard(const std::string& path) override;
   [[nodiscard]] auto read_beneath(const std::string& root, const std::string& relative,
                                   std::size_t limit)
-      -> std::expected<std::optional<Found>, std::string> override;
+      -> std::expected<std::optional<Found>, LocalizedReason> override;
   [[nodiscard]] auto folder_exists_beneath(const std::string& root, const std::string& relative)
-      -> std::expected<bool, std::string> override;
+      -> std::expected<bool, LocalizedReason> override;
   [[nodiscard]] auto replace_beneath(const std::string& root, const std::string& relative,
                                      std::string_view bytes, unsigned mode,
                                      std::optional<unsigned> group) -> Replaced override;

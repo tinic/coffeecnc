@@ -690,6 +690,11 @@
     "machineData": {
       "notWritten": "Die Sicherung wurde nicht geschrieben: {detail}",
       "cannotRead": "{path} kann nicht gelesen werden: {detail}",
+      "configNotOpened": "{path} kann nicht geöffnet werden: {detail}",
+      "configNotRelative": "{path} ist kein einfacher Pfad unter {root}",
+      "configParentOutside": "{path} wird über einen symbolischen Link erreicht oder liegt nicht unter {root}",
+      "configLinkTooLong": "{path} kann nicht gelesen werden: symbolischer Link zu lang",
+      "configNotRegular": "{path} ist keine reguläre Datei",
       "tooLarge": "{path} ist größer als 16 MiB.",
       "archiveTooLarge": "Das Archiv ist größer als 64 MiB.",
       "missing": "{path} existiert nicht.",

@@ -566,6 +566,67 @@ void staged_file_read_failures_are_localized() {
   }
 }
 
+void storage_write_failures_are_localized() {
+  const std::string storage_error = "the temporary file cannot be made: Permission denied";
+  {
+    Fixture f;
+    const std::string path = f.backup()["path"];
+    const auto backup_bytes = f.disk.files.at(path);
+    const auto check_failure = [&](const MachineDataAnswer& answer, const std::string& target,
+                                   std::string_view key, std::string_view prefix) -> void {
+      const auto detail = std::format("{}: {}", target, storage_error);
+      require(answer.outcome == CommandOutcome::failed &&
+                  answer.reason == std::format("{}{}", prefix, detail) &&
+                  answer.localization ==
+                      MessageKey{std::string(key),
+                                 {{"detail", detail}},
+                                 {{"detail",
+                                   {"backend.machineData.fileStep",
+                                    {{"path", target}, {"detail", storage_error}}}}}},
+              "The storage failure retains the path and storage error as message arguments");
+    };
+    f.files.failures[std::format("open_temporary {}.coffeecnc-tmp", path)] = 1;
+    check_failure(f.machine->backup(usb), path, "backend.machineData.notWritten",
+                  "The backup was not written: ");
+    require(f.disk.files.at(path) == backup_bytes, "The earlier backup stays intact");
+
+    f.disk.files[tools] = "T1 P1 Z99 D6\n";
+    const auto staged = in_staging("0.staged");
+    const std::string token = f.summary(path)["token"];
+    f.files.failures[std::format("open_temporary {}.coffeecnc-tmp", staged)] = 1;
+    check_failure(f.machine->restore(path, token, 7, allow), staged,
+                  "backend.machineData.notPrepared", "The restore was not prepared: ");
+    require(!f.machine->staged(), "A staged file write failure leaves the restore unprepared");
+  }
+  for (const bool mark : {false, true}) {
+    Fixture f;
+    const std::string path = f.backup()["path"];
+    const std::string current_tools = "T1 P1 Z99 D6\n";
+    f.disk.files[tools] = current_tools;
+    f.stage(path);
+    const auto target =
+        mark ? in_staging("applying.json") : in_data("pre-restore-20261118-110740.tar.gz");
+    f.files.failures[std::format("open_temporary {}.coffeecnc-tmp", target)] = 1;
+    const auto detail = std::format("{}: {}: {}",
+                                    mark ? "the restore could not be marked as started"
+                                         : "the files before the restore could not be saved",
+                                    target, storage_error);
+    const auto result = apply_staged_restore(f.files, data, now + 60s);
+    require(!result && result.error() == detail && f.disk.files[tools] == current_tools,
+            "The helper reports its storage error before modifying the configuration");
+    f.open();
+    const auto notice = f.machine->take_notice();
+    const MessageParameterKey key{mark ? "backend.machineData.notMarkedFile"
+                                       : "backend.machineData.copyNotSavedFile",
+                                  {{"path", target}, {"detail", storage_error}}};
+    require(notice && notice->error &&
+                notice->localization == MessageKey{"backend.machineData.notCompleted",
+                                                   {{"detail", detail}},
+                                                   {{"detail", key}}},
+            "The file-specific storage failure survives in the next-startup notice");
+  }
+}
+
 void restore_and_apply() {
   Fixture f;
   const std::string path = f.backup()["path"];
@@ -1468,6 +1529,7 @@ auto main(int argc, char** argv) -> int {
     refusal_states();
     configuration_read_failure_is_localized();
     staged_file_read_failures_are_localized();
+    storage_write_failures_are_localized();
     restore_and_apply();
     var_decided_after_exit();
     abandoned_and_changed_targets();

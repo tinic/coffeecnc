@@ -139,7 +139,7 @@ auto hal_relative(std::string_view written, const std::string& config_directory)
   return relative;
 }
 
-// A durable replacement of `target` by `bytes`, through a temporary file beside it.
+// A durable replacement of `target` by `bytes`. The caller adds the target to the storage detail.
 auto replace_file(ToolModelFiles& files, const std::string& target, std::string_view bytes)
     -> ToolModelFiles::Done {
   const auto temporary = target + ".coffeecnc-tmp";
@@ -152,11 +152,14 @@ auto replace_file(ToolModelFiles& files, const std::string& target, std::string_
     step = files.rename(temporary, target);
   if (!step) {
     files.discard(temporary);
-    return std::unexpected(std::format("{}: {}", target, step.error()));
+    return step;
   }
-  if (auto synced = files.sync_directory(parent(target)); !synced)
-    return std::unexpected(std::format("{}: {}", target, synced.error()));
-  return {};
+  return files.sync_directory(parent(target));
+}
+
+auto file_step(const std::string& path, const std::string& detail) -> LocalizedReason {
+  return {std::format("{}: {}", path, detail),
+          MessageKey{"backend.machineData.fileStep", {{"path", path}, {"detail", detail}}}};
 }
 
 auto cannot_read(const std::string& path, const std::string& detail) -> LocalizedReason {
@@ -484,7 +487,7 @@ auto MachineData::backup(const std::string& directory) -> MachineDataAnswer {
                   paths_.machine_id.empty() ? "machine" : paths_.machine_id, stamp(now));
   const auto target = (directory == "/" ? std::string{} : directory) + '/' + name;
   if (auto written = replace_file(files_, target, *archive); !written)
-    return failed({written.error()});
+    return failed(file_step(target, written.error()));
   return {CommandOutcome::accepted,
           "",
           {encode_backup_written({target, included.size(), archive->size(), left_out})},
@@ -736,18 +739,20 @@ auto MachineData::restore(const std::string& path, const std::string& token, std
             false,
             MessageKey{"backend.machineData.nothing"}};
   const auto staging = paths_.data_directory + '/' + std::string(restore_directory_name);
-  const auto failed = [](const std::string& reason) -> MachineDataAnswer {
+  const auto failed = [](const LocalizedReason& reason) -> MachineDataAnswer {
     return {CommandOutcome::failed,
-            std::format("The restore was not prepared: {}", reason),
+            std::format("The restore was not prepared: {}", reason.text),
             {},
             false,
-            MessageKey{"backend.machineData.notPrepared", {{"detail", reason}}}};
+            MessageKey{"backend.machineData.notPrepared",
+                       {{"detail", reason.text}},
+                       parameter_localization("detail", reason.localization)}};
   };
   // The data folder too, where nothing was saved in it yet: each missing folder 0700.
   if (const auto made = prepare_data_directory(files_, paths_.data_directory); !made)
-    return failed(made.error());
+    return failed({made.error()});
   if (const auto made = files_.make_directory(staging); !made)
-    return failed(made.error());
+    return failed({made.error()});
   const auto plan_file = staging + '/' + std::string(restore_plan_name);
   abandon_locked();
   files_.discard(plan_file);
@@ -757,7 +762,7 @@ auto MachineData::restore(const std::string& path, const std::string& token, std
     const auto copy = std::format("{}/{}.staged", staging, i);
     staged_files_.push_back(copy);
     if (auto written = replace_file(files_, copy, file.bytes); !written)
-      return failed(written.error());
+      return failed(file_step(copy, written.error()));
     plan.push_back({{"role", file.role},
                     {"name", file.name},
                     {"from", copy},
@@ -777,7 +782,7 @@ auto MachineData::restore(const std::string& path, const std::string& token, std
                       {"ini", paths_.ini_file},
                       {"files", std::move(plan)}};
   if (auto written = replace_file(files_, plan_file, dump(document) + '\n'); !written)
-    return failed(written.error());
+    return failed(file_step(plan_file, written.error()));
   staged_ = true;
   return {CommandOutcome::accepted, "", {}, true};
 }
@@ -959,11 +964,16 @@ auto apply_staged_restore(ToolModelFiles& files, const std::string& data_directo
                        seconds};
     copy_path = std::format("{}/pre-restore-{}.tar.gz", data_directory, stamp(now));
     const auto archive = write_archive(entries);
-    const auto saved = archive ? replace_file(files, copy_path, *archive)
-                               : ToolModelFiles::Done{std::unexpected(archive.error().text)};
-    if (!saved)
-      reason = {std::format("the files before the restore could not be saved: {}", saved.error()),
-                MessageKey{"backend.machineData.copyNotSaved", {{"detail", saved.error()}}}};
+    if (!archive) {
+      const auto& detail = archive.error().text;
+      reason = {std::format("the files before the restore could not be saved: {}", detail),
+                MessageKey{"backend.machineData.copyNotSaved", {{"detail", detail}}}};
+    } else if (const auto saved = replace_file(files, copy_path, *archive); !saved) {
+      reason = {std::format("the files before the restore could not be saved: {}: {}", copy_path,
+                            saved.error()),
+                MessageKey{"backend.machineData.copyNotSavedFile",
+                           {{"path", copy_path}, {"detail", saved.error()}}}};
+    }
   }
   if (reason.empty() && !steps.empty() && hooks.may_write)
     if (auto refused = hooks.may_write())
@@ -977,8 +987,10 @@ auto apply_staged_restore(ToolModelFiles& files, const std::string& data_directo
     const Json applying{
         {"pre_restore", copy_path}, {"files", std::move(targets)}, {"time", now.count()}};
     if (auto marked = replace_file(files, applying_file, dump(applying) + '\n'); !marked)
-      reason = {std::format("the restore could not be marked as started: {}", marked.error()),
-                MessageKey{"backend.machineData.notMarked", {{"detail", marked.error()}}}};
+      reason = {std::format("the restore could not be marked as started: {}: {}", applying_file,
+                            marked.error()),
+                MessageKey{"backend.machineData.notMarkedFile",
+                           {{"path", applying_file}, {"detail", marked.error()}}}};
   }
   if (reason.empty()) {
     for (; written < steps.size(); ++written) {
@@ -1055,7 +1067,7 @@ auto apply_staged_restore(ToolModelFiles& files, const std::string& data_directo
   if (!ok)
     return std::unexpected(std::move(reason.text));
   if (!said)
-    return std::unexpected(said.error());
+    return std::unexpected(std::format("{}: {}", result_file, said.error()));
   return written;
 }
 

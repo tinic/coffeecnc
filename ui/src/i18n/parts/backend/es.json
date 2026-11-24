@@ -743,6 +743,7 @@
       "damagedPlan": "La restauración preparada está dañada.",
       "stagedMissing": "Falta {path}.",
       "copyNotSaved": "no se pudieron guardar los archivos de antes de la restauración: {detail}",
+      "copyNotSavedFile": "no se pudieron guardar los archivos de antes de la restauración: {path}: {detail}",
       "fileStep": "{path}: {detail}",
       "libHal": "un archivo HAL de la biblioteca propia de LinuxCNC",
       "outsideConfig": "no es un archivo de la carpeta de configuración",
@@ -771,6 +772,7 @@
       "restoredGroups": "Se restauró la copia de seguridad: se escribieron {count} archivos. Los archivos de antes de la restauración están en {path}. Estos archivos no conservaron su grupo, al que este usuario no pertenece: {files}.",
       "changedAfter": "{path} cambió después de preparar la restauración: no se escribió nada.",
       "notMarked": "no se pudo marcar el inicio de la restauración: {detail}",
+      "notMarkedFile": "no se pudo marcar el inicio de la restauración: {path}: {detail}",
       "readHere": "{path} no se puede leer aquí",
       "writeHere": "{path} no se puede escribir aquí"
     },

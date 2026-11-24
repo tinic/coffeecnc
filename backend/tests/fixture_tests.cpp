@@ -454,6 +454,18 @@ auto encoded_messages() -> std::vector<EncodedMessage> {
           {{"detail", "/home/cnc/data/restore/0.staged is larger than 16 MiB."}},
           {{"detail",
             {"backend.machineData.tooLarge", {{"path", "/home/cnc/data/restore/0.staged"}}}}}}));
+  messages.emplace_back(encode_message(
+      MessageLevel::error,
+      "The restore was not completed: the restore could not be marked as started: "
+      "/home/cnc/data/restore/applying.json: No space left on device The files are as they were.",
+      1700000001860ms,
+      MessageKey{"backend.machineData.notCompleted",
+                 {{"detail", "the restore could not be marked as started: "
+                             "/home/cnc/data/restore/applying.json: No space left on device"}},
+                 {{"detail",
+                   {"backend.machineData.notMarkedFile",
+                    {{"path", "/home/cnc/data/restore/applying.json"},
+                     {"detail", "No space left on device"}}}}}}));
   messages.emplace_back(encode_message(MessageLevel::info, "Jog stopped: probe contact",
                                        1700000001100ms,
                                        MessageKey{"backend.jogStop.probeContact"}));

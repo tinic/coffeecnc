@@ -1268,6 +1268,22 @@ const examples = [
   },
   {
     "type": "message",
+    "level": "error",
+    "text": "The restore was not completed: the restore could not be marked as started: /home/cnc/data/restore/applying.json: No space left on device The files are as they were.",
+    "time": 1700000001860,
+    "localization": {
+      "key": "backend.machineData.notCompleted",
+      "params": { "detail": "the restore could not be marked as started: /home/cnc/data/restore/applying.json: No space left on device" },
+      "params_localization": {
+        "detail": {
+          "key": "backend.machineData.notMarkedFile",
+          "params": { "path": "/home/cnc/data/restore/applying.json", "detail": "No space left on device" }
+        }
+      }
+    }
+  },
+  {
+    "type": "message",
     "level": "info",
     "text": "Jog stopped: probe contact",
     "time": 1700000001100,

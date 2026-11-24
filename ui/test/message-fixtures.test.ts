@@ -1018,6 +1018,27 @@ const examples = [
   },
   {
     "type": "preview",
+    "context": 4821347,
+    "state": "failed",
+    "error": {
+      "line": 4,
+      "text": "Line 4: the preview ends here: the path has more than 1000 points.",
+      "localization": {
+        "key": "backend.previewEngine.lineErrorStop",
+        "params": {
+          "line": "4", "detail": "the preview ends here: the path has more than 1000 points"
+        },
+        "params_localization": {
+          "detail": { "key": "backend.previewEngine.helperPointLimit", "params": { "limit": "1000" } }
+        }
+      }
+    },
+    "segments": [],
+    "bounds": null,
+    "dwells": []
+  },
+  {
+    "type": "preview",
     "context": 4821337,
     "state": "pending",
     "error": null,

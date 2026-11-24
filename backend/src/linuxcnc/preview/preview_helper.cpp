@@ -93,6 +93,7 @@
 
 using coffeecnc::Bounds;
 using coffeecnc::HelperRequest;
+using coffeecnc::KnownPreviewProblem;
 using coffeecnc::KnownPreviewStop;
 using coffeecnc::PreviewStopArgument;
 using coffeecnc::PreviewStopReason;
@@ -218,6 +219,14 @@ void halt(KnownPreviewStop reason, const PreviewStopArgument& argument = {}) {
   const char* codes = std::getenv(coffeecnc::preview_stop_codes_env);
   put(coffeecnc::write_preview_stop(canon.line, reason, canon.stop_source, codes ? codes : "",
                                     argument));
+}
+
+void halt(KnownPreviewProblem reason, std::size_t point_limit = 0) {
+  if (!begin_halt(reason == KnownPreviewProblem::point_limit ? Halt::cut : Halt::error))
+    return;
+  const char* codes = std::getenv(coffeecnc::preview_problem_codes_env);
+  put(coffeecnc::write_preview_problem(canon.line, reason, canon.stop_source,
+                                       codes && std::string_view(codes) == "1", point_limit));
 }
 
 // Whether the line may still have an effect. Ends the trusted path first when the line read a
@@ -375,8 +384,7 @@ void move(bool feed, const Vec3& to, std::optional<double> synchronized_rate = s
   }
   canon.points.push_back(b);
   if (++canon.written > canon.request.max_points)
-    halt(Halt::cut, std::format("the preview ends here: the path has more than {} points",
-                                canon.request.max_points));
+    halt(KnownPreviewProblem::point_limit, canon.request.max_points);
 }
 
 auto find_index(int number) -> int {
@@ -470,7 +478,7 @@ void ARC_FEED(int, double first_end, double second_end, double first_axis, doubl
   else if (canon.plane == CANON_PLANE_XZ)
     axes = {2, 0, 1};
   else if (canon.plane != CANON_PLANE_XY) {
-    halt(Halt::error, "an arc in a UVW plane cannot be shown");
+    halt(KnownPreviewProblem::uvw_arc);
     return;
   }
   const double unit = program_unit();
@@ -527,42 +535,42 @@ void RIGID_TAP(int, double x, double y, double z, double return_scale) {
     return;
   const auto& tap = canon.request.rigid_tap;
   if (!tap || canon.sync_spindle != 0) {
-    halt(Halt::error, "rigid tapping is not configured for this spindle on this machine");
+    halt(KnownPreviewProblem::tapping_spindle);
     return;
   }
   if (canon.spindle != CANON_CLOCKWISE) {
-    halt(Halt::error, "rigid tapping requires clockwise spindle rotation (M3)");
+    halt(KnownPreviewProblem::tapping_direction);
     return;
   }
   if (canon.spindle_override) {
-    halt(Halt::error, "rigid tapping requires spindle override off (M51 P0)");
+    halt(KnownPreviewProblem::tapping_override);
     return;
   }
   const double multiplier = std::max(1.0, return_scale);
   const double peak_rpm = canon.spindle_rpm * multiplier;
   if (canon.surface_speed || !std::isfinite(peak_rpm) || canon.spindle_rpm <= 0 ||
       peak_rpm > tap->max_rpm) {
-    halt(Halt::error, "rigid tapping exceeds the configured fixed spindle limit");
+    halt(KnownPreviewProblem::tapping_rpm);
     return;
   }
   const double infeed = canon.sync_pitch_mm * canon.spindle_rpm;
   const double outfeed = infeed * multiplier;
   if (!std::isfinite(outfeed) || outfeed <= 0 || outfeed > tap->max_z_feed_mm_min) {
-    halt(Halt::error, "rigid tapping exceeds the configured Z feed limit");
+    halt(KnownPreviewProblem::tapping_z_feed);
     return;
   }
   const Vec3 from = canon.end;
   const Vec3 to = to_machine(x, y, z);
   constexpr double lateral_tolerance_mm = 1e-6;
   if (std::hypot(to[0] - from[0], to[1] - from[1]) > lateral_tolerance_mm || to[2] >= from[2]) {
-    halt(Halt::error, "rigid tapping requires a downward Z-only move");
+    halt(KnownPreviewProblem::tapping_z_only);
     return;
   }
   // Include both spindle reversals in the travel check and draw only the nominal path.
   const double reserve = canon.sync_pitch_mm * tap->reversal_turns;
   if (!std::isfinite(reserve) || reserve <= 0 ||
       !std::isfinite(from[2] + reserve) || !std::isfinite(to[2] - reserve)) {
-    halt(Halt::error, "rigid tapping has no valid reversal allowance");
+    halt(KnownPreviewProblem::tapping_allowance);
     return;
   }
   if (canon.recording && !canon.request.restart_line) {

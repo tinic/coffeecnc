@@ -543,6 +543,7 @@
     },
     "previewWire": {
       "invalidStopCode": "无效的预览停止代码",
+      "invalidProblemCode": "无效的预览诊断代码",
       "segmentAfterEnd": "路径结束记录后还有线段",
       "segmentLine": "线段的行号不在程序中",
       "segmentKind": "线段类型未知",
@@ -597,6 +598,10 @@
       "rigidTapZFeed": "刚性攻丝超出配置的 Z 轴进给上限",
       "rigidTapZOnly": "刚性攻丝要求仅沿 Z 轴向下移动",
       "rigidTapAllowance": "刚性攻丝没有有效的反转余量",
+      "helperUvwArc": "无法显示 UVW 平面内的圆弧",
+      "helperPointLimit": "刀路超过 {limit} 个点，预览到此结束",
+      "helperSource": "{file} 第 {sourceLine} 行：{detail}",
+      "helperLineAndSource": "第 {line} 行：{file} 第 {sourceLine} 行：{detail}{suffix}",
       "rigidTapRestart": "从头运行攻丝程序以设定主轴转速倍率状态。",
       "cannotRead": "无法读取程序以生成预览，或程序大于 {size}。",
       "endsAtLine": "预览在第 {line} 行结束：{detail}。",

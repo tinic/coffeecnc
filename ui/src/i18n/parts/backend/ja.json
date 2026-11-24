@@ -543,6 +543,7 @@
     },
     "previewWire": {
       "invalidStopCode": "無効なプレビュー停止コード",
+      "invalidProblemCode": "無効なプレビュー診断コード",
       "segmentAfterEnd": "経路終了レコードの後にセグメントがあります",
       "segmentLine": "セグメントの行がプログラム内にありません",
       "segmentKind": "種類が不明なセグメントがあります",
@@ -597,6 +598,10 @@
       "rigidTapZFeed": "リジッドタッピングが設定済みの Z 軸送り上限を超えています",
       "rigidTapZOnly": "リジッドタッピングには Z 軸だけの下降動作が必要です",
       "rigidTapAllowance": "リジッドタッピングの反転余裕が無効です",
+      "helperUvwArc": "UVW 平面内の円弧は表示できません",
+      "helperPointLimit": "ツールパスが {limit} 点を超えたため、ここでプレビューを終了します",
+      "helperSource": "{file} の {sourceLine} 行目: {detail}",
+      "helperLineAndSource": "{line} 行目：{file} の {sourceLine} 行目: {detail}{suffix}",
       "rigidTapRestart": "主軸オーバーライドの状態を設定するため、タッピングプログラムを先頭から実行してください。",
       "cannotRead": "プレビュー用にプログラムを読み込めないか、プログラムが {size} を超えています。",
       "endsAtLine": "プレビューは {line} 行目で終了しています：{detail}。",

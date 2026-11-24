@@ -301,6 +301,23 @@ void rigid_tapping_reversal_bounds() {
   reject(prelude + "G33.1 Z-4 K2 I2\nM2\n", "Z feed limit");
   reject(prelude + "G33.1 X2 Z-4 K1\nM2\n", "Z-only move");
 
+  const auto subroutine = rig.preview("G21 G90\nG0 Z3\nS300 M4\nM51 P0\no<tap> call\nM2\n");
+  const auto check_key = subroutine.check && !subroutine.check->errors.empty()
+                             ? subroutine.check->errors.front().localization
+                             : std::nullopt;
+  require(subroutine.error && subroutine.error->line == 5 &&
+              subroutine.error->text ==
+                  "tap.ngc line 2: rigid tapping requires clockwise spindle rotation (M3)" &&
+              subroutine.error->localization &&
+              subroutine.error->localization->key == "backend.previewEngine.helperSource" &&
+              subroutine.error->localization->params_localization.at("detail") ==
+                  MessageParameterKey{"backend.previewEngine.rigidTapDirection"} &&
+              check_key && check_key->key == "backend.previewEngine.helperLineAndSource" &&
+              check_key->params_localization.at("detail") ==
+                  MessageParameterKey{"backend.previewEngine.rigidTapDirection"},
+          "A helper error keeps the subroutine location and translated reason in Program Check: " +
+              text_of(subroutine));
+
   rig.settings.physical_travel = Bounds{{-50, -50, -10}, {50, 50, 50}};
   const auto timed = rig.preview(prelude + "F14\nG33.1 Z-4 K1 I2\nM5\nM2\n");
   require(timed.state == PreviewState::ready && timed.check && timed.check->errors.empty() &&
@@ -586,11 +603,15 @@ void errors_and_limits() {
   rig.settings.max_points = 1000;
   o = rig.preview("G21 G91\no1 while [1]\nG1 X1 F100\nG1 Y1\no1 endwhile\nM2\n");
   const auto points = points_of(o);
-  require(o.state == PreviewState::failed && o.error &&
-              o.error->text.find("more than 1000 points") != std::string::npos &&
-              points >= 1000 && points <= 1002,
-          std::format("A loop that moves for ever is cut at the point limit ({} points): {}",
-                      points, o.error ? o.error->text : ""));
+  require(
+      o.state == PreviewState::failed && o.error &&
+          o.error->text.find("more than 1000 points") != std::string::npos &&
+          o.error->localization &&
+          o.error->localization->params_localization.at("detail") ==
+              MessageParameterKey{"backend.previewEngine.helperPointLimit", {{"limit", "1000"}}} &&
+          points >= 1000 && points <= 1002,
+      std::format("A loop that moves for ever is cut at the point limit ({} points): {}", points,
+                  o.error ? o.error->text : ""));
 
   // One that does not move: the time limit, and the helper is gone.
   rig.settings.timeout = 1500ms;

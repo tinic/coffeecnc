@@ -89,6 +89,8 @@ struct HelperRequest {
 //   stop_known <line> <id> [argument] [source-line file]
 //                          a stop code, with a number (v2), source (v3), or token (v4 onward)
 //   cut <line> <text>       a limit was reached
+//   problem_known <line> <id> [point-limit] [source-line file]
+//                          a CoffeeCNC error or point limit, identified by its ID
 //   restart_refused <id>   a CoffeeCNC restart refusal; old helpers send restart_blocked <text>
 //   end ok|error|stop|cut   the last line of a helper that ended by itself
 //
@@ -182,10 +184,28 @@ struct PreviewStopSource {
                                       std::string_view version,
                                       const PreviewStopArgument& argument = {}) -> std::string;
 
+// IDs of diagnostics produced by CoffeeCNC rather than the interpreter.
+enum class KnownPreviewProblem : std::uint8_t {
+  uvw_arc = 1,
+  tapping_spindle = 2,
+  tapping_direction = 3,
+  tapping_override = 4,
+  tapping_rpm = 5,
+  tapping_z_feed = 6,
+  tapping_z_only = 7,
+  tapping_allowance = 8,
+  point_limit = 9,
+};
+inline constexpr char preview_problem_codes_env[] = "COFFEECNC_PREVIEW_PROBLEM_CODES";
+
+[[nodiscard]] auto write_preview_problem(int line, KnownPreviewProblem reason,
+                                         const std::optional<PreviewStopSource>& source, bool coded,
+                                         std::size_t point_limit = 0) -> std::string;
+
 struct HelperOutput {
   std::vector<PreviewSegment> segments;
   std::optional<PreviewError> problem; // of error, stop or cut
-  std::optional<PreviewStopSource> stop_source; // present for a coded stop in a subroutine
+  std::optional<PreviewStopSource> problem_source; // a coded diagnostic in a subroutine
   HelperEnd end{HelperEnd::missing};
   // Why the reading ended before an `end` that fits the records: the text is not what a
   // helper writes. Empty for a result that is whole, and for one that only stops short (a

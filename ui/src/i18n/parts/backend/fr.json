@@ -543,6 +543,7 @@
     },
     "previewWire": {
       "invalidStopCode": "un code d’arrêt d’aperçu non valide",
+      "invalidProblemCode": "un code de diagnostic d’aperçu invalide",
       "segmentAfterEnd": "un segment après l’enregistrement de fin de trajectoire",
       "segmentLine": "un segment dont la ligne n’appartient pas au programme",
       "segmentKind": "un segment de type inconnu",
@@ -597,6 +598,10 @@
       "rigidTapZFeed": "Le taraudage rigide dépasse la limite d’avance configurée en Z",
       "rigidTapZOnly": "Le taraudage rigide nécessite un mouvement descendant sur l’axe Z seul",
       "rigidTapAllowance": "La course de réserve pour l’inversion du taraudage rigide est invalide",
+      "helperUvwArc": "un arc dans un plan UVW ne peut pas être affiché",
+      "helperPointLimit": "l’aperçu s’arrête ici : la trajectoire contient plus de {limit} points",
+      "helperSource": "{file} ligne {sourceLine} : {detail}",
+      "helperLineAndSource": "Ligne {line} : {file} ligne {sourceLine} : {detail}{suffix}",
       "rigidTapRestart": "Lancez le programme de taraudage depuis le début pour régler la correction de vitesse de broche.",
       "cannotRead": "Impossible de lire le programme pour l’aperçu, ou il dépasse {size}.",
       "endsAtLine": "L’aperçu s’arrête à la ligne {line} : {detail}.",

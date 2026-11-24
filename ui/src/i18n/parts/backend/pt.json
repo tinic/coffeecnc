@@ -543,6 +543,7 @@
     },
     "previewWire": {
       "invalidStopCode": "um código de interrupção da prévia inválido",
+      "invalidProblemCode": "um código de diagnóstico da pré-visualização inválido",
       "segmentAfterEnd": "um segmento após o registo que termina a trajetória",
       "segmentLine": "um segmento com uma linha que não pertence ao programa",
       "segmentKind": "um segmento de tipo desconhecido",
@@ -597,6 +598,10 @@
       "rigidTapZFeed": "O rosqueamento rígido excede o limite configurado de avanço em Z",
       "rigidTapZOnly": "O rosqueamento rígido exige um movimento descendente somente em Z",
       "rigidTapAllowance": "O rosqueamento rígido não tem uma margem de inversão válida",
+      "helperUvwArc": "não é possível mostrar um arco num plano UVW",
+      "helperPointLimit": "a pré-visualização termina aqui: o percurso tem mais de {limit} pontos",
+      "helperSource": "{file} linha {sourceLine}: {detail}",
+      "helperLineAndSource": "Linha {line}: {file} linha {sourceLine}: {detail}{suffix}",
       "rigidTapRestart": "Execute o programa de rosqueamento desde o início para configurar o ajuste de velocidade do fuso.",
       "cannotRead": "Não é possível ler o programa para a pré-visualização, ou ocupa mais de {size}.",
       "endsAtLine": "A pré-visualização termina na linha {line}: {detail}.",

@@ -376,6 +376,16 @@ describe('translateMessage', () => {
     })).toBe('Anfrage der Bedienoberfläche ignoriert: Bad packet.')
   })
 
+  it('translates a coded subroutine stop and keeps both line numbers', async () => {
+    await setLanguage('fr')
+    const detail = 'a probe move (G38): where it ends depends on the machine'
+    expect(translateMessage(`The preview ends at line 5: inner.ngc line 3: ${detail}.`, {
+      key: 'backend.previewEngine.endsAtSubroutineLine',
+      params: { line: '5', file: 'inner.ngc', sourceLine: '3', detail },
+      params_localization: { detail: { key: 'backend.previewEngine.stopProbe', params: {} } },
+    })).toBe('L’aperçu s’arrête à la ligne 5 : inner.ngc, ligne 3 : un mouvement de palpage (G38) dont le point final dépend de la machine.')
+  })
+
   it('translates a numbered machine-specific M-code stop', async () => {
     await setLanguage('fr')
     const detail = "M199 runs a program of the machine's own: what it does is not known to the preview"

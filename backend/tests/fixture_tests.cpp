@@ -327,6 +327,21 @@ auto encoded_messages() -> std::vector<EncodedMessage> {
                  {{"detail", {"backend.previewEngine.stopMachineMCode", {{"code", "199"}}}}}}};
   messages.push_back(encode_preview(machine_stop));
 
+  Preview subroutine_stop;
+  subroutine_stop.context = 4821344;
+  subroutine_stop.state = PreviewState::failed;
+  subroutine_stop.error = PreviewError{
+      5,
+      "The preview ends at line 5: inner.ngc line 3: a probe move (G38): where it ends depends "
+      "on the machine.",
+      MessageKey{"backend.previewEngine.endsAtSubroutineLine",
+                 {{"line", "5"},
+                  {"file", "inner.ngc"},
+                  {"sourceLine", "3"},
+                  {"detail", "a probe move (G38): where it ends depends on the machine"}},
+                 {{"detail", {"backend.previewEngine.stopProbe"}}}}};
+  messages.push_back(encode_preview(subroutine_stop));
+
   const PreviewSegment approach{4, MoveKind::rapid, 3, {{0, 0, 10}, {0, 0, 2}}};
   const PreviewSegment cut{
       5, MoveKind::feed, 3, {{0, 0, 2}, {0, 0, -1.5}, {30, 0, -1.5}, {30, 20.5, -1.5}}, 450};

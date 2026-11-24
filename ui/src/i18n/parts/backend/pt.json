@@ -600,6 +600,7 @@
       "rigidTapRestart": "Execute o programa de rosqueamento desde o início para configurar o ajuste de velocidade do fuso.",
       "cannotRead": "Não é possível ler o programa para a pré-visualização, ou ocupa mais de {size}.",
       "endsAtLine": "A pré-visualização termina na linha {line}: {detail}.",
+      "endsAtSubroutineLine": "A pré-visualização termina na linha {line}: {file}, linha {sourceLine}: {detail}.",
       "tooManySubroutines": "O programa chama mais de {limit} sub-rotinas diferentes: sem pré-visualização.",
       "tooManyFiles": "O programa usa mais de {limit} ficheiros: sem pré-visualização.",
       "subroutinesUnreadable": "Não é possível ler o programa e os ficheiros das suas sub-rotinas, ou ocupam mais de {size} em conjunto: sem pré-visualização.",

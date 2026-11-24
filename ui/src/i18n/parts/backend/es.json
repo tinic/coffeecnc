@@ -600,6 +600,7 @@
       "rigidTapRestart": "Ejecute el programa de roscado desde el inicio para establecer la corrección de velocidad del husillo.",
       "cannotRead": "No se puede leer el programa para la vista previa, u ocupa más de {size}.",
       "endsAtLine": "La vista previa termina en la línea {line}: {detail}.",
+      "endsAtSubroutineLine": "La vista previa termina en la línea {line}: {file}, línea {sourceLine}: {detail}.",
       "tooManySubroutines": "El programa llama a más de {limit} subrutinas distintas: sin vista previa.",
       "tooManyFiles": "El programa usa más de {limit} archivos: sin vista previa.",
       "subroutinesUnreadable": "No se pueden leer el programa y sus archivos de subrutinas, u ocupan más de {size} en total: sin vista previa.",

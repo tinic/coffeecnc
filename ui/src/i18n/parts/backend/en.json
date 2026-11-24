@@ -600,6 +600,7 @@
       "rigidTapRestart": "Run this tapping program from the start to establish the spindle override state.",
       "cannotRead": "The program cannot be read for a preview, or is larger than {size}.",
       "endsAtLine": "The preview ends at line {line}: {detail}.",
+      "endsAtSubroutineLine": "The preview ends at line {line}: {file} line {sourceLine}: {detail}.",
       "tooManySubroutines": "The program calls more than {limit} different subroutines: no preview.",
       "tooManyFiles": "The program uses more than {limit} files: no preview.",
       "subroutinesUnreadable": "The program and its subroutine files cannot be read, or are larger than {size} together: no preview.",

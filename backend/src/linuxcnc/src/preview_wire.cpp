@@ -117,7 +117,18 @@ auto preview_stop_message(KnownPreviewStop reason, std::optional<int> argument) 
   return {};
 }
 
-auto read_preview_stop(std::string_view line) -> LocalizedReason {
+auto valid_stop_source(const PreviewStopSource& source) -> bool {
+  return source.line > 0 && !source.file.empty() && source.file.size() <= 255 &&
+         source.file.front() != ' ' && source.file.find_first_of("/\r\n") == std::string::npos &&
+         !source.file.contains('\0');
+}
+
+struct CodedStop {
+  LocalizedReason reason;
+  std::optional<PreviewStopSource> source{};
+};
+
+auto read_preview_stop(std::string_view line) -> std::optional<CodedStop> {
   unsigned id = 0;
   if (!number(line, id) || !std::in_range<std::uint8_t>(id))
     return {};
@@ -129,9 +140,19 @@ auto read_preview_stop(std::string_view line) -> LocalizedReason {
       return {};
     argument = value;
   }
-  if (!word(line).empty())
+  auto localized = preview_stop_message(reason, argument);
+  if (localized.empty())
     return {};
-  return preview_stop_message(reason, argument);
+  auto tail = line;
+  if (word(tail).empty())
+    return CodedStop{std::move(localized)};
+  PreviewStopSource source;
+  if (!number(line, source.line))
+    return {};
+  source.file = rest(line);
+  if (!valid_stop_source(source))
+    return {};
+  return CodedStop{std::move(localized), std::move(source)};
 }
 
 auto restart_refusal_message(RestartRefusal reason) -> LocalizedReason {
@@ -447,16 +468,30 @@ auto write_restart_refusal(RestartRefusal reason, bool coded) -> std::string {
   return std::format("restart_blocked {}\n", restart_refusal_message(reason).text);
 }
 
-auto write_preview_stop(int line, KnownPreviewStop reason, std::string_view source_prefix,
-                        std::string_view version, std::optional<int> argument) -> std::string {
-  const auto id = static_cast<unsigned>(reason);
-  if (source_prefix.empty() && version == preview_stop_codes_version && argument)
-    return std::format("stop_known {} {} {}\n", line, id, *argument);
-  if (source_prefix.empty() && !argument &&
-      (version == "1" || version == preview_stop_codes_version))
-    return std::format("stop_known {} {}\n", line, id);
-  return std::format("stop {} {}{}\n", line, source_prefix,
-                     preview_stop_message(reason, argument).text);
+auto preview_stop_prefix(const std::optional<PreviewStopSource>& source) -> std::string {
+  if (!source)
+    return {};
+  if (source->file.empty())
+    return "in a subroutine file: ";
+  return std::format("{} line {}: ", source->file, source->line);
+}
+
+auto write_preview_stop(int line, KnownPreviewStop reason,
+                        const std::optional<PreviewStopSource>& source, std::string_view version,
+                        std::optional<int> argument) -> std::string {
+  const bool coded = version == preview_stop_codes_version ||
+                     (!source && (version == "2" || (version == "1" && !argument)));
+  if (!coded || (source && !valid_stop_source(*source)))
+    return std::format("stop {} {}{}\n", line, preview_stop_prefix(source),
+                       preview_stop_message(reason, argument).text);
+
+  auto out = std::format("stop_known {} {}", line, static_cast<unsigned>(reason));
+  if (argument)
+    out += std::format(" {}", *argument);
+  if (source)
+    out += std::format(" {} {}", source->line, source->file);
+  out += '\n';
+  return out;
 }
 
 auto parse_output(std::string_view text, const OutputLimits& limits) -> HelperOutput {
@@ -542,11 +577,12 @@ auto parse_output(std::string_view text, const OutputLimits& limits) -> HelperOu
                       MessageKey{"backend.previewWire.recordLine"});
       if (key == "stop_known") {
         auto parsed = read_preview_stop(line);
-        if (parsed.empty())
+        if (!parsed)
           return defect("an invalid preview stop code",
                         MessageKey{"backend.previewWire.invalidStopCode"});
-        problem.text = std::move(parsed.text);
-        problem.localization = std::move(parsed.localization);
+        problem.text = std::move(parsed->reason.text);
+        problem.localization = std::move(parsed->reason.localization);
+        output.stop_source = std::move(parsed->source);
       } else
         problem.text = rest(line);
       output.problem = std::move(problem);

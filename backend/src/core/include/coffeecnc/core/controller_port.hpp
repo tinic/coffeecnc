@@ -248,8 +248,9 @@ public:
 
   [[nodiscard]] virtual auto fixed_setter_available() const -> bool { return false; }
   [[nodiscard]] virtual auto fixed_setter(const FixedSetterRequest&, SetterEpoch, const Wanted&)
-      -> std::expected<SetterState, std::string> {
-    return std::unexpected("The fixed setter is not configured.");
+      -> std::expected<SetterState, LocalizedReason> {
+    return std::unexpected(LocalizedReason{"The fixed setter is not configured.",
+                                           MessageKey{"backend.nmlPort.setterNotConfigured"}});
   }
 
 protected:

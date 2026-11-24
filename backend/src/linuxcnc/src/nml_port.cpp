@@ -285,6 +285,11 @@ auto search_line(const FixedSetterMove& move, double rotation_xy) -> ProbeLine {
   return coffeecnc::search_line(move.material, move.heading_deg, rotation_xy);
 }
 
+auto setter_failure(std::string text, std::optional<MessageKey> localization = {})
+    -> std::unexpected<LocalizedReason> {
+  return std::unexpected(LocalizedReason{std::move(text), std::move(localization)});
+}
+
 } // namespace
 
 struct NmlPort::Impl {
@@ -2055,7 +2060,7 @@ auto NmlPort::fixed_setter_available() const -> bool {
 }
 
 auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
-                           const Wanted& wanted) -> std::expected<SetterState, std::string> {
+                           const Wanted& wanted) -> std::expected<SetterState, LocalizedReason> {
   auto state = setter_cycle(request, epoch, wanted);
   // What compensates the touch probe's XY results now, after a runout calibration too.
   if (state)
@@ -2064,10 +2069,11 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
 }
 
 auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
-                           const Wanted& wanted) -> std::expected<SetterState, std::string> {
+                           const Wanted& wanted) -> std::expected<SetterState, LocalizedReason> {
   const auto limits = impl_->config.fixed_setter;
   if (!limits || impl_->hal == nullptr)
-    return std::unexpected("The fixed setter is unavailable.");
+    return setter_failure("The fixed setter is unavailable.",
+                          MessageKey{"backend.nmlPort.setterUnavailable"});
 
   const bool apply_angle = request.action == SetterAction::apply_angle;
   const bool apply_measurement = request.action == SetterAction::apply_measurement;
@@ -2075,7 +2081,8 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
   if (request.measure_only &&
       (!is_material_probe(request.action) || request.action == SetterAction::ball ||
        apply_angle || apply_measurement))
-    return std::unexpected("This probe action always writes its result.");
+    return setter_failure("This probe action always writes its result.",
+                          MessageKey{"messages.policy.probeAlwaysWrites"});
   if (!apply_angle && request.action != SetterAction::status)
     impl_->edge_measurement.reset();
   if (!apply_measurement && request.action != SetterAction::status)
@@ -2117,11 +2124,13 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     // cycle runs.
     const auto& probe_tool = impl_->config.touch_probe_tool;
     if (!probe_tool || request.tool != *probe_tool)
-      return std::unexpected("Only the touch probe has a runout compensation to clear.");
+      return setter_failure("Only the touch probe has a runout compensation to clear.",
+                            MessageKey{"backend.nmlPort.runoutClearTool"});
     std::error_code error;
     std::filesystem::remove(impl_->config.probe_runout_file(), error);
     if (error)
-      return std::unexpected("Could not remove the saved runout compensation.");
+      return setter_failure("Could not remove the saved runout compensation.",
+                            MessageKey{"backend.nmlPort.runoutRemoveFailed"});
     return SetterState{calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,
                        std::move(current_marks)};
   }
@@ -2133,7 +2142,8 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
 
   const auto* raw = impl_->stat();
   if (raw == nullptr || impl_->status.link() != Link::live || (wanted && !wanted()))
-    return std::unexpected("The fixed setter requires a live controller and an active request.");
+    return setter_failure("The fixed setter requires a live controller and an active request.",
+                          MessageKey{"backend.nmlPort.setterNeedsLive"});
   const auto before = to_status(*raw, impl_->config, impl_->hal, Link::live);
   const auto frame_of = [](const NmlStatus& s) {
     return Impl::WorkFrame{s.wcs, s.g5x, s.g92, s.rotation_xy};
@@ -2152,7 +2162,8 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
   // Homing is not required: machine coordinates are continuous within a session, and a homing
   // or a restart forgets the taught setter (Session::observe).
   if (!ready(*raw, before))
-    return std::unexpected("The fixed setter requires stationary axes and a stopped spindle.");
+    return setter_failure("The fixed setter requires stationary axes and a stopped spindle.",
+                          MessageKey{"backend.nmlPort.setterNeedsStationary"});
   const int tool = before.controller.tool_in_spindle;
   const bool checking = request.action == SetterAction::check;
   const bool corner = request.action == SetterAction::corner;
@@ -2170,7 +2181,8 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
   const bool radial_bore = bore_arc || (bore && check_circle);
   const bool radial_boss = boss_arc || (boss && check_circle);
   if (check_circle && !radial_bore && !radial_boss)
-    return std::unexpected("The extra contact is only available for a bore or boss.");
+    return setter_failure("The extra contact is only available for a bore or boss.",
+                          MessageKey{"backend.nmlPort.circleCheckFeature"});
   const bool material = is_material_probe(request.action);
   const bool runout_calibration = request.action == SetterAction::runout;
   // The touch probe's runout compensation (#247) moves each XY contact of every probe action
@@ -2191,14 +2203,19 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
   if (material) {
     const auto& probe_tool = impl_->config.touch_probe_tool;
     if (!probe_tool || limits->latch_feed_mm_min <= 0 || limits->latch_backoff_mm <= 0)
-      return std::unexpected("Material touch-off requires a configured touch probe and slow latch.");
+      return setter_failure("Material touch-off requires a configured touch probe and slow latch.",
+                            MessageKey{"backend.nmlPort.materialNeedsProbe"});
     if (tool != *probe_tool)
-      return std::unexpected(std::format("Load T{} to probe material.", *probe_tool));
+      return setter_failure(
+          std::format("Load T{} to probe material.", *probe_tool),
+          MessageKey{"backend.nmlPort.loadProbe", {{"tool", std::to_string(*probe_tool)}}});
   }
   if (tool <= 0 || request.tool != tool)
-    return std::unexpected("The confirmed tool must be in the spindle.");
+    return setter_failure("The confirmed tool must be in the spindle.",
+                          MessageKey{"backend.nmlPort.toolInSpindle"});
   if (checking && tool == impl_->config.touch_probe_tool)
-    return std::unexpected("Load a cutting tool before checking its length.");
+    return setter_failure("Load a cutting tool before checking its length.",
+                          MessageKey{"backend.nmlPort.loadCuttingTool"});
 
   const double position_tolerance = impl_->config.motion_tolerances.probe_position_mm;
   const auto near = [position_tolerance](double actual, double expected) {
@@ -2219,26 +2236,31 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
   if (apply_angle) {
     const auto& saved = impl_->edge_measurement;
     if (!saved || saved->id != request.edge_measurement)
-      return std::unexpected("Measure the edge again before applying rotation.");
+      return setter_failure("Measure the edge again before applying rotation.",
+                            MessageKey{"backend.nmlPort.measureEdgeAgain"});
     const auto measurement = *std::exchange(impl_->edge_measurement, std::nullopt);
     if (before.controller.mode != TaskMode::mdi || measurement.epoch != epoch ||
         measurement.frame != frame || measurement.tool_offset != before.tool_offset)
-      return std::unexpected("The work frame or tool changed. Measure the edge again.");
+      return setter_failure("The work frame or tool changed. Measure the edge again.",
+                            MessageKey{"backend.nmlPort.frameChanged"});
     const auto from = impl_->begin(&wanted);
     const Impl::Scope scope{*impl_};
     const auto* current = impl_->stat();
     if (!current || impl_->status.link() != Link::live || !impl_->still())
-      return std::unexpected("Rotation was cancelled before writing the work system.");
+      return setter_failure("Rotation was cancelled before writing the work system.",
+                            MessageKey{"backend.nmlPort.rotationCancelled"});
     const auto applying = to_status(*current, impl_->config, impl_->hal, Link::live);
     if (!ready(*current, applying) || applying.controller.mode != TaskMode::mdi ||
         applying.controller.tool_in_spindle != tool || frame_of(applying) != frame ||
         applying.tool_offset != measurement.tool_offset)
-      return std::unexpected("The work frame or tool changed. Measure the edge again.");
+      return setter_failure("The work frame or tool changed. Measure the edge again.",
+                            MessageKey{"backend.nmlPort.frameChanged"});
     EMC_TASK_PLAN_EXECUTE rotate;
     if (!put(rotate.command, std::format("G10 L2 P{} R{:.8f}", frame.wcs, measurement.degrees)))
-      return std::unexpected("Could not build the work rotation command.");
+      return setter_failure("Could not build the work rotation command.",
+                            MessageKey{"backend.nmlPort.rotationCommand"});
     if (auto done = impl_->run(rotate, from); !accepted(done))
-      return std::unexpected(done.reason);
+      return setter_failure(done.reason, done.localization);
     if (impl_->loads)
       ++impl_->loads->mdi_blocks;
     const auto verified = until(settle_timeout, [&] {
@@ -2260,8 +2282,8 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
                  });
     });
     if (!verified)
-      return std::unexpected(
-          "Could not verify the applied rotation. Check the active work system.");
+      return setter_failure("Could not verify the applied rotation. Check the active work system.",
+                            MessageKey{"backend.nmlPort.rotationUnverified"});
     SetterState state{calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,
                       std::move(current_marks)};
     state.edge_angle_deg = measurement.degrees;
@@ -2269,14 +2291,17 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
   }
   if (before.controller.mode != TaskMode::mdi ||
       (!apply_measurement && !at_start(before, request.start)))
-    return std::unexpected("Wait for idle MDI at the confirmed starting position.");
+    return setter_failure("Wait for idle MDI at the confirmed starting position.",
+                          MessageKey{"backend.nmlPort.waitIdleMdi"});
   // Before the setter is taught, any tool with a valid saved length teaches it like the
   // reference (turo: T99 can act like T98).
   const bool teaching = !checking && (tool == limits->reference_tool ||
                         (!calibration && std::ranges::contains(current_marks, tool)));
   if (!material && !teaching && !calibration)
-    return std::unexpected(std::format("Teach the setter with T{} or a touched-off tool first.",
-                                       limits->reference_tool));
+    return setter_failure(std::format("Teach the setter with T{} or a touched-off tool first.",
+                                      limits->reference_tool),
+                          MessageKey{"backend.nmlPort.teachSetter",
+                                     {{"tool", std::to_string(limits->reference_tool)}}});
 
   const auto probe_row = table && (request.measure_only || apply_measurement)
                              ? unique_tool_row(*table, tool)
@@ -2285,22 +2310,26 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
   if (apply_measurement) {
     auto& saved = impl_->feature_measurement;
     if (!saved || saved->id != request.edge_measurement)
-      return std::unexpected("Probe the feature again before applying the measurement.");
+      return setter_failure("Probe the feature again before applying the measurement.",
+                            MessageKey{"backend.nmlPort.probeFeatureAgain"});
     auto measurement = std::move(*saved);
     saved.reset();
     if (measurement.epoch != epoch || measurement.frame != frame || measurement.tool != tool ||
         measurement.tool_offset != before.tool_offset || !probe_row ||
         measurement.tool_row != *probe_row || measurement.runout != runout)
-      return std::unexpected("The work frame or tool changed. Probe the feature again.");
+      return setter_failure("The work frame or tool changed. Probe the feature again.",
+                            MessageKey{"backend.nmlPort.measuredFrameChanged"});
     applying = std::move(measurement);
   }
   const double machine_scale = impl_->config.millimetres_per_unit;
   const auto previous = table ? tool_z(*table, tool) : std::nullopt;
   if (!previous || !std::isfinite(*previous * machine_scale))
-    return std::unexpected("Could not read the loaded tool's length from the tool table.");
+    return setter_failure("Could not read the loaded tool's length from the tool table.",
+                          MessageKey{"backend.nmlPort.readToolLength"});
   const double previous_length = *previous * machine_scale;
   if (checking && previous_length == 0 && !std::ranges::contains(current_marks, tool))
-    return std::unexpected("Set the loaded tool's length before checking it.");
+    return setter_failure("Set the loaded tool's length before checking it.",
+                          MessageKey{"backend.nmlPort.setToolLength"});
   // Feature probes run along the active work system's XY axes, turned by its rotation.
   // `to_frame` turns a machine point into those axes about the machine origin and `to_machine`
   // turns it back. A distance in this frame is the same distance in work coordinates, so faces,
@@ -2418,19 +2447,21 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
                                     before.rotation_xy),
                       surface});
   };
-  const auto measured = [&](SetterState state, const std::array<double, 3>& origin,
-                            const std::array<bool, 3>& axes)
-      -> std::expected<SetterState, std::string> {
+  const auto measured =
+      [&](SetterState state, const std::array<double, 3>& origin,
+          const std::array<bool, 3>& axes) -> std::expected<SetterState, LocalizedReason> {
     const auto* current = impl_->stat();
     if (current == nullptr || impl_->status.link() != Link::live || (wanted && !wanted()))
-      return std::unexpected("The machine changed before the measurement could be saved.");
+      return setter_failure("The machine changed before the measurement could be saved.",
+                            MessageKey{"backend.nmlPort.changedBeforeSave"});
     const auto after = to_status(*current, impl_->config, impl_->hal, Link::live);
     const auto after_table = impl_->read_tool_table();
     if (!ready(*current, after) || frame_of(after) != frame ||
         after.controller.tool_in_spindle != tool || after.tool_offset != before.tool_offset ||
         !probe_row || !after_table || unique_tool_row(*after_table, tool) != probe_row ||
         current_runout(impl_->config, after_table) != runout)
-      return std::unexpected("The work frame or tool changed. Probe the feature again.");
+      return setter_failure("The work frame or tool changed. Probe the feature again.",
+                            MessageKey{"backend.nmlPort.measuredFrameChanged"});
     const auto id = ++impl_->next_feature_measurement;
     impl_->feature_measurement = Impl::FeatureMeasurement{
         id, frame, epoch, before.tool_offset, tool, std::string(*probe_row), runout, origin, axes};
@@ -2455,7 +2486,7 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
   if (applying) {
     const auto& measurement = *applying;
     if (auto set = set_origin(measurement.origin, measurement.axes); !set)
-      return std::unexpected(set.error());
+      return setter_failure(set.error());
     const auto& axes = measurement.axes;
     return SetterState{calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,
                        std::move(current_marks),
@@ -2472,15 +2503,19 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     // trigger radius correction per axis. The ball's eccentricity from the spindle axis cancels
     // in it and is not kept: without spindle orientation its direction is not known later.
     if (rotated)
-      return std::unexpected("Runout calibration needs a work system without rotation.");
+      return setter_failure("Runout calibration needs a work system without rotation.",
+                            MessageKey{"backend.nmlPort.runoutRotated"});
     if (frame.wcs < 1 || frame.wcs > 9)
-      return std::unexpected("The active work coordinate system is unavailable.");
+      return setter_failure("The active work coordinate system is unavailable.",
+                            MessageKey{"backend.nmlPort.wcsUnavailable"});
     const double diameter = request.gauge_width_mm;
     if (!(diameter >= 2 && diameter <= 200))
-      return std::unexpected("Enter the ring or pin diameter, 2 to 200 mm.");
+      return setter_failure("Enter the ring or pin diameter, 2 to 200 mm.",
+                            MessageKey{"backend.nmlPort.runoutDiameter"});
     const double radius = tool_diameter(*table, tool).value_or(0) * machine_scale / 2;
     if (!std::isfinite(radius) || radius <= 0)
-      return std::unexpected("Set the probe ball diameter in the tool table first.");
+      return setter_failure("Set the probe ball diameter in the tool table first.",
+                            MessageKey{"backend.nmlPort.setBallDiameter"});
     const auto& geometry = limits->material_geometry;
     const double top = before.controller.axes[2].machine - before.work[2];
     const double clearance = std::max(request.start[2], top + geometry.clearance_mm);
@@ -2490,17 +2525,18 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
       if (!std::ranges::contains(current_marks, tool) ||
           std::abs(before.tool_offset[2] - previous_length) > 0.001 ||
           !std::ranges::contains(before.active_codes, "G43"))
-        return std::unexpected(std::format(
+        return setter_failure(std::format(
             "Touch off T{} and apply its length first: probing beside the work uses Z0 as the top.",
             tool));
       if (!std::isfinite(top) || request.start[2] < top + radius)
-        return std::unexpected("Start with the probe above the top of the work.");
+        return setter_failure("Start with the probe above the top of the work.",
+                              MessageKey{"backend.nmlPort.startAboveWork"});
     }
     if (!runout_travel_reaches(request.outside, diameter, outside, radius,
                                limits->material_travel_mm))
-      return std::unexpected(request.outside
-                                 ? "The material probe travel is too short to probe beside the work."
-                                 : "The material probe travel is shorter than the ring radius.");
+      return setter_failure(request.outside
+                                ? "The material probe travel is too short to probe beside the work."
+                                : "The material probe travel is shorter than the ring radius.");
     // The ball centre contact along `direction`, aimed through `through` (machine XY).
     const auto touch = [&](ProbeDirection direction, std::array<double, 2> through)
         -> std::expected<std::array<double, 2>, std::string> {
@@ -2548,11 +2584,11 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
       return {};
     };
     if (auto first = pass({request.start[0], request.start[1]}); !first)
-      return std::unexpected(first.error());
+      return setter_failure(first.error());
     if (auto second = pass({(contacts[0][0] + contacts[1][0]) / 2,
                             (contacts[2][1] + contacts[3][1]) / 2});
         !second)
-      return std::unexpected(second.error());
+      return setter_failure(second.error());
     // The true surface is half the diameter beyond (ring) or before (pin) the centre along the
     // travel; the uncompensated one is the contact plus the table radius. The centre, and with
     // it the eccentricity, cancels in the mean of opposite directions.
@@ -2563,14 +2599,15 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     for (std::size_t axis = 0; axis < span.size(); ++axis) {
       const double correction = half - span.at(axis) - radius;
       if (!std::isfinite(correction) || std::abs(correction) > max_runout_mm)
-        return std::unexpected(std::format(
+        return setter_failure(std::format(
             "The {} trigger radius correction is {:.3f} mm, more than {} mm. Check the diameter "
             "and the ball calibration.",
             "XY"[axis], correction, max_runout_mm));
       calibrated.radius_mm.at(axis) = correction;
     }
     if (!write_sidecar(impl_->config.probe_runout_file(), format_probe_runout(calibrated)))
-      return std::unexpected("Could not save the runout compensation.");
+      return setter_failure("Could not save the runout compensation.",
+                            MessageKey{"backend.nmlPort.runoutSaveFailed"});
     return SetterState{calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,
                        std::move(current_marks)};
   }
@@ -2579,16 +2616,19 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     // traverse at the clearance between them. Every point's search start and end, and the lift,
     // is checked against the travel before anything moves. Nothing is written.
     if (frame.wcs < 1 || frame.wcs > 9)
-      return std::unexpected("The active work coordinate system is unavailable.");
+      return setter_failure("The active work coordinate system is unavailable.",
+                            MessageKey{"backend.nmlPort.wcsUnavailable"});
     if (!std::ranges::contains(current_marks, tool))
-      return std::unexpected(std::format("Touch off T{} at the tool setter before probing Z.", tool));
+      return setter_failure(
+          std::format("Touch off T{} at the tool setter before probing Z.", tool));
     if (std::abs(before.tool_offset[2] - previous_length) > 0.001 ||
         !std::ranges::contains(before.active_codes, "G43"))
-      return std::unexpected(std::format("Apply the measured T{} length before probing Z.", tool));
+      return setter_failure(std::format("Apply the measured T{} length before probing Z.", tool));
     const auto grid = height_grid(request.grid_mm, request.step_mm);
     if (!grid)
-      return std::unexpected(std::format(
-          "Choose a rectangle and a step of 0.5 mm or more for 2 to {} points.", max_height_map_points));
+      return setter_failure(
+          std::format("Choose a rectangle and a step of 0.5 mm or more for 2 to {} points.",
+                      max_height_map_points));
     // Work XYZ to machine XYZ: the inverse of the work position.
     const auto machine_of = [&](double x, double y, double z) -> std::array<double, 3> {
       const double gx = x + before.g92[0];
@@ -2629,9 +2669,9 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
         const auto point = machine_of(at_column(column), at_row(row), request.clearance_mm);
         if (!in_travel(point) || !in_travel({point[0], point[1], point[2] - search}) ||
             !in_travel({point[0], point[1], lift}))
-          return std::unexpected(std::format(
-              "Grid point {} is outside the configured travel at the clearance or the search depth.",
-              where(column, row)));
+          return setter_failure(std::format("Grid point {} is outside the configured travel at the "
+                                            "clearance or the search depth.",
+                                            where(column, row)));
       }
     // XY at the slower of X and Y's fastest moves, from the start to the first point and then one
     // step to each next point, in work XY (the same distances in a rotated system).
@@ -2643,7 +2683,7 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
                   .descent_mm = request.start[2] - clearance_z,
                   .xy_rapid_mm_min = std::min(velocity[0], velocity[1])});
     if (!(worst <= max_height_map_seconds))
-      return std::unexpected(std::format(
+      return setter_failure(std::format(
           "The height map could take up to {} min, more than the {} min limit. Use fewer points.",
           std::isfinite(worst) ? std::ceil(worst / 60) : 0.0, max_height_map_seconds / 60));
     SetterState::HeightMap map{.wcs = frame.wcs, .columns = grid->columns, .rows = grid->rows,
@@ -2651,9 +2691,9 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     map.points.resize(static_cast<std::size_t>(grid->columns) * static_cast<std::size_t>(grid->rows));
     int points_done = 0; // points measured so far
     // A stop after the first point keeps the points measured so far, marked partial.
-    const auto stop = [&](std::string reason) -> std::expected<SetterState, std::string> {
+    const auto stop = [&](std::string reason) -> std::expected<SetterState, LocalizedReason> {
       if (points_done == 0)
-        return std::unexpected(std::move(reason));
+        return setter_failure(std::move(reason));
       map.partial = std::move(reason);
       SetterState state{calibration ? std::optional{calibration->plane} : std::nullopt,
                         std::nullopt, std::move(current_marks)};
@@ -2735,8 +2775,9 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
   if (bore_arc || boss_arc) {
     const auto spread = arc_spread(request.angles_deg);
     if (!(spread.closest_deg >= arc_min_separation_deg) || !(spread.span_deg >= arc_min_span_deg))
-      return std::unexpected(
-          "Enter three probe angles at least 10° apart that cover at least 90° of the circle.");
+      return setter_failure(
+          "Enter three probe angles at least 10° apart that cover at least 90° of the circle.",
+          MessageKey{"backend.nmlPort.arcAngles"});
   }
   // Verified four-point cycles use the four cardinal rays from the confirmed start. The
   // three-point cycle retains its entered directions and adds the operator's chosen fourth ray.
@@ -2750,7 +2791,8 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
         std::ranges::any_of(std::span{headings}.first(primary), [&](double heading) {
           return std::abs(std::remainder(extra - heading, 360.0)) < arc_min_separation_deg;
         }))
-      return std::unexpected("Choose a check angle at least 10° from the other contacts.");
+      return setter_failure("Choose a check angle at least 10° from the other contacts.",
+                            MessageKey{"backend.nmlPort.circleCheckAngle"});
     headings.at(primary) = extra;
   }
   const auto directions = std::span{headings}.first(primary + (check_circle ? 1U : 0U));
@@ -2820,7 +2862,7 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
   // of each contact, and a boss must be about the diameter entered.
   const auto arc_origin = [&](const std::array<std::array<double, 2>, 5>& contacts,
                               const std::array<double, 5>& latch_spreads,
-                              double ball_offset) -> std::expected<SetterState, std::string> {
+                              double ball_offset) -> std::expected<SetterState, LocalizedReason> {
     const std::array first_three{contacts[0], contacts[1], contacts[2]};
     std::optional<Circle> circle;
     std::optional<CircleQuality> verified;
@@ -2851,17 +2893,18 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     }
     const double span = circle ? measured_span(first_three, circle->centre) : 0;
     if (!circle || !(span >= arc_min_measured_span_deg))
-      return std::unexpected(std::format(
+      return setter_failure(std::format(
           "The three contacts lie almost on a line: they cover {:.1f}° of a circle. Spread the "
           "angles further, and check that all three touched the same round wall.",
           span));
     const double surface = circle->radius + ball_offset;
     if (!(surface > 0) || !(std::hypot(start_frame[0] - circle->centre[0],
                                        start_frame[1] - circle->centre[1]) < surface))
-      return std::unexpected(
-          "The circle through the contacts does not enclose the confirmed starting point.");
+      return setter_failure(
+          "The circle through the contacts does not enclose the confirmed starting point.",
+          MessageKey{"backend.nmlPort.arcStartOutside"});
     if (radial_boss && !boss_diameter_plausible(2 * surface, request.gauge_width_mm))
-      return std::unexpected(std::format(
+      return setter_failure(std::format(
           "The contacts give a boss of Ø {:.3f} mm, which differs from the entered Ø {:.3f} mm "
           "by more than 0.5 mm or 10 %. Check that all three touched the boss, then probe "
           "again.",
@@ -2871,7 +2914,7 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     const auto uncertainty = verified ? std::optional{verified->centre_uncertainty_mm}
                                       : arc_centre_uncertainty(first_three, circle->centre, sigma);
     if (!uncertainty || !(*uncertainty <= arc_max_centre_uncertainty_mm))
-      return std::unexpected(std::format(
+      return setter_failure(std::format(
           "The estimated centre uncertainty from latch repeatability is {:.3f} mm, more than "
           "0.02 mm: the contacts cover {:.1f}° with a latch spread up to {:.4f} mm. Spread the "
           "angles further and probe again.",
@@ -2886,39 +2929,47 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     if (request.measure_only)
       return measured(std::move(state), origin, {true, true, false});
     if (auto set = set_origin(origin); !set)
-      return std::unexpected(set.error());
+      return setter_failure(set.error());
     return state;
   };
   if (inside_corner || pocket || slot || ridge) {
     if (frame.wcs < 1 || frame.wcs > 9)
-      return std::unexpected("The active work coordinate system is unavailable.");
+      return setter_failure("The active work coordinate system is unavailable.",
+                            MessageKey{"backend.nmlPort.wcsUnavailable"});
     const double radius = tool_diameter(*table, tool).value_or(0) * machine_scale / 2;
     if (!std::isfinite(radius) || radius <= 0)
-      return std::unexpected("Set the probe ball diameter in the tool table first.");
+      return setter_failure("Set the probe ball diameter in the tool table first.",
+                            MessageKey{"backend.nmlPort.setBallDiameter"});
     const auto selected = probe_line(request.direction, 0).axis;
     if ((inside_corner && (selected != 0 || probe_line(request.y_direction, 0).axis != 1)) ||
         ((slot || ridge) && selected > 1))
-      return std::unexpected("Choose the feature's X or Y probing axis.");
+      return setter_failure("Choose the feature's X or Y probing axis.",
+                            MessageKey{"backend.nmlPort.featureAxis"});
 
     std::optional<double> clearance;
     double depth{};
     double step_off{};
     if (ridge) {
       if (!(request.gauge_width_mm >= 2 && request.gauge_width_mm <= 200))
-        return std::unexpected("Enter the approximate ridge width, 2 to 200 mm.");
+        return setter_failure("Enter the approximate ridge width, 2 to 200 mm.",
+                              MessageKey{"backend.nmlPort.ridgeWidth"});
       if (!std::ranges::contains(current_marks, tool) ||
           std::abs(before.tool_offset[2] - previous_length) > 0.001 ||
           !std::ranges::contains(before.active_codes, "G43"))
-        return std::unexpected("Touch off the probe and apply its length first. Ridge probing uses Z0 as the top.");
+        return setter_failure(
+            "Touch off the probe and apply its length first. Ridge probing uses Z0 as the top.",
+            MessageKey{"backend.nmlPort.ridgeTouchOff"});
       const auto& geometry = limits->material_geometry;
       const double top = before.controller.axes[2].machine - before.work[2];
       if (!std::isfinite(top) || request.start[2] < top + radius)
-        return std::unexpected("Set Z0 on the ridge top and start with the probe above it.");
+        return setter_failure("Set Z0 on the ridge top and start with the probe above it.",
+                              MessageKey{"backend.nmlPort.ridgeZ0"});
       clearance = std::max(request.start[2], top + geometry.clearance_mm);
       depth = top - radius - geometry.depth_mm;
       step_off = request.gauge_width_mm / 2 + radius + geometry.margin_mm + geometry.reach_mm;
       if (limits->material_travel_mm < geometry.margin_mm + geometry.reach_mm)
-        return std::unexpected("The material probe travel is too short for the ridge approach.");
+        return setter_failure("The material probe travel is too short for the ridge approach.",
+                              MessageKey{"backend.nmlPort.ridgeTravel"});
     }
 
     const auto face = [&](ProbeDirection direction) -> std::expected<double, std::string> {
@@ -2963,7 +3014,7 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
       if (inside_corner) {
         const auto wall = face(axis == 0 ? request.direction : request.y_direction);
         if (!wall)
-          return std::unexpected(wall.error());
+          return setter_failure(wall.error());
         origin[axis] = *wall;
         continue;
       }
@@ -2971,19 +3022,20 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
       const auto positive = axis == 0 ? ProbeDirection::x_plus : ProbeDirection::y_plus;
       const auto low = face(ridge ? positive : negative);
       if (!low)
-        return std::unexpected(low.error());
+        return setter_failure(low.error());
       const auto high = face(ridge ? negative : positive);
       if (!high)
-        return std::unexpected(high.error());
+        return setter_failure(high.error());
       if (!encloses_start(axis, *low, *high))
-        return std::unexpected("The probed faces do not enclose the confirmed starting point.");
+        return setter_failure("The probed faces do not enclose the confirmed starting point.",
+                              MessageKey{"backend.nmlPort.facesNotEnclosing"});
       origin[axis] = std::midpoint(*low, *high);
       state.feature_size[axis] = *high - *low;
     }
     if (request.measure_only)
       return measured(std::move(state), {origin[0], origin[1], 0}, {axes[0], axes[1], false});
     if (auto set = set_origin({origin[0], origin[1], 0}, {axes[0], axes[1], false}); !set)
-      return std::unexpected(set.error());
+      return setter_failure(set.error());
     return state;
   }
   if (angle) {
@@ -2993,12 +3045,15 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     // edge's turn from that axis. Applying it adds that turn to the present rotation.
     const auto line = probe_line(request.direction, before.rotation_xy);
     if (line.axis == 2)
-      return std::unexpected("An edge angle needs an X or Y edge.");
+      return setter_failure("An edge angle needs an X or Y edge.",
+                            MessageKey{"backend.nmlPort.edgeAxis"});
     if (frame.wcs < 1 || frame.wcs > 9)
-      return std::unexpected("The active work coordinate system is unavailable.");
+      return setter_failure("The active work coordinate system is unavailable.",
+                            MessageKey{"backend.nmlPort.wcsUnavailable"});
     const double spacing = request.gauge_width_mm;
     if (!(std::abs(spacing) >= 5 && std::abs(spacing) <= 300))
-      return std::unexpected("Enter how far apart to probe along the edge, 5 to 300 mm.");
+      return setter_failure("Enter how far apart to probe along the edge, 5 to 300 mm.",
+                            MessageKey{"backend.nmlPort.edgeSpacing"});
     const auto contact = [&](const std::array<double, 3>& from,
                              std::optional<std::array<double, 3>> approach)
         -> std::expected<std::array<double, 3>, std::string> {
@@ -3017,12 +3072,13 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     };
     const auto first = contact(request.start, std::nullopt);
     if (!first)
-      return std::unexpected("First point: " + first.error());
+      return setter_failure("First point: " + first.error());
     // Along the edge: Y for an X face, X for a Y face, at the start height.
     const std::size_t along = line.axis == 0 ? 1 : 0;
     const auto* now = impl_->stat();
     if (now == nullptr || impl_->status.link() != Link::live)
-      return std::unexpected("Controller status was lost between the edge points.");
+      return setter_failure("Controller status was lost between the edge points.",
+                            MessageKey{"backend.nmlPort.lostEdgePoints"});
     const auto between = to_status(*now, impl_->config, impl_->hal, Link::live);
     const std::array here{between.controller.axes[0].machine, between.controller.axes[1].machine,
                           between.controller.axes[2].machine};
@@ -3030,19 +3086,20 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     next[along] += spacing;
     const auto second = contact(here, to_machine(next));
     if (!second)
-      return std::unexpected("Second point: " + second.error());
+      return setter_failure("Second point: " + second.error());
     // The face moves across by `across` while the probe moves `spacing` along it.
     const auto first_at = to_frame(*first);
     const auto second_at = to_frame(*second);
     const double across = second_at[line.axis] - first_at[line.axis];
     const double measured_spacing = second_at[along] - first_at[along];
     if (!std::isfinite(measured_spacing) || std::abs(measured_spacing - spacing) > position_tolerance)
-      return std::unexpected("The two contact points did not reach the requested spacing.");
+      return setter_failure("The two contact points did not reach the requested spacing.",
+                            MessageKey{"backend.nmlPort.spacingNotReached"});
     // An edge is a line, so measuring it in reverse gives the same orientation.
     const double degrees =
         (line.axis == 0 ? -1.0 : 1.0) * std::atan(across / measured_spacing) * 180 / std::numbers::pi;
     if (!std::isfinite(degrees) || std::abs(degrees) > 10)
-      return std::unexpected(std::format(
+      return setter_failure(std::format(
           "The edge turns {:.2f}° over {:.1f} mm, more than 10°. Check that both points touched "
           "the same straight edge.",
           degrees, measured_spacing));
@@ -3050,11 +3107,13 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
                       std::move(current_marks)};
     const auto* current = impl_->stat();
     if (!current || impl_->status.link() != Link::live || (wanted && !wanted()))
-      return std::unexpected("The machine changed before the measurement could be saved.");
+      return setter_failure("The machine changed before the measurement could be saved.",
+                            MessageKey{"backend.nmlPort.changedBeforeSave"});
     const auto after = to_status(*current, impl_->config, impl_->hal, Link::live);
     if (!ready(*current, after) || frame_of(after) != frame ||
         after.controller.tool_in_spindle != tool || after.tool_offset != before.tool_offset)
-      return std::unexpected("The work frame or tool changed. Measure the edge again.");
+      return setter_failure("The work frame or tool changed. Measure the edge again.",
+                            MessageKey{"backend.nmlPort.frameChanged"});
     const auto id = ++impl_->next_edge_measurement;
     const double rotation = wrapped_rotation(before.rotation_xy + degrees);
     impl_->edge_measurement = Impl::EdgeMeasurement{id, frame, epoch, before.tool_offset, rotation};
@@ -3070,10 +3129,12 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     // any chord lies on the centre line, so the centre X follows. Then both Y walls from the
     // centre X: a chord through the centre, which also gives the diameter.
     if (before.wcs < 1 || before.wcs > 9)
-      return std::unexpected("The active work coordinate system is unavailable.");
+      return setter_failure("The active work coordinate system is unavailable.",
+                            MessageKey{"backend.nmlPort.wcsUnavailable"});
     const double radius = tool_diameter(*table, tool).value_or(0) * machine_scale / 2;
     if (!std::isfinite(radius) || radius <= 0)
-      return std::unexpected("Set the probe ball diameter in the tool table first.");
+      return setter_failure("Set the probe ball diameter in the tool table first.",
+                            MessageKey{"backend.nmlPort.setBallDiameter"});
     const auto here = [&]() -> std::optional<std::array<double, 3>> {
       const auto* s = impl_->stat();
       if (s == nullptr || impl_->status.link() != Link::live)
@@ -3102,31 +3163,36 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     };
     const auto x_plus = wall(ProbeDirection::x_plus, request.start, std::nullopt);
     if (!x_plus)
-      return std::unexpected("+X wall: " + x_plus.error());
+      return setter_failure("+X wall: " + x_plus.error());
     auto at = here();
     if (!at)
-      return std::unexpected("Controller status was lost inside the bore.");
+      return setter_failure("Controller status was lost inside the bore.",
+                            MessageKey{"backend.nmlPort.lostInBore"});
     const auto x_minus = wall(ProbeDirection::x_minus, *at, std::nullopt);
     if (!x_minus)
-      return std::unexpected("−X wall: " + x_minus.error());
+      return setter_failure("−X wall: " + x_minus.error());
     if (!encloses_start(0, *x_minus, *x_plus))
-      return std::unexpected("The probed X faces do not enclose the confirmed bore starting point.");
+      return setter_failure("The probed X faces do not enclose the confirmed bore starting point.",
+                            MessageKey{"backend.nmlPort.boreXFaces"});
     const double centre_x = (*x_plus + *x_minus) / 2;
     at = here();
     if (!at)
-      return std::unexpected("Controller status was lost inside the bore.");
+      return setter_failure("Controller status was lost inside the bore.",
+                            MessageKey{"backend.nmlPort.lostInBore"});
     const auto y_plus =
         wall(ProbeDirection::y_plus, *at, to_machine({centre_x, start_frame[1], (*at)[2]}));
     if (!y_plus)
-      return std::unexpected("+Y wall: " + y_plus.error());
+      return setter_failure("+Y wall: " + y_plus.error());
     at = here();
     if (!at)
-      return std::unexpected("Controller status was lost inside the bore.");
+      return setter_failure("Controller status was lost inside the bore.",
+                            MessageKey{"backend.nmlPort.lostInBore"});
     const auto y_minus = wall(ProbeDirection::y_minus, *at, std::nullopt);
     if (!y_minus)
-      return std::unexpected("−Y wall: " + y_minus.error());
+      return setter_failure("−Y wall: " + y_minus.error());
     if (!encloses_start(1, *y_minus, *y_plus))
-      return std::unexpected("The probed Y faces do not enclose the confirmed bore starting point.");
+      return setter_failure("The probed Y faces do not enclose the confirmed bore starting point.",
+                            MessageKey{"backend.nmlPort.boreYFaces"});
     const double centre_y = (*y_plus + *y_minus) / 2;
     const double diameter = *y_plus - *y_minus + 2 * radius;
     SetterState state{calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,
@@ -3135,24 +3201,27 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     if (request.measure_only)
       return measured(std::move(state), {centre_x, centre_y, 0}, {true, true, false});
     if (auto set = set_origin({centre_x, centre_y}); !set)
-      return std::unexpected(set.error());
+      return setter_failure(set.error());
     return state;
   }
   if (radial_bore) {
     // Every contact is outward from the start inside the bore, along its direction and back.
     if (frame.wcs < 1 || frame.wcs > 9)
-      return std::unexpected("The active work coordinate system is unavailable.");
+      return setter_failure("The active work coordinate system is unavailable.",
+                            MessageKey{"backend.nmlPort.wcsUnavailable"});
     const double radius = tool_diameter(*table, tool).value_or(0) * machine_scale / 2;
     if (!std::isfinite(radius) || radius <= 0)
-      return std::unexpected("Set the probe ball diameter in the tool table first.");
+      return setter_failure("Set the probe ball diameter in the tool table first.",
+                            MessageKey{"backend.nmlPort.setBallDiameter"});
     if (auto travel = arc_searches_in_travel({}, 0, std::nullopt); !travel)
-      return std::unexpected(travel.error());
+      return setter_failure(travel.error());
     std::array<std::array<double, 2>, 5> contacts{};
     std::array<double, 5> spreads{};
     for (std::size_t i = 0; i < directions.size(); ++i) {
       const auto* s = impl_->stat();
       if (s == nullptr || impl_->status.link() != Link::live)
-        return std::unexpected("Controller status was lost inside the bore.");
+        return setter_failure("Controller status was lost inside the bore.",
+                              MessageKey{"backend.nmlPort.lostInBore"});
       const auto reading = to_status(*s, impl_->config, impl_->hal, Link::live);
       const std::array from{reading.controller.axes[0].machine, reading.controller.axes[1].machine,
                             reading.controller.axes[2].machine};
@@ -3166,7 +3235,7 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
                                   .heading_deg = heading},
                                  wanted);
       if (!contact)
-        return std::unexpected(
+        return setter_failure(
             std::format("Contact {} at {:.1f}°: {}", i + 1, heading, contact.error()));
       const auto at = to_frame(contact->machine);
       contacts.at(i) = {at[0], at[1]};
@@ -3185,34 +3254,42 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
         probe_line(ball || boss ? ProbeDirection::x_plus : request.direction, before.rotation_xy);
     const auto y_line = probe_line(request.y_direction, before.rotation_xy);
     if (corner && (x_line.axis != 0 || y_line.axis != 1))
-      return std::unexpected("A corner needs one X and one Y probe direction.");
+      return setter_failure("A corner needs one X and one Y probe direction.",
+                            MessageKey{"backend.nmlPort.cornerDirections"});
     const double half_gauge = request.gauge_width_mm / 2;
     if (ball && !(request.gauge_width_mm >= 2 && request.gauge_width_mm <= 200))
-      return std::unexpected("Enter the gauge width, 2 to 200 mm.");
+      return setter_failure("Enter the gauge width, 2 to 200 mm.",
+                            MessageKey{"backend.nmlPort.gaugeWidth"});
     if ((boss || boss_arc) && !(request.gauge_width_mm >= 2 && request.gauge_width_mm <= 200))
-      return std::unexpected("Enter the approximate boss diameter, 2 to 200 mm.");
+      return setter_failure("Enter the approximate boss diameter, 2 to 200 mm.",
+                            MessageKey{"backend.nmlPort.bossDiameter"});
     if (ball && rotated)
-      return std::unexpected("Ball calibration needs a work system without rotation.");
+      return setter_failure("Ball calibration needs a work system without rotation.",
+                            MessageKey{"backend.nmlPort.ballNoRotation"});
     if (before.wcs < 1 || before.wcs > 9)
-      return std::unexpected("The active work coordinate system is unavailable.");
+      return setter_failure("The active work coordinate system is unavailable.",
+                            MessageKey{"backend.nmlPort.wcsUnavailable"});
     if (!std::ranges::contains(current_marks, tool) ||
         std::abs(before.tool_offset[2] - previous_length) > 0.001 ||
         !std::ranges::contains(before.active_codes, "G43"))
-      return std::unexpected(std::format(
+      return setter_failure(std::format(
           "Touch off T{} and apply its length first: probing beside the work uses Z0 as the top.",
           tool));
     const double radius = tool_diameter(*table, tool).value_or(0) * machine_scale / 2;
     if (!std::isfinite(radius) || radius <= 0)
-      return std::unexpected("Set the probe ball diameter in the tool table first.");
+      return setter_failure("Set the probe ball diameter in the tool table first.",
+                            MessageKey{"backend.nmlPort.setBallDiameter"});
     // Machine Z of the probe tip where the active work system reads Z0.
     const double top = before.controller.axes[2].machine - before.work[2];
     const double clearance = std::max(request.start[2], top + geometry.clearance_mm);
     const double depth = top - radius - geometry.depth_mm;
     const double outside = geometry.reach_mm + radius + geometry.margin_mm;
     if (!std::isfinite(top) || request.start[2] < top + radius)
-      return std::unexpected("Start with the probe above the top of the work.");
+      return setter_failure("Start with the probe above the top of the work.",
+                            MessageKey{"backend.nmlPort.startAboveWork"});
     if (limits->material_travel_mm < outside + radius)
-      return std::unexpected("The material probe travel is too short to probe beside the work.");
+      return setter_failure("The material probe travel is too short to probe beside the work.",
+                            MessageKey{"backend.nmlPort.besideTravel"});
 
     const auto here = [&]() -> std::optional<std::array<double, 3>> {
       const auto* s = impl_->stat();
@@ -3255,13 +3332,14 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
                                        depth});
       }
       if (auto travel = arc_searches_in_travel(approaches, 180, clearance); !travel)
-        return std::unexpected(travel.error());
+        return setter_failure(travel.error());
       std::array<std::array<double, 2>, 5> contacts{};
       std::array<double, 5> spreads{};
       for (std::size_t i = 0; i < directions.size(); ++i) {
         const auto from = i == 0 ? std::optional{request.start} : here();
         if (!from)
-          return std::unexpected("Controller status was lost between the boss faces.");
+          return setter_failure("Controller status was lost between the boss faces.",
+                                MessageKey{"backend.nmlPort.lostBossFaces"});
         const double heading = directions[i];
         const auto contact = probe({.tool = tool,
                                     .start = *from,
@@ -3274,7 +3352,7 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
                                     .heading_deg = heading + 180},
                                    wanted);
         if (!contact)
-          return std::unexpected(
+          return setter_failure(
               std::format("Contact {} at {:.1f}°: {}", i + 1, heading, contact.error()));
         const auto at = to_frame(contact->machine);
         contacts.at(i) = {at[0], at[1]};
@@ -3288,34 +3366,41 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
       // where the surface is, so their midpoints are the centre and their distance the diameter.
       const auto left = face(x_line, ProbeDirection::x_plus, request.start, half_gauge + outside);
       if (!left)
-        return std::unexpected("−X face: " + left.error());
+        return setter_failure("−X face: " + left.error());
       auto at = here();
       if (!at)
-        return std::unexpected("Controller status was lost between the boss faces.");
+        return setter_failure("Controller status was lost between the boss faces.",
+                              MessageKey{"backend.nmlPort.lostBossFaces"});
       const auto right = face(probe_line(ProbeDirection::x_minus, before.rotation_xy),
                               ProbeDirection::x_minus, *at, half_gauge + outside);
       if (!right)
-        return std::unexpected("+X face: " + right.error());
+        return setter_failure("+X face: " + right.error());
       if (!encloses_start(0, *left, *right))
-        return std::unexpected("The probed X faces do not enclose the confirmed boss starting point.");
+        return setter_failure(
+            "The probed X faces do not enclose the confirmed boss starting point.",
+            MessageKey{"backend.nmlPort.bossXFaces"});
       const double centre_x = (*left + *right) / 2;
       const std::array through{centre_x, start_frame[1], request.start[2]};
       at = here();
       if (!at)
-        return std::unexpected("Controller status was lost between the boss faces.");
+        return setter_failure("Controller status was lost between the boss faces.",
+                              MessageKey{"backend.nmlPort.lostBossFaces"});
       const auto front = face(probe_line(ProbeDirection::y_plus, before.rotation_xy),
                               ProbeDirection::y_plus, *at, half_gauge + outside, through);
       if (!front)
-        return std::unexpected("−Y face: " + front.error());
+        return setter_failure("−Y face: " + front.error());
       at = here();
       if (!at)
-        return std::unexpected("Controller status was lost between the boss faces.");
+        return setter_failure("Controller status was lost between the boss faces.",
+                              MessageKey{"backend.nmlPort.lostBossFaces"});
       const auto back = face(probe_line(ProbeDirection::y_minus, before.rotation_xy),
                              ProbeDirection::y_minus, *at, half_gauge + outside, through);
       if (!back)
-        return std::unexpected("+Y face: " + back.error());
+        return setter_failure("+Y face: " + back.error());
       if (!encloses_start(1, *front, *back))
-        return std::unexpected("The probed Y faces do not enclose the confirmed boss starting point.");
+        return setter_failure(
+            "The probed Y faces do not enclose the confirmed boss starting point.",
+            MessageKey{"backend.nmlPort.bossYFaces"});
       const double centre_y = (*front + *back) / 2;
       SetterState state{calibration ? std::optional{calibration->plane} : std::nullopt,
                         std::nullopt, std::move(current_marks),
@@ -3324,7 +3409,7 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
       if (request.measure_only)
         return measured(std::move(state), {centre_x, centre_y, 0}, {true, true, false});
       if (auto set = set_origin({centre_x, centre_y}); !set)
-        return std::unexpected(set.error());
+        return setter_failure(set.error());
       return state;
     }
     if (ball) {
@@ -3332,18 +3417,19 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
       // further apart than the gauge is wide.
       const auto left = face(x_line, ProbeDirection::x_plus, request.start, half_gauge + outside);
       if (!left)
-        return std::unexpected("Left face: " + left.error());
+        return setter_failure("Left face: " + left.error());
       const auto between = here();
       if (!between)
-        return std::unexpected("Controller status was lost between the gauge faces.");
+        return setter_failure("Controller status was lost between the gauge faces.",
+                              MessageKey{"backend.nmlPort.lostGaugeFaces"});
       const auto right = face(probe_line(ProbeDirection::x_minus, 0), ProbeDirection::x_minus,
                               *between, half_gauge + outside);
       if (!right)
-        return std::unexpected("Right face: " + right.error());
+        return setter_failure("Right face: " + right.error());
       const double centres = (*right + radius) - (*left - radius);
       const double diameter = centres - request.gauge_width_mm;
       if (!std::isfinite(diameter) || diameter <= 0 || std::abs(diameter - 2 * radius) > 0.5)
-        return std::unexpected(std::format(
+        return setter_failure(std::format(
             "Measured ball diameter {:.3f} mm is more than 0.5 mm from the table's {:.3f} mm. "
             "Check the gauge width and that the probe started over the gauge.",
             diameter, 2 * radius));
@@ -3351,18 +3437,21 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
       const Impl::Scope scope{*impl_};
       const auto* current = impl_->stat();
       if (current == nullptr || impl_->status.link() != Link::live || !impl_->still())
-        return std::unexpected("Ball calibration was cancelled before writing the diameter.");
+        return setter_failure("Ball calibration was cancelled before writing the diameter.",
+                              MessageKey{"backend.nmlPort.ballCancelled"});
       const auto after = to_status(*current, impl_->config, impl_->hal, Link::live);
       if (!ready(*current, after) || after.controller.mode != TaskMode::mdi ||
           after.controller.tool_in_spindle != tool || impl_->read_tool_table() != table)
-        return std::unexpected("Machine or tool table changed before writing the diameter.");
+        return setter_failure("Machine or tool table changed before writing the diameter.",
+                              MessageKey{"backend.nmlPort.ballChanged"});
       const double scale = after.controller.program_units == LengthUnit::inch ? 25.4 : 1.0;
       EMC_TASK_PLAN_EXECUTE write;
       if (!put(write.command, std::format("G10 L1 P{} R{:.6f}", tool, diameter / 2 / scale)))
-        return std::unexpected("Could not format the ball diameter.");
+        return setter_failure("Could not format the ball diameter.",
+                              MessageKey{"backend.nmlPort.ballFormat"});
       if (const auto result = impl_->run(write, from); !accepted(result))
-        return std::unexpected(result.reason.empty() ? "LinuxCNC did not write the ball diameter."
-                                                     : result.reason);
+        return setter_failure(result.reason.empty() ? "LinuxCNC did not write the ball diameter."
+                                                    : result.reason);
       if (impl_->loads != nullptr)
         ++impl_->loads->mdi_blocks;
       const bool written = until(settle_timeout, [&] {
@@ -3371,7 +3460,8 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
         return value && std::abs(*value * machine_scale - diameter) <= 0.002;
       });
       if (!written)
-        return std::unexpected("Could not verify the ball diameter in the tool table.");
+        return setter_failure("Could not verify the ball diameter in the tool table.",
+                              MessageKey{"backend.nmlPort.ballUnverified"});
       SetterState state{calibration ? std::optional{calibration->plane} : std::nullopt,
                         std::nullopt, std::move(current_marks)};
       state.ball_diameter = diameter;
@@ -3379,40 +3469,42 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     }
     const auto x_face = face(x_line, request.direction, request.start, outside);
     if (!x_face)
-      return std::unexpected("X face: " + x_face.error());
+      return setter_failure("X face: " + x_face.error());
     const auto between = here();
     if (!between)
-      return std::unexpected("Controller status was lost between the corner faces.");
+      return setter_failure("Controller status was lost between the corner faces.",
+                            MessageKey{"backend.nmlPort.lostCornerFaces"});
     const auto y_face = face(y_line, request.y_direction, *between, outside);
     if (!y_face)
-      return std::unexpected("Y face: " + y_face.error());
+      return setter_failure("Y face: " + y_face.error());
 
     SetterState state{calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,
                       std::move(current_marks), SetterState::Material{before.wcs, 'X', true}};
     if (request.measure_only)
       return measured(std::move(state), {*x_face, *y_face, 0}, {true, true, false});
     if (auto set = set_origin({*x_face, *y_face}); !set)
-      return std::unexpected(set.error());
+      return setter_failure(set.error());
     return state;
   }
   if (material) {
     const auto line = probe_line(request.direction, before.rotation_xy);
     if (before.wcs < 1 || before.wcs > 9)
-      return std::unexpected("The active work coordinate system is unavailable.");
+      return setter_failure("The active work coordinate system is unavailable.",
+                            MessageKey{"backend.nmlPort.wcsUnavailable"});
     double radius = 0;
     if (line.axis == 2) {
       if (!std::ranges::contains(current_marks, tool))
-        return std::unexpected(
+        return setter_failure(
             std::format("Touch off T{} at the tool setter before probing Z.", tool));
       if (std::abs(before.tool_offset[2] - previous_length) > 0.001 ||
           !std::ranges::contains(before.active_codes, "G43"))
-        return std::unexpected(
-            std::format("Apply the measured T{} length before probing Z.", tool));
+        return setter_failure(std::format("Apply the measured T{} length before probing Z.", tool));
     } else {
       radius = tool_diameter(*table, tool).value_or(0) * machine_scale / 2;
       if (!std::isfinite(radius) || radius <= 0)
-        return std::unexpected(
-            "Set the probe ball diameter in the tool table before probing an edge.");
+        return setter_failure(
+            "Set the probe ball diameter in the tool table before probing an edge.",
+            MessageKey{"backend.nmlPort.setBallBeforeEdge"});
     }
     const auto contact = probe({.tool = tool,
                                              .start = request.start,
@@ -3421,7 +3513,7 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
                                              .material = request.direction},
                                             wanted);
     if (!contact)
-      return std::unexpected(contact.error());
+      return setter_failure(contact.error());
     if (request.measure_only) {
       record(request.direction, contact->machine, radius);
       // The face, or the top, where applying sets the axis to zero (see `expected` below).
@@ -3438,14 +3530,16 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
     const Impl::Scope scope{*impl_};
     const auto* current = impl_->stat();
     if (current == nullptr || impl_->status.link() != Link::live || !impl_->still())
-      return std::unexpected("Material touch-off was cancelled before setting the work origin.");
+      return setter_failure("Material touch-off was cancelled before setting the work origin.",
+                            MessageKey{"backend.nmlPort.materialCancelled"});
     const auto after = to_status(*current, impl_->config, impl_->hal, Link::live);
     if (!ready(*current, after) || after.controller.mode != TaskMode::mdi ||
         after.controller.tool_in_spindle != tool || !back_at(after, request.start) ||
         frame_of(after) != frame || after.tool_offset != before.tool_offset ||
         after.controller.program_units != before.controller.program_units ||
         impl_->read_tool_table() != table)
-      return std::unexpected("Machine or tool table changed before setting the work origin.");
+      return setter_failure("Machine or tool table changed before setting the work origin.",
+                            MessageKey{"backend.nmlPort.originChanged"});
 
     // G10 L20 applies at the commanded position, so measure from it, not from the Z encoder
     // reading, which lags the command by the backlash after the retract.
@@ -3463,11 +3557,12 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
             : std::format("G10 L20 P0 {}{:.8f}", line.word(), expected[line.axis] / scale);
     EMC_TASK_PLAN_EXECUTE command;
     if (!put(command.command, code))
-      return std::unexpected("Could not format the material work origin.");
+      return setter_failure("Could not format the material work origin.",
+                            MessageKey{"backend.nmlPort.materialOriginFormat"});
     const auto result = impl_->run(command, from);
     if (!accepted(result))
-      return std::unexpected(result.reason.empty() ? "LinuxCNC did not set the work origin."
-                                                   : result.reason);
+      return setter_failure(result.reason.empty() ? "LinuxCNC did not set the work origin."
+                                                  : result.reason);
     if (impl_->loads != nullptr)
       ++impl_->loads->mdi_blocks;
     const bool verified = until(settle_timeout, [&] {
@@ -3489,8 +3584,8 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
              s.tool_offset == before.tool_offset;
     });
     if (!verified)
-      return std::unexpected(
-          "Could not verify the work origin after probing. Check the active WCS.");
+      return setter_failure("Could not verify the work origin after probing. Check the active WCS.",
+                            MessageKey{"backend.nmlPort.materialOriginUnverified"});
     return SetterState{calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,
                        std::move(current_marks), SetterState::Material{before.wcs, line.word()}};
   }
@@ -3506,16 +3601,19 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
   }
   const auto contact = probe(move, wanted);
   if (!contact)
-    return std::unexpected(checking ? std::format("T{} check failed. {}", tool, contact.error())
-                                    : contact.error());
+    return setter_failure(checking ? std::format("T{} check failed. {}", tool, contact.error())
+                                   : contact.error());
   if (wanted && !wanted())
-    return std::unexpected("The fixed setter result was cancelled.");
+    return setter_failure("The fixed setter result was cancelled.",
+                          MessageKey{"backend.nmlPort.setterResultCancelled"});
   const double value = contact->machine[2] - (teaching ? previous_length : calibration->plane[2]);
   if (!std::isfinite(value))
-    return std::unexpected("The fixed setter result is invalid.");
+    return setter_failure("The fixed setter result is invalid.",
+                          MessageKey{"backend.nmlPort.setterResultInvalid"});
   const auto current_table = impl_->read_tool_table();
   if (!current_table || *current_table != *table)
-    return std::unexpected("The tool table changed during the setter cycle.");
+    return setter_failure("The tool table changed during the setter cycle.",
+                          MessageKey{"backend.nmlPort.tableChangedDuringSetter"});
 
   const SetterMeasurement measurement{
       teaching, tool, contact->machine, value, previous_length, contact->stopping_distance,
@@ -3523,11 +3621,11 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
   if (checking) {
     const double difference = value - previous_length;
     if (std::abs(difference) > limits->check_tolerance_mm)
-      return std::unexpected(std::format(
+      return setter_failure(std::format(
           "T{} check failed. Tool is {:.4f} mm {} (measured {:.4f} mm, table {:.4f} mm, "
           "tolerance {} mm). Inspect the tool.",
-          tool, std::abs(difference), difference < 0 ? "shorter" : "longer", value,
-          previous_length, limits->check_tolerance_mm));
+          tool, std::abs(difference), difference < 0 ? "shorter" : "longer", value, previous_length,
+          limits->check_tolerance_mm));
     return SetterState{calibration->plane, measurement, std::move(current_marks)};
   }
   if (teaching) {
@@ -3577,28 +3675,30 @@ auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
   const double scale = before.controller.program_units == LengthUnit::inch ? 25.4 : 1.0;
   if (!block(std::format("G10 L1 P{} Z{:.8f}", tool, value / scale))) {
     auto error = impl_->take_errors(from);
-    return std::unexpected(error.empty() ? "LinuxCNC did not confirm the tool table write. Check "
-                                           "the tool table before retrying."
-                                         : std::move(error));
+    return setter_failure(error.empty() ? "LinuxCNC did not confirm the tool table write. Check "
+                                          "the tool table before retrying."
+                                        : std::move(error));
   }
   const auto changed = impl_->read_tool_table();
   const auto saved = changed ? tool_z(*changed, tool) : std::nullopt;
   constexpr double table_tolerance = 0.001; // mm, allows LinuxCNC's file rounding
   if (!saved || std::abs(*saved * machine_scale - value) > table_tolerance)
-    return std::unexpected(
-        "Could not verify the new tool table length. Check the tool table before retrying.");
+    return setter_failure(
+        "Could not verify the new tool table length. Check the tool table before retrying.",
+        MessageKey{"backend.nmlPort.lengthUnverified"});
   if (!block(std::format("G43 H{}", tool))) {
     const auto error = impl_->take_errors(from);
-    return std::unexpected(error.empty()
-                               ? "Length saved. LinuxCNC did not confirm applying compensation."
-                               : "Length saved. Compensation failed. " + error);
+    return setter_failure(error.empty()
+                              ? "Length saved. LinuxCNC did not confirm applying compensation."
+                              : "Length saved. Compensation failed. " + error);
   }
   const auto* applied = impl_->stat();
   if (applied == nullptr || impl_->status.link() != Link::live ||
       applied->echo_serial_number != impl_->serial ||
       !std::isfinite(applied->task.toolOffset.tran.z) ||
       std::abs(applied->task.toolOffset.tran.z * machine_scale - value) > table_tolerance)
-    return std::unexpected("Length saved. Could not verify the applied compensation.");
+    return setter_failure("Length saved. Could not verify the applied compensation.",
+                          MessageKey{"backend.nmlPort.compensationUnverified"});
   calibration->measured[tool] = *saved;
   remember();
   return SetterState{calibration->plane, measurement, marks(*changed)};

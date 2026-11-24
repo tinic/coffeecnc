@@ -547,8 +547,8 @@ void staged_file_read_failures_are_localized() {
       f.disk.files[staged].resize(16uz * 1024 * 1024 + 1, 'x');
     else
       f.files.failures["read " + staged] = 1;
-    const std::string detail =
-        oversized ? staged + " is larger than 16 MiB." : staged + " cannot be read: " + io_error;
+    const std::string detail = oversized ? std::format("{} is larger than 16 MiB.", staged)
+                                         : std::format("{} cannot be read: {}", staged, io_error);
     const auto result = apply_staged_restore(f.files, data, now + 60s);
     require(!result && result.error() == detail && f.disk.files[tools] == current_tools,
             "A staged read failure keeps its English reason and leaves the target file untouched");

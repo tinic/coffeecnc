@@ -1468,6 +1468,17 @@
     "entries": []
   },
   {
+    "type": "offset_history",
+    "revision": 2,
+    "storage": "saved",
+    "reason": "The saved offset history was damaged and starts empty. The damaged file is kept as offset-history.json.corrupt.",
+    "entries": [],
+    "localization": {
+      "key": "backend.offsetHistory.damagedKept",
+      "params": { "file": "offset-history.json.corrupt" }
+    }
+  },
+  {
     "type": "alarm_log",
     "storage": "saved",
     "reason": "",

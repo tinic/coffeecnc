@@ -419,6 +419,14 @@ auto encoded_messages() -> std::vector<Encoded> {
   messages.push_back(encode_offset_history(history));
   messages.push_back(
       encode_offset_history({1, false, "No machine identity configured", {}}));
+  messages.push_back(
+      encode_offset_history({2,
+                             true,
+                             "The saved offset history was damaged and starts empty. The damaged "
+                             "file is kept as offset-history.json.corrupt.",
+                             {},
+                             MessageKey{"backend.offsetHistory.damagedKept",
+                                        {{"file", "offset-history.json.corrupt"}}}}));
   AlarmLogView alarms;
   alarms.saved = true;
   alarms.session = 3;

@@ -28,9 +28,10 @@ const entries = computed(() => history.value?.entries.filter((entry) => matchesF
 const storage = computed(() => {
   const shown = history.value
   if (shown === null) return null
-  if (shown.storage === 'session_only') return shown.reason
-    ? t('probe.history.sessionOnlyReason', { reason: translateMessage(shown.reason) }) : t('probe.history.sessionOnly')
-  return shown.reason ? translateMessage(shown.reason) : null
+  const reason = shown.reason ? translateMessage(shown.reason, shown.localization) : null
+  if (shown.storage === 'session_only') return reason
+    ? t('probe.history.sessionOnlyReason', { reason }) : t('probe.history.sessionOnly')
+  return reason
 })
 const now = Date.now()
 /** When the change a restore wrote back was made, while it is still in the history. */

@@ -116,6 +116,10 @@ The native shell reports the active system from the controller's current G5x off
 
 The operator can select an unavailable system through the existing MDI controls to observe its active values; receiving an unavailable row never issues that command automatically. Stale/silent readings are labeled as history, while down/incompatible/connecting values are withheld. Invalid or duplicate rows are also withheld. The browser simulator knows its full internal table and emits explicit `available: true` for all nine entries. Like the native shell it marks the inactive ones `current: false` while something runs, and after a program until the mode leaves auto.
 
+## Offset history storage
+
+An `offset_history` snapshot can include `localization` for its storage `reason`. The English reason is still present, and the saved `offset-history.json` remains version 1.
+
 ## Program text and directory completeness
 
 `program.truncated` and `directory.truncated` are additive optional booleans. New native encoders emit them explicitly. True means the supplied text/listing is partial; the panel keeps a visible notice beside the affected view. A partial program's supplied line count is not its total length, and text delivery limits do not shorten the program LinuxCNC executes. Preview generation must use the complete source independently. The existing simulator sends complete snapshots; absent/false retains the complete-snapshot presentation for older v1 peers.

@@ -67,7 +67,7 @@ public:
   // An empty directory: the history is kept for this session only, and `unsaved_reason` says
   // why. Reads the file. The files must outlive the store.
   OffsetHistoryStore(ToolModelFiles& files, std::string directory,
-                     std::string unsaved_reason = {});
+                     LocalizedReason unsaved_reason = {});
 
   // Worker. A panel command that can change offsets begins: the mark it ends with.
   [[nodiscard]] auto begin(HistorySource source, std::optional<std::uint64_t> restores = {})
@@ -135,9 +135,9 @@ private:
   // The work system the last live reading showed active; 0 before one.
   int active_wcs_{};
   Clock::time_point write_after_{};
-  std::string reason_;
-  std::string load_notice_;
-  std::string save_error_;
+  LocalizedReason reason_;
+  LocalizedReason load_notice_;
+  LocalizedReason save_error_;
   std::shared_ptr<const OffsetHistory> snapshot_;
   bool saved_{};
   // An entry is not on the disk yet: written at the next reading.

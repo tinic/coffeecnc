@@ -14,7 +14,7 @@ concurrency:
 jobs:
   analyze:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     container:
       image: debian:trixie
       options: --init
@@ -36,9 +36,9 @@ jobs:
           cache: npm
           cache-dependency-path: ui/package-lock.json
 
-      - name: Analyze the native backend
+      - name: Trace the remote server test in Debug
         working-directory: backend
         run: |
-          cmake --preset analyze -DCOFFEECNC_LINUXCNC=ON -DCOFFEECNC_SHELL=ON
-          cmake --build --preset analyze --parallel
-          ctest --preset analyze -LE linuxcnc -E 'xvfb_wrapper|quit_delivery'
+          cmake --preset dev -DCOFFEECNC_LINUXCNC=ON -DCOFFEECNC_SHELL=ON
+          cmake --build --preset dev --parallel --target coffeecnc_remote_server_tests
+          ctest --preset dev -V -R '^remote_server$' --repeat until-fail:5

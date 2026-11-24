@@ -170,19 +170,25 @@ auto run_restore_helper(ToolModelFiles& files, const std::string& directory, lon
   RestoreHooks hooks;
   hooks.ended = started;
   bool locked_linuxcnc = false;
-  hooks.may_write = [&]() -> std::optional<std::string> {
-    if (auto running = host.linuxcnc_running())
-      return std::format("LinuxCNC runs again ({}): nothing was written.", *running);
-    if (auto refused = host.take_linuxcnc_lock())
-      return std::format("LinuxCNC runs again ({}): nothing was written.", *refused);
+  hooks.may_write = [&]() -> std::optional<LocalizedReason> {
+    auto running = host.linuxcnc_running();
+    if (!running)
+      running = host.take_linuxcnc_lock();
+    if (running)
+      return LocalizedReason{
+          std::format("LinuxCNC runs again ({}): nothing was written.", *running),
+          MessageKey{"backend.machineData.restoreControllerRunning",
+                     {{"controllerDetail", *running}}}};
     locked_linuxcnc = true;
     return std::nullopt;
   };
-  hooks.still_may_write = [&host]() -> std::optional<std::string> {
-    if (!host.holds_linuxcnc_lock())
-      return std::format("LinuxCNC was started while the files were written ({} was removed).",
-                         linuxcnc_lock);
-    return std::nullopt;
+  hooks.still_may_write = [&host]() -> std::optional<LocalizedReason> {
+    if (host.holds_linuxcnc_lock())
+      return std::nullopt;
+    const std::string path{linuxcnc_lock};
+    return LocalizedReason{
+        std::format("LinuxCNC was started while the files were written ({} was removed).", path),
+        MessageKey{"backend.machineData.restoreLockLost", {{"path", path}}}};
   };
   const auto applied = apply_staged_restore(files, directory, host.now(), hooks);
   if (locked_linuxcnc)

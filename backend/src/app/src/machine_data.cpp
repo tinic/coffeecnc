@@ -957,7 +957,7 @@ auto apply_staged_restore(ToolModelFiles& files, const std::string& data_directo
   }
   if (reason.empty() && !steps.empty() && hooks.may_write)
     if (auto refused = hooks.may_write())
-      reason = {std::move(*refused)};
+      reason = std::move(*refused);
   if (reason.empty() && !steps.empty()) {
     // Before the first rename: a crash from here on is reported as a partial write, with the
     // copy to go back to.
@@ -975,7 +975,7 @@ auto apply_staged_restore(ToolModelFiles& files, const std::string& data_directo
       const auto& step = steps[written];
       if (hooks.still_may_write)
         if (auto refused = hooks.still_may_write()) {
-          reason = {std::move(*refused)};
+          reason = std::move(*refused);
           break;
         }
       const auto mode = step.before           ? step.before->mode

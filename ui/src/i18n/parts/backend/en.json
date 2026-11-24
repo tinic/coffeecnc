@@ -723,6 +723,8 @@
       "noMachine": "This backup does not name its machine; this machine is {machine}. It is not restored.",
       "halNotNamed": "{name} is not a HAL file the INI file names: the archive is refused.",
       "unreachable": "{name} cannot be restored: {detail}. The archive is refused.",
+      "restoreControllerRunning": "LinuxCNC runs again ({controllerDetail}): nothing was written.",
+      "restoreLockLost": "LinuxCNC was started while the files were written ({path} was removed).",
       "stale": "The restore was prepared {age} s before CoffeeCNC ended, more than {limit} s: nothing was written.",
       "otherBoot": "The restore was prepared before the computer was started again: nothing was written.",
       "noFolder": "{name} cannot be restored: the folder of {path} does not exist. The archive is refused.",

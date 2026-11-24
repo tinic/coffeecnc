@@ -591,6 +591,17 @@ auto encoded_messages() -> std::vector<EncodedMessage> {
                  {{"detail", stale}},
                  {{"detail", {"backend.machineData.stale", {{"age", "181"}, {"limit", "120"}}}}}}));
 
+  constexpr auto interrupted =
+      "LinuxCNC was started while the files were written (/tmp/linuxcnc.lock was removed).";
+  messages.emplace_back(encode_message(
+      MessageLevel::error,
+      std::format("The restore was not completed: {} The files are as they were.", interrupted),
+      1700000001800ms,
+      MessageKey{"backend.machineData.notCompleted",
+                 {{"detail", interrupted}},
+                 {{"detail",
+                   {"backend.machineData.restoreLockLost", {{"path", "/tmp/linuxcnc.lock"}}}}}}));
+
   Diagnostics diagnostics;
   const auto row = [](DiagnosticRole role, std::optional<int> joint, std::string name,
                       DiagnosticState state, DiagnosticValue value, std::string label = {},

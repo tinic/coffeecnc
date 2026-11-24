@@ -723,6 +723,8 @@
       "noMachine": "このバックアップには機械が記録されていません。この機械は {machine} です。復元しません。",
       "halNotNamed": "{name} は INI ファイルが指定する HAL ファイルではありません。アーカイブを拒否します。",
       "unreachable": "{name} は復元できません: {detail}。アーカイブを拒否します。",
+      "restoreControllerRunning": "LinuxCNC が再び動作しています（{controllerDetail}）。ファイルは書き込まれませんでした。",
+      "restoreLockLost": "ファイルの書き込み中に LinuxCNC が起動しました（{path} が削除されました）。",
       "stale": "復元は CoffeeCNC の終了の {age} 秒前に準備されました。{limit} 秒を超えているため、何も書き込んでいません。",
       "otherBoot": "復元はコンピューターの再起動前に準備されました。何も書き込んでいません。",
       "noFolder": "{name} は復元できません: {path} のフォルダーがありません。アーカイブを拒否します。",

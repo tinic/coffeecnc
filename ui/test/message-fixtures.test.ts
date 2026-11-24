@@ -1733,6 +1733,19 @@ const examples = [
     }
   },
   {
+    "type": "message",
+    "level": "error",
+    "text": "The restore was not completed: LinuxCNC was started while the files were written (/tmp/linuxcnc.lock was removed). The files are as they were.",
+    "time": 1700000001800,
+    "localization": {
+      "key": "backend.machineData.notCompleted",
+      "params": { "detail": "LinuxCNC was started while the files were written (/tmp/linuxcnc.lock was removed)." },
+      "params_localization": {
+        "detail": { "key": "backend.machineData.restoreLockLost", "params": { "path": "/tmp/linuxcnc.lock" } }
+      }
+    }
+  },
+  {
     "type": "diagnostics",
     "inputs": [
       { "role": "min_limit", "joint": 0, "axis": "x", "name": "joint.0.neg-lim-sw-in", "kind": "pin", "state": "undriven", "value": false },

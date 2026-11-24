@@ -723,6 +723,8 @@
       "noMachine": "Esta copia no indica su máquina; esta máquina es {machine}. No se restaura.",
       "halNotNamed": "{name} no es un archivo HAL que nombre el archivo INI: el archivo comprimido se rechaza.",
       "unreachable": "{name} no se puede restaurar: {detail}. El archivo comprimido se rechaza.",
+      "restoreControllerRunning": "LinuxCNC se está ejecutando de nuevo ({controllerDetail}). No se escribió nada.",
+      "restoreLockLost": "LinuxCNC se inició mientras se escribían los archivos (se eliminó {path}).",
       "stale": "La restauración se preparó {age} s antes de que terminara CoffeeCNC, más de {limit} s: no se escribió nada.",
       "otherBoot": "La restauración se preparó antes de que el ordenador se reiniciara: no se escribió nada.",
       "noFolder": "{name} no se puede restaurar: la carpeta de {path} no existe. El archivo comprimido se rechaza.",

@@ -110,6 +110,54 @@ void preview_stop_codes() {
           "An unknown ID retains the path before the rejected record");
 }
 
+void fixed_preview_stop_code_ids() {
+  struct Case {
+    KnownPreviewStop reason;
+    unsigned id;
+    std::string text;
+    MessageKey key;
+  };
+  const std::array cases{
+      Case{KnownPreviewStop::nurbs,
+           1,
+           "a NURBS move (G5.2, G5.3): not computed by the preview",
+           {"backend.previewEngine.stopNurbs"}},
+      Case{KnownPreviewStop::probe_move,
+           2,
+           "a probe move (G38): where it ends depends on the machine",
+           {"backend.previewEngine.stopProbe"}},
+      Case{KnownPreviewStop::wait_input,
+           3,
+           "M66 waits for an input of the machine",
+           {"backend.previewEngine.stopWaitInput"}},
+      Case{KnownPreviewStop::read_input,
+           4,
+           "reads an input of the machine (M66)",
+           {"backend.previewEngine.stopReadInput"}},
+      Case{KnownPreviewStop::tool_change_g30,
+           5,
+           "a tool change that moves to the G30 position ([EMCIO] TOOL_CHANGE_AT_G30), "
+           "which is not in the machine's parameter file",
+           {"backend.previewEngine.stopG30ToolChange"}},
+      Case{KnownPreviewStop::saved_g28,
+           6,
+           "G28 moves to a position that is not in the machine's parameter file",
+           {"backend.previewEngine.stopSavedPosition", {{"code", "28"}}}},
+      Case{KnownPreviewStop::saved_g30,
+           7,
+           "G30 moves to a position that is not in the machine's parameter file",
+           {"backend.previewEngine.stopSavedPosition", {{"code", "30"}}}}};
+  for (const auto& row : cases) {
+    const auto wire = std::format("stop_known 3 {}\n", row.id);
+    require(write_preview_stop(3, row.reason, "", true) == wire,
+            std::format("Stop reason {} keeps its wire ID", row.id));
+    const auto parsed = parse_output(wire + "end stop\n");
+    require(parsed.defect.empty() && parsed.end == HelperEnd::stop &&
+                parsed.problem == PreviewError{3, row.text, row.key},
+            std::format("Stop reason {} keeps its fallback text, key and arguments", row.id));
+  }
+}
+
 void restart_refusal_codes() {
   struct Row {
     unsigned code;
@@ -419,6 +467,7 @@ auto main() -> int {
   try {
     wire_formats();
     preview_stop_codes();
+    fixed_preview_stop_code_ids();
     restart_refusal_codes();
     hostile_results();
     blocks_refused_by_their_text();

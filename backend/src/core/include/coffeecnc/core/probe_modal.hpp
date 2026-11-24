@@ -26,7 +26,7 @@ struct ProbeModalPlan {
   bool adaptive_feed{}; // send M52 P1
   // What the cycle left of the items not restored, as G-code words ("G90 F240", "M50 P0"),
   // joined by ", ". Empty when every item it changed is restored.
-  std::string changed;
+  std::string changed{};
 };
 
 // `left` is the state after the stop, empty when status was unavailable then. `commands` is

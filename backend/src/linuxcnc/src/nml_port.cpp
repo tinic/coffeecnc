@@ -1164,7 +1164,9 @@ void NmlPort::restore_probe_modal(const Wanted& wanted) {
   if (mode != TaskMode::mdi && wanted() && after.controller.machine == MachineState::on)
     static_cast<void>(set_task_mode(mode, wanted));
   if (!verified) {
-    report_probe_modal({.unknown = true});
+    ProbeModalPlan failed_plan;
+    failed_plan.unknown = true;
+    report_probe_modal(failed_plan);
     return;
   }
   impl_->messages.push_back(
@@ -1572,12 +1574,12 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   // What the cycle restores at its end, or idle_maintenance after a stop: the state before this
   // cycle, or before an earlier one that stopped and is not restored yet, when that is still
   // all as the earlier cycle left it.
-  const ProbeModalState current{std::ranges::contains(before.active_codes, "G91"),
+  const ProbeModalState at_start{std::ranges::contains(before.active_codes, "G91"),
                                 before.programmed_feed, raw->motion.traj.feed_override_enabled,
                                 raw->motion.traj.adaptive_feed_enabled};
-  auto modal = current;
+  auto modal = at_start;
   if (const auto pending = std::exchange(impl_->probe_modal, std::nullopt)) {
-    const auto plan = plan_probe_restore(pending->operator_state, pending->left, current,
+    const auto plan = plan_probe_restore(pending->operator_state, pending->left, at_start,
                                          impl_->gcode_commands != pending->commands_at_stop);
     if (!plan.unknown && plan.changed.empty())
       modal = pending->operator_state;

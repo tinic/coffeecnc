@@ -4712,9 +4712,12 @@ void cam_programs(Rig& rig) {
   const auto other = rig.send(
       std::format(R"("type":"plan_restart","line":10,"preview_context":{})", context));
   check("cam_restart_needs_its_work_system",
-        other.outcome == "rejected" && other.reason == "This line runs in G55. Select G55, then "
-                                                       "choose the line again.",
-        other.text());
+        other.outcome == "rejected" &&
+            other.reason == "This line runs in G55. Select G55, then "
+                            "choose the line again." &&
+            other.refusal ==
+                Json{{"key", "backend.nmlPort.restartSelectWcs"}, {"params", {{"wcs", "G55"}}}},
+        other.text() + " " + other.refusal.dump());
   // G10 in MDI changes G55 in task's interpreter; task writes the parameter file at its next
   // synchronisation. A Run with the preview made before must not start.
   const auto shown = context;

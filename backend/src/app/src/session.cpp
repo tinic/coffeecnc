@@ -1392,7 +1392,8 @@ auto Session::plan_restart(Queued& request, PlanRestart command, const Controlle
     return refuse("Restart requires a tool verified for machining.",
                   RefusalMessage{"messages.session.restartNeedsTool"});
   if (auto reason = port_.validate_restart(point, inputs); !reason.empty())
-    return answer({CommandOutcome::rejected, std::move(reason)});
+    return answer(
+        {CommandOutcome::rejected, std::move(reason.text), std::move(reason.localization)});
   if (!wanted(request))
     return cancelled();
   RestartPlan plan{++restart_id_, point.tool != state.tool_in_spindle, point};
@@ -1445,7 +1446,8 @@ auto Session::start_restart(const Queued& request, StartRestart command) -> Stag
   auto check = restart.plan.point;
   check.clearance_z = restart.programmed_clearance;
   if (auto reason = port_.validate_restart(check, *restart.source.inputs); !reason.empty())
-    return answer({CommandOutcome::rejected, std::move(reason)});
+    return answer(
+        {CommandOutcome::rejected, std::move(reason.text), std::move(reason.localization)});
   if (check.clearance_z > restart.plan.point.clearance_z + 1e-6)
     return refuse("The required clearance changed. Review a new plan.",
                   RefusalMessage{"messages.session.clearanceChanged"});
@@ -1686,7 +1688,7 @@ auto Session::measure_tool_change(Queued& request, const ControllerState& state)
   }
   const double clearance = point->clearance_z;
   if (auto reason = port_.validate_restart(*point, *fresh.source.inputs); !reason.empty())
-    return cannot_restart(std::move(reason));
+    return cannot_restart(std::move(reason.text), std::move(reason.localization));
   if (!maintain())
     return cannot_restart("Tool measured. Restart preparation was cancelled.",
                           MessageKey{"backend.toolChangeMeasurement.measuredCancelled"});

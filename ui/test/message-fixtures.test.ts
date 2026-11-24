@@ -1138,6 +1138,16 @@ const examples = [
   },
   {
     "type": "result",
+    "id": 57,
+    "outcome": "rejected",
+    "reason": "This line runs in G55. Select G55, then choose the line again.",
+    "refusal": {
+      "key": "backend.nmlPort.restartSelectWcs",
+      "params": { "wcs": "G55" }
+    }
+  },
+  {
+    "type": "result",
     "id": 45,
     "outcome": "accepted",
     "reason": "",

@@ -917,6 +917,25 @@ const examples = [
   },
   {
     "type": "preview",
+    "context": 4821342,
+    "state": "failed",
+    "error": {
+      "line": 3,
+      "text": "The preview ends at line 3: a probe move (G38): where it ends depends on the machine.",
+      "localization": {
+        "key": "backend.previewEngine.endsAtLine",
+        "params": { "line": "3", "detail": "a probe move (G38): where it ends depends on the machine" },
+        "params_localization": {
+          "detail": { "key": "backend.previewEngine.stopProbe", "params": {} }
+        }
+      }
+    },
+    "segments": [],
+    "bounds": null,
+    "dwells": []
+  },
+  {
+    "type": "preview",
     "context": 4821337,
     "state": "pending",
     "error": null,

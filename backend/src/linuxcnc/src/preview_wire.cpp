@@ -59,6 +59,35 @@ auto rest(std::string_view text) -> std::string {
   return std::string(text);
 }
 
+auto preview_stop_message(KnownPreviewStop reason) -> LocalizedReason {
+  switch (reason) {
+  case KnownPreviewStop::nurbs:
+    return {"a NURBS move (G5.2, G5.3): not computed by the preview",
+            MessageKey{"backend.previewEngine.stopNurbs"}};
+  case KnownPreviewStop::probe_move:
+    return {"a probe move (G38): where it ends depends on the machine",
+            MessageKey{"backend.previewEngine.stopProbe"}};
+  case KnownPreviewStop::wait_input:
+    return {"M66 waits for an input of the machine",
+            MessageKey{"backend.previewEngine.stopWaitInput"}};
+  case KnownPreviewStop::read_input:
+    return {"reads an input of the machine (M66)",
+            MessageKey{"backend.previewEngine.stopReadInput"}};
+  case KnownPreviewStop::tool_change_g30:
+    return {"a tool change that moves to the G30 position ([EMCIO] TOOL_CHANGE_AT_G30), "
+            "which is not in the machine's parameter file",
+            MessageKey{"backend.previewEngine.stopG30ToolChange"}};
+  case KnownPreviewStop::saved_g28:
+  case KnownPreviewStop::saved_g30: {
+    const std::string code = reason == KnownPreviewStop::saved_g28 ? "28" : "30";
+    return {
+        std::format("G{} moves to a position that is not in the machine's parameter file", code),
+        MessageKey{"backend.previewEngine.stopSavedPosition", {{"code", code}}}};
+  }
+  }
+  return {};
+}
+
 auto restart_refusal_message(RestartRefusal reason) -> LocalizedReason {
   switch (reason) {
   case RestartRefusal::none:
@@ -372,6 +401,13 @@ auto write_restart_refusal(RestartRefusal reason, bool coded) -> std::string {
   return std::format("restart_blocked {}\n", restart_refusal_message(reason).text);
 }
 
+auto write_preview_stop(int line, KnownPreviewStop reason, std::string_view source_prefix,
+                        bool coded) -> std::string {
+  if (coded && source_prefix.empty())
+    return std::format("stop_known {} {}\n", line, static_cast<unsigned>(reason));
+  return std::format("stop {} {}{}\n", line, source_prefix, preview_stop_message(reason).text);
+}
+
 auto parse_output(std::string_view text, const OutputLimits& limits) -> HelperOutput {
   HelperOutput output;
   std::size_t points = 0;
@@ -445,7 +481,7 @@ auto parse_output(std::string_view text, const OutputLimits& limits) -> HelperOu
         return defect("more dwells than the preview allows",
                       MessageKey{"backend.previewWire.tooManyDwells"});
       output.dwells.push_back(dwell);
-    } else if (key == "error" || key == "stop" || key == "cut") {
+    } else if (key == "error" || key == "stop" || key == "stop_known" || key == "cut") {
       PreviewError problem;
       if (output.problem)
         return defect("a second record that ends the path",
@@ -453,9 +489,20 @@ auto parse_output(std::string_view text, const OutputLimits& limits) -> HelperOu
       if (!line_number(line, problem.line))
         return defect("a record with a line that is none of the program",
                       MessageKey{"backend.previewWire.recordLine"});
-      problem.text = rest(line);
+      if (key == "stop_known") {
+        unsigned id = 0;
+        LocalizedReason parsed;
+        if (number(line, id) && word(line).empty() && std::in_range<std::uint8_t>(id))
+          parsed = preview_stop_message(static_cast<KnownPreviewStop>(id));
+        if (parsed.empty())
+          return defect("an invalid preview stop code",
+                        MessageKey{"backend.previewWire.invalidStopCode"});
+        problem.text = std::move(parsed.text);
+        problem.localization = std::move(parsed.localization);
+      } else
+        problem.text = rest(line);
       output.problem = std::move(problem);
-      problem_kind = key;
+      problem_kind = key == "stop_known" ? "stop" : key;
     } else if (key == "check") {
       if (!read_check(line, output.check))
         return defect("a malformed program check record",

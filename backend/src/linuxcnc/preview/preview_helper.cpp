@@ -93,6 +93,7 @@
 
 using coffeecnc::Bounds;
 using coffeecnc::HelperRequest;
+using coffeecnc::KnownPreviewStop;
 using coffeecnc::ProgramFrameCheck;
 using coffeecnc::ProgramRange;
 using coffeecnc::RestartPoint;
@@ -188,15 +189,29 @@ void flush_run() {
 }
 
 // Ends the trusted path, once: the first reason stands.
-void halt(Halt how, const std::string& text) {
+auto begin_halt(Halt how) -> bool {
   if (canon.halt != Halt::none)
-    return;
+    return false;
   flush_run();
   canon.halt = how;
+  return true;
+}
+
+void halt(Halt how, const std::string& text) {
+  if (!begin_halt(how))
+    return;
   std::string clean = text;
   std::ranges::replace_if(clean, [](char c) { return c == '\n' || c == '\r'; }, ' ');
   put(std::format("{} {} {}{}\n", how == Halt::error ? "error" : how == Halt::stop ? "stop" : "cut",
                   canon.line, canon.elsewhere, clean));
+}
+
+void halt(KnownPreviewStop reason) {
+  if (!begin_halt(Halt::stop))
+    return;
+  const char* codes = std::getenv(coffeecnc::preview_stop_codes_env);
+  put(coffeecnc::write_preview_stop(canon.line, reason, canon.elsewhere,
+                                    codes && std::string_view(codes) == "1"));
 }
 
 // Whether the line may still have an effect. Ends the trusted path first when the line read a
@@ -569,28 +584,28 @@ void RIGID_TAP(int, double x, double y, double z, double return_scale) {
 // NOLINTNEXTLINE(performance-unnecessary-value-param)
 void NURBS_FEED(int, std::vector<CONTROL_POINT>, unsigned int) {
   if (gate())
-    halt(Halt::stop, "a NURBS move (G5.2, G5.3): not computed by the preview");
+    halt(KnownPreviewStop::nurbs);
 }
 
 void STRAIGHT_PROBE(int, double, double, double, double, double, double, double, double, double,
                     unsigned char) {
   if (gate())
-    halt(Halt::stop, "a probe move (G38): where it ends depends on the machine");
+    halt(KnownPreviewStop::probe_move);
 }
 
 auto WAIT(int, int, int, double) -> int {
   if (gate())
-    halt(Halt::stop, "M66 waits for an input of the machine");
+    halt(KnownPreviewStop::wait_input);
   return 0;
 }
 auto GET_EXTERNAL_DIGITAL_INPUT(int, int def) -> int {
   if (gate())
-    halt(Halt::stop, "reads an input of the machine (M66)");
+    halt(KnownPreviewStop::read_input);
   return def;
 }
 auto GET_EXTERNAL_ANALOG_INPUT(int, double def) -> double {
   if (gate())
-    halt(Halt::stop, "reads an input of the machine (M66)");
+    halt(KnownPreviewStop::read_input);
   return def;
 }
 
@@ -631,8 +646,7 @@ void CHANGE_TOOL(int index) {
   // With the G30 position known, the interpreter has made the move to it already, as task's
   // does ([EMCIO] TOOL_CHANGE_AT_G30 is in the helper's INI file then).
   if (canon.request.tool_change_at_g30 && !canon.request.saved_g30) {
-    halt(Halt::stop, "a tool change that moves to the G30 position ([EMCIO] TOOL_CHANGE_AT_G30), "
-                     "which is not in the machine's parameter file");
+    halt(KnownPreviewStop::tool_change_g30);
     return;
   }
   // Task moves to [EMCIO] TOOL_CHANGE_POSITION first: machine coordinates of the controlled point.
@@ -1273,9 +1287,7 @@ auto run(const HelperRequest& request) -> int {
     }
     if (const int saved = coffeecnc::saved_position_move(text.data());
         (saved == 28 && !request.saved_g28) || (saved == 30 && !request.saved_g30)) {
-      halt(Halt::stop, std::format("G{} moves to a position that is not in the machine's "
-                                   "parameter file",
-                                   saved));
+      halt(saved == 28 ? KnownPreviewStop::saved_g28 : KnownPreviewStop::saved_g30);
       break;
     }
     // Until the program names a motion code, a mode that was not put in place is not known

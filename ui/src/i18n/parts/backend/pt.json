@@ -542,6 +542,7 @@
       "restartParametersChanged": "Os parâmetros guardados da máquina mudaram depois de o reinício ter sido revisto. Escolha a linha novamente."
     },
     "previewWire": {
+      "invalidStopCode": "um código de interrupção da prévia inválido",
       "segmentAfterEnd": "um segmento após o registo que termina a trajetória",
       "segmentLine": "um segmento com uma linha que não pertence ao programa",
       "segmentKind": "um segmento de tipo desconhecido",
@@ -583,6 +584,10 @@
       "notExecuted": "A linha selecionada não é executada neste programa."
     },
     "previewEngine": {
+      "stopNurbs": "um movimento NURBS (G5.2, G5.3) que a prévia não calcula",
+      "stopProbe": "um movimento de apalpação (G38) cujo ponto final depende da máquina",
+      "stopWaitInput": "M66 aguarda uma entrada da máquina",
+      "stopReadInput": "lê uma entrada da máquina (M66)",
       "subroutineError": "{name}.ngc linha {line}: {detail}",
       "rigidTapUnavailable": "O rosqueamento rígido G33.1 não está configurado nesta máquina.",
       "rigidTapSpindle": "O rosqueamento rígido não está configurado para este fuso",

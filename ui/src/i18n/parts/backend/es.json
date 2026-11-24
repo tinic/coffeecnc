@@ -542,6 +542,7 @@
       "restartParametersChanged": "Los parámetros guardados de la máquina cambiaron después de revisar el reinicio. Vuelva a elegir la línea."
     },
     "previewWire": {
+      "invalidStopCode": "un código de detención de vista previa no válido",
       "segmentAfterEnd": "un segmento después del registro que termina la trayectoria",
       "segmentLine": "un segmento con una línea ajena al programa",
       "segmentKind": "un segmento de tipo desconocido",
@@ -583,6 +584,10 @@
       "notExecuted": "La línea seleccionada no se ejecuta en este programa."
     },
     "previewEngine": {
+      "stopNurbs": "un movimiento NURBS (G5.2, G5.3) que la vista previa no calcula",
+      "stopProbe": "un movimiento de palpado (G38) cuyo punto final depende de la máquina",
+      "stopWaitInput": "M66 espera una entrada de la máquina",
+      "stopReadInput": "lee una entrada de la máquina (M66)",
       "subroutineError": "{name}.ngc línea {line}: {detail}",
       "rigidTapUnavailable": "El roscado rígido G33.1 no está configurado en esta máquina.",
       "rigidTapSpindle": "El roscado rígido no está configurado para este husillo",

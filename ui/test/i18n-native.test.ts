@@ -376,6 +376,16 @@ describe('translateMessage', () => {
     })).toBe('Anfrage der Bedienoberfläche ignoriert: Bad packet.')
   })
 
+  it('translates the precise probe stop reason and retains the line', async () => {
+    await setLanguage('fr')
+    const detail = 'a probe move (G38): where it ends depends on the machine'
+    expect(translateMessage(`The preview ends at line 3: ${detail}.`, {
+      key: 'backend.previewEngine.endsAtLine',
+      params: { line: '3', detail },
+      params_localization: { detail: { key: 'backend.previewEngine.stopProbe', params: {} } },
+    })).toBe('L’aperçu s’arrête à la ligne 3 : un mouvement de palpage (G38) dont le point final dépend de la machine.')
+  })
+
   it('translates the invalid preview result and its parser detail', async () => {
     await setLanguage('fr')
     const fallback = "The preview program's result is not valid (a record of an unknown kind); the path is shown as far as it was."

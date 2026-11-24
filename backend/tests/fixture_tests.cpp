@@ -302,6 +302,17 @@ auto encoded_messages() -> std::vector<EncodedMessage> {
                               {{"detail", {"backend.previewWire.unknownRecord"}}}}};
   messages.push_back(encode_preview(invalid));
 
+  Preview stopped;
+  stopped.context = 4821342;
+  stopped.state = PreviewState::failed;
+  stopped.error = PreviewError{
+      3, "The preview ends at line 3: a probe move (G38): where it ends depends on the machine.",
+      MessageKey{
+          "backend.previewEngine.endsAtLine",
+          {{"line", "3"}, {"detail", "a probe move (G38): where it ends depends on the machine"}},
+          {{"detail", {"backend.previewEngine.stopProbe"}}}}};
+  messages.push_back(encode_preview(stopped));
+
   const PreviewSegment approach{4, MoveKind::rapid, 3, {{0, 0, 10}, {0, 0, 2}}};
   const PreviewSegment cut{
       5, MoveKind::feed, 3, {{0, 0, 2}, {0, 0, -1.5}, {30, 0, -1.5}, {30, 20.5, -1.5}}, 450};

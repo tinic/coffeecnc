@@ -542,6 +542,7 @@
       "restartParametersChanged": "The machine's saved parameters changed after the restart was reviewed. Choose the line again."
     },
     "previewWire": {
+      "invalidStopCode": "an invalid preview stop code",
       "segmentAfterEnd": "a segment after the record that ends the path",
       "segmentLine": "a segment with a line that is none of the program",
       "segmentKind": "a segment of an unknown kind",
@@ -583,6 +584,10 @@
       "notExecuted": "The selected line is not executed in this program."
     },
     "previewEngine": {
+      "stopNurbs": "a NURBS move (G5.2, G5.3): not computed by the preview",
+      "stopProbe": "a probe move (G38): where it ends depends on the machine",
+      "stopWaitInput": "M66 waits for an input of the machine",
+      "stopReadInput": "reads an input of the machine (M66)",
       "subroutineError": "{name}.ngc line {line}: {detail}",
       "rigidTapUnavailable": "G33.1 rigid tapping is not configured on this machine.",
       "rigidTapSpindle": "rigid tapping is not configured for this spindle on this machine",

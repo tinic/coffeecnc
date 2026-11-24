@@ -542,6 +542,7 @@
       "restartParametersChanged": "Les paramètres enregistrés de la machine ont changé après la vérification de la reprise. Choisissez de nouveau la ligne."
     },
     "previewWire": {
+      "invalidStopCode": "un code d’arrêt d’aperçu non valide",
       "segmentAfterEnd": "un segment après l’enregistrement de fin de trajectoire",
       "segmentLine": "un segment dont la ligne n’appartient pas au programme",
       "segmentKind": "un segment de type inconnu",
@@ -583,6 +584,10 @@
       "notExecuted": "La ligne sélectionnée n’est pas exécutée dans ce programme."
     },
     "previewEngine": {
+      "stopNurbs": "un mouvement NURBS (G5.2, G5.3) que l’aperçu ne calcule pas",
+      "stopProbe": "un mouvement de palpage (G38) dont le point final dépend de la machine",
+      "stopWaitInput": "M66 attend une entrée de la machine",
+      "stopReadInput": "lit une entrée de la machine (M66)",
       "subroutineError": "{name}.ngc ligne {line} : {detail}",
       "rigidTapUnavailable": "Le taraudage rigide G33.1 n’est pas configuré sur cette machine.",
       "rigidTapSpindle": "Le taraudage rigide n’est pas configuré pour cette broche",

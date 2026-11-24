@@ -824,6 +824,8 @@ void rollback_counts_renamed_files() {
   };
   require(!apply_staged_restore(f.files, data, now + 60s).has_value(), "The helper fails again");
   f.files.during = nullptr;
+  const auto result_file = in_staging("result.json");
+  auto rollback = Json::parse(f.disk.files.at(result_file));
   f.open();
   notice = f.machine->take_notice();
   const auto copy = in_data("pre-restore-20261118-110740.tar.gz");
@@ -838,6 +840,26 @@ void rollback_counts_renamed_files() {
                                       {{"path", target(1)}, {"detail", "No space left on device"}}},
           "The notice names what was not put back, the copy, and the keyed replacement failure: " +
               (notice ? notice->text : std::string{}));
+  require(notice && notice->localization &&
+              notice->localization->params_lists.at("files") ==
+                  std::vector<MessageListItem>{
+                      {target(0) + " cannot be replaced: No space left on device",
+                       MessageParameterKey{
+                           "backend.machineData.configNotReplaced",
+                           {{"path", target(0)}, {"detail", "No space left on device"}}}}},
+          "The rollback warning retains its own key across the helper restart");
+  for (const bool legacy : {true, false}) {
+    if (legacy)
+      rollback.erase("not_put_back_list");
+    else
+      rollback["not_put_back_list"] = Json::array({Json{{"text", "mismatched metadata"}}});
+    f.disk.files[result_file] = rollback.dump();
+    f.open();
+    const auto fallback = f.machine->take_notice();
+    require(fallback && notice && fallback->text == notice->text && fallback->localization &&
+                fallback->localization->params_lists.empty(),
+            "Old and mismatched records retain the same literal file warnings");
+  }
 }
 
 struct Crash {};

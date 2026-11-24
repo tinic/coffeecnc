@@ -40,10 +40,18 @@ auto bounded(std::string text, std::size_t limit) -> std::string {
 
 // Ignore invalid optional metadata so an older or edited record keeps its English text.
 auto localization_of(const Json& value, std::string_view field) -> std::optional<MessageKey> {
-  const auto metadata = value.find(field);
-  if (metadata == value.end() || !metadata->is_object() ||
-      dump(*metadata).size() > AlarmLog::max_text_bytes)
+  const auto found = value.find(field);
+  if (found == value.end() || !found->is_object())
     return std::nullopt;
+  const auto* metadata = &*found;
+  Json without_lists;
+  if (dump(*metadata).size() > AlarmLog::max_text_bytes) {
+    without_lists = *metadata;
+    if (without_lists.erase("params_lists") == 0 ||
+        dump(without_lists).size() > AlarmLog::max_text_bytes)
+      return std::nullopt;
+    metadata = &without_lists;
+  }
   auto parsed = message_parameter_from_json(*metadata);
   if (!parsed)
     return std::nullopt;
@@ -54,6 +62,12 @@ auto localization_of(const Json& value, std::string_view field) -> std::optional
       if (message.params.contains(name))
         if (auto parameter = message_parameter_from_json(key))
           message.params_localization.emplace(name, std::move(*parameter));
+  const auto lists = metadata->find("params_lists");
+  if (lists != metadata->end() && lists->is_object())
+    for (const auto& [name, items] : lists->items())
+      if (message.params.contains(name))
+        if (auto list = message_list_from_json(items))
+          message.params_lists.emplace(name, std::move(*list));
   return message;
 }
 

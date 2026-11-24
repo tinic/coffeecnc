@@ -999,6 +999,25 @@ const examples = [
   },
   {
     "type": "preview",
+    "context": 4821346,
+    "state": "failed",
+    "error": {
+      "line": 3,
+      "text": "The preview ends at line 3: G92.3 restores an offset saved in the parameter file.",
+      "localization": {
+        "key": "backend.previewEngine.endsAtLine",
+        "params": { "line": "3", "detail": "G92.3 restores an offset saved in the parameter file" },
+        "params_localization": {
+          "detail": { "key": "backend.previewEngine.stopG92Restore", "params": {} }
+        }
+      }
+    },
+    "segments": [],
+    "bounds": null,
+    "dwells": []
+  },
+  {
+    "type": "preview",
     "context": 4821337,
     "state": "pending",
     "error": null,

@@ -1,7 +1,7 @@
 #ifndef COFFEECNC_LINUXCNC_PROGRAM_WATCH_HPP
 #define COFFEECNC_LINUXCNC_PROGRAM_WATCH_HPP
 
-#include <coffeecnc/core/message_key.hpp>
+#include "preview_wire.hpp"
 
 #include <cstdint>
 #include <cstddef>
@@ -44,7 +44,7 @@ namespace coffeecnc {
 //
 // A line in a branch that is not taken, or in a subroutine that is never called, is read by
 // the interpreter too and is refused all the same.
-[[nodiscard]] auto refused_block(std::string_view line) -> std::optional<std::string>;
+[[nodiscard]] auto refused_block(std::string_view line) -> std::optional<PreviewStopReason>;
 
 // 28 or 30 when the line has G28 or G30 (a move to a position saved in the parameter file),
 // else 0. G28.1 and G30.1 save a position and are 0.
@@ -116,7 +116,7 @@ struct ParameterUse {
 // first line, from 1, that must not reach the interpreter, and why.
 struct Forbidden {
   int line{};
-  LocalizedReason reason;
+  PreviewStopReason stop;
 };
 [[nodiscard]] auto first_forbidden_line(std::string_view text) -> std::optional<Forbidden>;
 

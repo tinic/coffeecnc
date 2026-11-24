@@ -540,8 +540,13 @@ void subroutines() {
         "o<inner> sub\nG91 G1 Y1 F100\nG92.3\no<inner> endsub\nM2\n");
   o = rig.preview("G21 G90\nG0 X0 Y0\n\n\no<outer> call\nG1 X9\nM2\n");
   require(o.state == PreviewState::failed && o.error && o.error->line == 5 &&
-              o.error->text.find("inner.ngc line 3: ") != std::string::npos,
-          "A refused block in a subroutine file likewise: " + text_of(o));
+              o.error->text.find("inner.ngc line 3: ") != std::string::npos &&
+              o.error->localization &&
+              o.error->localization->key == "backend.previewEngine.endsAtSubroutineLine" &&
+              o.error->localization->params_localization.at("detail") ==
+                  MessageParameterKey{"backend.previewEngine.stopG92Restore"},
+          "A refused block in a subroutine file keeps its location and translated reason: " +
+              text_of(o));
 
   write(rig.root / "subs" / "inner.ngc",
         "o<inner> sub\nG91 G1 Y1 F100\nG38.2 X5 F10\no<inner> endsub\nM2\n");

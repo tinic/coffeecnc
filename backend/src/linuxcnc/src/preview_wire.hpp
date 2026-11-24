@@ -87,7 +87,7 @@ struct HelperRequest {
 //   error <line> <text>     the interpreter's error; nothing follows but `end`
 //   stop <line> <text>      the path after this line depends on the machine
 //   stop_known <line> <id> [argument] [source-line file]
-//                          a stop code, with a number (v2), source (v3), or token (v4)
+//                          a stop code, with a number (v2), source (v3), or token (v4 onward)
 //   cut <line> <text>       a limit was reached
 //   restart_refused <id>   a CoffeeCNC restart refusal; old helpers send restart_blocked <text>
 //   end ok|error|stop|cut   the last line of a helper that ended by itself
@@ -143,11 +143,30 @@ enum class KnownPreviewStop : std::uint8_t {
   inherited_motion = 14,
   remapped_code = 15,
   cross_scope_o_word = 16,
+  task_parameter = 17,
+  ini_or_hal_parameter = 18,
+  global_parameter_exists = 19,
+  computed_o_word = 20,
+  computed_g_word = 21,
+  restore_g92 = 22,
+  python_line = 23,
+  python_comment = 24,
+  file_writing_comment = 25,
+  unsafe_o_word_name = 26,
 };
 using PreviewStopArgument = std::variant<std::monostate, int, std::string>;
+
+struct PreviewStopReason {
+  KnownPreviewStop reason;
+  PreviewStopArgument argument{};
+  friend auto operator==(const PreviewStopReason&, const PreviewStopReason&) -> bool = default;
+};
+
+[[nodiscard]] auto preview_stop_message(KnownPreviewStop reason,
+                                        const PreviewStopArgument& argument) -> LocalizedReason;
 // Opt in to the stop formats by version. Callers without the relevant version receive text.
 inline constexpr char preview_stop_codes_env[] = "COFFEECNC_PREVIEW_STOP_CODES";
-inline constexpr std::string_view preview_stop_codes_version = "4";
+inline constexpr std::string_view preview_stop_codes_version = "5";
 
 struct PreviewStopSource {
   std::string file;

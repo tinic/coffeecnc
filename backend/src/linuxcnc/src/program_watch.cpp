@@ -36,7 +36,7 @@ auto active_comment(std::string_view comment) -> std::string_view {
 }
 
 // The side effect of one line's comments: Python, or a file written.
-auto comment_refusal(std::string_view line) -> LocalizedReason {
+auto comment_refusal(std::string_view line) -> std::optional<PreviewStopReason> {
   std::string start;
   for (const char c : line) {
     if (std::isspace(static_cast<unsigned char>(c)) != 0)
@@ -46,8 +46,7 @@ auto comment_refusal(std::string_view line) -> LocalizedReason {
       break;
   }
   if (start == ";py,")
-    return {"a `;py,` line runs Python in the interpreter",
-            MessageKey{"backend.previewEngine.stopPythonLine"}};
+    return PreviewStopReason{KnownPreviewStop::python_line};
   for (std::size_t i = 0; i < line.size(); ++i) {
     if (line[i] == ';')
       break;
@@ -59,12 +58,9 @@ auto comment_refusal(std::string_view line) -> LocalizedReason {
     const auto comment = line.substr(i + 1, end - i - 1);
     const auto word = active_comment(comment);
     if (word.starts_with("py"))
-      return {std::format("a ({}...) comment runs Python in the interpreter", word),
-              MessageKey{"backend.previewEngine.stopPythonComment", {{"word", std::string(word)}}}};
+      return PreviewStopReason{KnownPreviewStop::python_comment, std::string(word)};
     if (word.starts_with("log") || word.starts_with("probe"))
-      return {std::format("a ({}...) comment writes a file", word),
-              MessageKey{"backend.previewEngine.stopFileWritingComment",
-                         {{"word", std::string(word)}}}};
+      return PreviewStopReason{KnownPreviewStop::file_writing_comment, std::string(word)};
     i = end;
   }
   return {};
@@ -189,15 +185,11 @@ auto first_forbidden_line(std::string_view text) -> std::optional<Forbidden> {
   for (int number = 1; !text.empty(); ++number) {
     const auto end = text.find('\n');
     const auto line = text.substr(0, end);
-    if (auto reason = comment_refusal(line); !reason.empty())
-      return Forbidden{number, std::move(reason)};
+    if (auto reason = comment_refusal(line))
+      return Forbidden{number, std::move(*reason)};
     const auto block = bare_block(line);
     if (const auto found = o_word(block); found && found->name.empty())
-      return Forbidden{number,
-                       {"an O word whose name is computed or is not plainly a name "
-                        "(letters, digits, `_`, `-`, `.`): the interpreter would look "
-                        "for a file by it",
-                        MessageKey{"backend.previewEngine.stopOwordName"}}};
+      return Forbidden{number, {KnownPreviewStop::unsafe_o_word_name}};
     text.remove_prefix(end == std::string_view::npos ? text.size() : end + 1);
   }
   return {};
@@ -307,38 +299,34 @@ auto first_rigid_tap_line(std::string_view text, const std::function<bool()>& ca
   return {};
 }
 
-auto refused_block(std::string_view line) -> std::optional<std::string> {
+auto refused_block(std::string_view line) -> std::optional<PreviewStopReason> {
   // The comments first: an active one is not an ordinary comment, whatever it holds.
-  if (auto reason = comment_refusal(line); !reason.empty())
-    return std::move(reason.text);
+  if (auto reason = comment_refusal(line))
+    return reason;
   const auto block = bare_block(line);
   // The one parameter whose value the preview's interpreter has differently by design.
   if (block.find("#<_task>") != std::string::npos)
-    return std::string("reads the _task parameter, which is 1 on the machine and 0 in the "
-                       "preview: the program can act differently in each");
+    return PreviewStopReason{KnownPreviewStop::task_parameter};
   // The preview's interpreter has no INI or HAL values (INI_VARS and HAL_PIN_VARS are off).
   if (block.find("#<_ini[") != std::string::npos || block.find("#<_hal[") != std::string::npos)
-    return std::string("reads an INI or HAL value (#<_ini[...]>, #<_hal[...]>), which the "
-                       "preview does not have");
+    return PreviewStopReason{KnownPreviewStop::ini_or_hal_parameter};
   // Task keeps global named parameters from earlier programs and MDI blocks; the preview's
   // interpreter starts without them, so EXISTS can answer differently.
   if (block.find("exists[#<_") != std::string::npos)
-    return std::string("asks whether a global parameter (#<_...>) exists: on the machine it "
-                       "can exist from an earlier program or MDI block, which the preview does "
-                       "not know");
+    return PreviewStopReason{KnownPreviewStop::global_parameter_exists};
   const auto text = words_part(block);
   if (!text) {
     if (after_line_number(block).starts_with("o["))
-      return std::string("a computed O word: programs with computed names are not previewed");
+      return PreviewStopReason{KnownPreviewStop::computed_o_word};
     return {};
   }
   for (const auto& word : words_of(*text)) {
     if (word.letter != 'g')
       continue;
     if (word.computed)
-      return std::string("a computed G word: which code runs is not known before it does");
+      return PreviewStopReason{KnownPreviewStop::computed_g_word};
     if (tenths_of(word) == 923)
-      return std::string("G92.3 restores an offset saved in the parameter file");
+      return PreviewStopReason{KnownPreviewStop::restore_g92};
   }
   return {};
 }

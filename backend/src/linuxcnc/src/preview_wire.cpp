@@ -70,6 +70,8 @@ auto stop_argument_kind(KnownPreviewStop reason) -> StopArgumentKind {
   case KnownPreviewStop::parameter_exists:
   case KnownPreviewStop::inherited_motion:
   case KnownPreviewStop::remapped_code:
+  case KnownPreviewStop::python_comment:
+  case KnownPreviewStop::file_writing_comment:
     return StopArgumentKind::token;
   default:
     return StopArgumentKind::none;
@@ -82,6 +84,8 @@ auto valid_stop_token(std::string_view token) -> bool {
     return byte > 0x20 && byte != 0x7f;
   });
 }
+
+} // namespace
 
 auto preview_stop_message(KnownPreviewStop reason, const PreviewStopArgument& argument)
     -> LocalizedReason {
@@ -176,9 +180,49 @@ auto preview_stop_message(KnownPreviewStop reason, const PreviewStopArgument& ar
     return {"an O word in a subroutine definition belongs to a block outside it: which lines "
             "run is not known to the preview",
             MessageKey{"backend.previewEngine.stopDefinitionBlock"}};
+  case KnownPreviewStop::task_parameter:
+    return {"reads the _task parameter, which is 1 on the machine and 0 in the preview: "
+            "the program can act differently in each",
+            MessageKey{"backend.previewEngine.stopTask"}};
+  case KnownPreviewStop::ini_or_hal_parameter: {
+    const std::string names = "#<_ini[...]>, #<_hal[...]>";
+    return {std::format("reads an INI or HAL value ({}), which the preview does not have", names),
+            MessageKey{"backend.previewEngine.stopIniHal", {{"names", names}}}};
+  }
+  case KnownPreviewStop::global_parameter_exists: {
+    const std::string name = "#<_...>";
+    return {std::format("asks whether a global parameter ({}) exists: on the machine it can exist "
+                        "from an earlier program or MDI block, which the preview does not know",
+                        name),
+            MessageKey{"backend.previewEngine.stopExists", {{"name", name}}}};
+  }
+  case KnownPreviewStop::computed_o_word:
+    return {"a computed O word: programs with computed names are not previewed",
+            MessageKey{"backend.previewEngine.stopComputedOword"}};
+  case KnownPreviewStop::computed_g_word:
+    return {"a computed G word: which code runs is not known before it does",
+            MessageKey{"backend.previewEngine.stopComputedGword"}};
+  case KnownPreviewStop::restore_g92:
+    return {"G92.3 restores an offset saved in the parameter file",
+            MessageKey{"backend.previewEngine.stopG92Restore"}};
+  case KnownPreviewStop::python_line:
+    return {"a `;py,` line runs Python in the interpreter",
+            MessageKey{"backend.previewEngine.stopPythonLine"}};
+  case KnownPreviewStop::python_comment:
+    return {std::format("a ({}...) comment runs Python in the interpreter", text),
+            MessageKey{"backend.previewEngine.stopPythonComment", {{"word", text}}}};
+  case KnownPreviewStop::file_writing_comment:
+    return {std::format("a ({}...) comment writes a file", text),
+            MessageKey{"backend.previewEngine.stopFileWritingComment", {{"word", text}}}};
+  case KnownPreviewStop::unsafe_o_word_name:
+    return {"an O word whose name is computed or is not plainly a name "
+            "(letters, digits, `_`, `-`, `.`): the interpreter would look for a file by it",
+            MessageKey{"backend.previewEngine.stopOwordName"}};
   }
   return {};
 }
+
+namespace {
 
 auto valid_stop_source(const PreviewStopSource& source) -> bool {
   return source.line > 0 && !source.file.empty() && source.file.size() <= 255 &&
@@ -559,7 +603,8 @@ auto write_preview_stop(int line, KnownPreviewStop reason,
   const bool earlier =
       reason <= KnownPreviewStop::machine_m_code &&
       (version == "3" || (!source && (version == "2" || (version == "1" && !numeric_argument))));
-  const bool coded = version == preview_stop_codes_version || earlier;
+  const bool coded = version == preview_stop_codes_version ||
+                     (version == "4" && reason <= KnownPreviewStop::cross_scope_o_word) || earlier;
   if (!coded || (source && !valid_stop_source(*source)) || (token && !valid_stop_token(*token))) {
     auto text = preview_stop_message(reason, argument).text;
     std::ranges::replace_if(text, [](char c) { return c == '\n' || c == '\r'; }, ' ');

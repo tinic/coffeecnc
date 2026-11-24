@@ -210,6 +210,73 @@ describe('browser probe scene', () => {
     }
   })
 
+  it('calibrates the trigger radius on the bore as a ring and compensates the next bore', () => {
+    const { sim, cycle, send, result } = scene('bore')
+    expect(cycle({ action: 'bore' }).setter?.center_diameter).toBeCloseTo(19.96)
+    // The probe finds the ring centre itself. The simulated ruby is 2.02 mm, the table says 2 mm.
+    const runout = cycle({ action: 'runout', diameter: 20, outside: false }).setter?.runout
+    expect(runout).toMatchObject({ tool: 99, table_diameter: 4 })
+    expect(Object.keys(runout ?? {}).sort()).toEqual(['radius', 'table_diameter', 'tool'])
+    expect(runout?.radius.x).toBeCloseTo(0.02)
+    expect(runout?.radius.y).toBeCloseTo(0.02)
+    // A measure-only bore reports corrected faces: they lie 20 mm apart, not 19.96.
+    const faces = cycle({ action: 'bore', measure_only: true }).setter?.measured?.faces ?? []
+    const side = (direction: ProbeDirection): Vec3 | undefined => faces.find(face => face.direction === direction)?.machine
+    const [front, back] = [side('y_minus'), side('y_plus')]
+    expect(front && back ? back[1] - front[1] : null).toBeCloseTo(20)
+    // The compensated bore reads the true diameter.
+    expect(cycle({ action: 'bore' }).setter?.center_diameter).toBeCloseTo(20)
+    expect(sim.status().offsets.g5x.slice(0, 2).map(value => Math.round(value * 1000) / 1000)).toEqual([155, 108])
+    // A 3-point bore is corrected along each heading, also measure-only, and once.
+    expect(cycle({ action: 'bore_arc', angles: [0, 120, 240] }).setter?.center_diameter).toBeCloseTo(20)
+    expect(cycle({ action: 'bore_arc', angles: [-60, 30, 120], measure_only: true }).setter?.center_diameter).toBeCloseTo(20)
+    // A changed ball diameter voids it; clearing removes it.
+    const tool = sim.modal.tools.find(entry => entry.number === 99)
+    if (!tool) throw new Error('Missing probe')
+    tool.diameter = 4.04
+    expect(result(send({ type: 'fixed_setter', action: 'status' }))?.setter?.runout).toBeUndefined()
+    tool.diameter = 4
+    expect(result(send({ type: 'fixed_setter', action: 'status' }))?.setter?.runout).toBeDefined()
+    // Clear only forgets the correction: also with the machine off.
+    send({ type: 'set_machine', state: 'off' })
+    const cleared = result(send({ type: 'fixed_setter', action: 'clear_runout', tool: 99 }))
+    expect(cleared?.outcome).toBe('accepted')
+    expect(cleared?.setter?.runout).toBeUndefined()
+  })
+
+  it('refuses Clear while a probe cycle runs', () => {
+    const { sim, cycle, submit, send, result } = scene('bore')
+    cycle({ action: 'runout', diameter: 20, outside: false })
+    const bore = submit({ action: 'bore' })
+    const clear = result(send({ type: 'fixed_setter', action: 'clear_runout', tool: 99 }))
+    expect(clear?.outcome).toBe('rejected')
+    sim.advanceUntil(() => result(bore) !== undefined, 30_000)
+    expect(result(send({ type: 'fixed_setter', action: 'status' }))?.setter?.runout).toBeDefined()
+  })
+
+  it('calibrates the trigger radius on the boss as a pin', () => {
+    const { cycle } = scene('boss')
+    const runout = cycle({ action: 'runout', diameter: 24, outside: true }).setter?.runout
+    expect(runout?.radius.x).toBeCloseTo(0.02)
+    expect(runout?.radius.y).toBeCloseTo(0.02)
+  })
+
+  it('refuses a runout in a rotated system, beyond the travel or with a wrong diameter', () => {
+    const { sim, submit, result, cycle } = scene('bore')
+    cycle({ action: 'bore' })
+    sim.modal.rotations[0] = 5
+    expect(result(submit({ action: 'runout', diameter: 20, outside: false }))?.reason)
+      .toBe('Runout calibration needs a work system without rotation.')
+    sim.modal.rotations[0] = 0
+    // The 35 mm search travel does not reach the wall of a Ø72 ring: refused before any motion.
+    expect(result(submit({ action: 'runout', diameter: 72, outside: false }))?.reason)
+      .toBe('The material probe travel is shorter than the ring radius.')
+    // A 0.1 mm diameter typo is 0.05 mm on the radius, plus the 0.02 mm the ruby has.
+    const id = submit({ action: 'runout', diameter: 20.1, outside: false })
+    sim.advanceUntil(() => result(id) !== undefined, 30_000)
+    expect(result(id)?.reason).toBe('The X trigger radius correction is 0.070 mm, more than 0.05 mm. Check the diameter and the ball calibration.')
+  })
+
   it.each([0, 7.5])('maps the stock top and the pocket floor, rotated %s°, without writing', (degrees) => {
     const { sim, cycle } = scene('pocket')
     sim.modal.rotations[0] = degrees

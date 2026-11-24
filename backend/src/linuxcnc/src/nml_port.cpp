@@ -104,6 +104,21 @@ auto write_sidecar(const std::filesystem::path& path, std::string_view text) -> 
 void save_touched(const std::string& file, const TouchedOff& touched) {
   static_cast<void>(write_sidecar(file, format_touched_off(touched)));
 }
+// The touch probe's runout compensation (#247) while it still holds: for that probe, and
+// against the ball diameter the tool table gives it now.
+auto current_runout(const MachineConfig& config,
+                    const std::expected<std::string, LocalizedReason>& table)
+    -> std::optional<ProbeRunout> {
+  if (!config.touch_probe_tool || !table)
+    return std::nullopt;
+  const auto contents = read_text_file(config.probe_runout_file(), 512);
+  const auto saved = contents ? parse_probe_runout(*contents) : std::nullopt;
+  const auto diameter = tool_diameter(*table, *config.touch_probe_tool);
+  if (!saved || saved->tool != *config.touch_probe_tool || !diameter ||
+      !(std::abs(*diameter * config.millimetres_per_unit - saved->table_diameter_mm) <= 1e-4))
+    return std::nullopt;
+  return saved;
+}
 
 auto load_spindle_tool(const std::filesystem::path& path) -> std::optional<int> {
   const auto contents = read_text_file(path.string(), 32);
@@ -265,41 +280,9 @@ auto joint_jog_refusal(const MachineConfig& config, Axis axis) -> LocalizedReaso
                      {{"axis", axis_name}, {"motors", motor_count}}}};
 }
 
-struct ProbeLine {
-  std::size_t axis;
-  double sign;
-  std::array<double, 3> forward; // Signed direction in machine axes.
-
-  auto distance(const std::array<double, 3>& from, const std::array<double, 3>& to) const
-      -> double {
-    return (to[0] - from[0]) * forward[0] + (to[1] - from[1]) * forward[1] +
-           (to[2] - from[2]) * forward[2];
-  }
-
-  auto advance(std::array<double, 3> point, double travel) const -> std::array<double, 3> {
-    for (std::size_t i = 0; i < point.size(); ++i)
-      point[i] += travel * forward[i];
-    return point;
-  }
-
-  auto word() const -> char { return "XYZ"[axis]; }
-};
-
-auto probe_line(ProbeDirection direction, double rotation_xy) -> ProbeLine {
-  const double angle = rotation_xy * std::numbers::pi / 180;
-  const double sign =
-      direction == ProbeDirection::x_plus || direction == ProbeDirection::y_plus ? 1.0 : -1.0;
-  switch (direction) {
-  case ProbeDirection::x_minus:
-  case ProbeDirection::x_plus:
-    return {0, sign, {sign * std::cos(angle), sign * std::sin(angle), 0}};
-  case ProbeDirection::y_minus:
-  case ProbeDirection::y_plus:
-    return {1, sign, {-sign * std::sin(angle), sign * std::cos(angle), 0}};
-  case ProbeDirection::z_top:
-    return {2, -1, {0, 0, -1}};
-  }
-  std::unreachable();
+// The line `move` searches along (core search_line): its heading when it has one.
+auto search_line(const FixedSetterMove& move, double rotation_xy) -> ProbeLine {
+  return coffeecnc::search_line(move.material, move.heading_deg, rotation_xy);
 }
 
 } // namespace
@@ -1541,11 +1524,8 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
     return std::isfinite(a) && std::abs(a - b) <= tolerance_mm;
   };
   const auto& c = before.controller;
+  const auto line = search_line(move, before.rotation_xy);
   // A heading is a search along any XY direction of the work system: like a rotated one.
-  const auto line =
-      move.heading_deg
-          ? probe_line(ProbeDirection::x_plus, before.rotation_xy + *move.heading_deg)
-          : probe_line(move.material.value_or(ProbeDirection::z_top), before.rotation_xy);
   const bool rotated =
       material && line.axis != 2 && (before.rotation_xy != 0 || move.heading_deg.has_value());
   auto search_start = move.approach.value_or(move.start);
@@ -2074,6 +2054,15 @@ auto NmlPort::fixed_setter_available() const -> bool {
 
 auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
                            const Wanted& wanted) -> std::expected<SetterState, std::string> {
+  auto state = setter_cycle(request, epoch, wanted);
+  // What compensates the touch probe's XY results now, after a runout calibration too.
+  if (state)
+    state->runout = current_runout(impl_->config, impl_->read_tool_table());
+  return state;
+}
+
+auto NmlPort::setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
+                           const Wanted& wanted) -> std::expected<SetterState, std::string> {
   const auto limits = impl_->config.fixed_setter;
   if (!limits || impl_->hal == nullptr)
     return std::unexpected("The fixed setter is unavailable.");
@@ -2121,6 +2110,19 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
   if (request.action == SetterAction::status)
     return SetterState{calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,
                        std::move(current_marks)};
+  if (request.action == SetterAction::clear_runout) {
+    // Only removes the file: any tool, at rest or not. The session refuses it while a probe
+    // cycle runs.
+    const auto& probe_tool = impl_->config.touch_probe_tool;
+    if (!probe_tool || request.tool != *probe_tool)
+      return std::unexpected("Only the touch probe has a runout compensation to clear.");
+    std::error_code error;
+    std::filesystem::remove(impl_->config.probe_runout_file(), error);
+    if (error)
+      return std::unexpected("Could not remove the saved runout compensation.");
+    return SetterState{calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,
+                       std::move(current_marks)};
+  }
 
   const auto remember = [&]() {
     save_touched(impl_->config.touched_off_file(),
@@ -2163,6 +2165,22 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
   const bool boss_arc = request.action == SetterAction::boss_arc;
   const bool angle = request.action == SetterAction::angle;
   const bool material = is_material_probe(request.action);
+  const bool runout_calibration = request.action == SetterAction::runout;
+  // The touch probe's runout compensation (#247) moves each XY contact of every probe action
+  // but the two calibrations, which measure the uncompensated ball.
+  const auto runout = ball || runout_calibration ? std::nullopt
+                                                 : current_runout(impl_->config, table);
+  const auto probe = [&](const FixedSetterMove& move, const Wanted& still)
+      -> std::expected<FixedSetterContact, std::string> {
+    auto contact = probe_fixed_setter(move, still);
+    const auto line = search_line(move, before.rotation_xy);
+    if (contact && runout && move.material && line.axis != 2 && move.tool == runout->tool) {
+      const auto shift = runout->correction(line.forward[0], line.forward[1]);
+      contact->machine[0] += shift[0];
+      contact->machine[1] += shift[1];
+    }
+    return contact;
+  };
   if (material) {
     const auto& probe_tool = impl_->config.touch_probe_tool;
     if (!probe_tool || limits->latch_feed_mm_min <= 0 || limits->latch_backoff_mm <= 0)
@@ -2426,6 +2444,115 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
   const auto encloses_start = [&](std::size_t axis, double low, double high) {
     return low < start_frame[axis] && start_frame[axis] < high;
   };
+  if (runout_calibration) {
+    // Stylus runout (#247): a ring from inside or a pin from outside, of known diameter. A first
+    // pass finds the centre: X through the start, then Y through the X midpoint. A second pass
+    // probes +X, -X, +Y and -Y through that centre. The mean of opposite directions is the
+    // trigger radius correction per axis. The ball's eccentricity from the spindle axis cancels
+    // in it and is not kept: without spindle orientation its direction is not known later.
+    if (rotated)
+      return std::unexpected("Runout calibration needs a work system without rotation.");
+    if (frame.wcs < 1 || frame.wcs > 9)
+      return std::unexpected("The active work coordinate system is unavailable.");
+    const double diameter = request.gauge_width_mm;
+    if (!(diameter >= 2 && diameter <= 200))
+      return std::unexpected("Enter the ring or pin diameter, 2 to 200 mm.");
+    const double radius = tool_diameter(*table, tool).value_or(0) * machine_scale / 2;
+    if (!std::isfinite(radius) || radius <= 0)
+      return std::unexpected("Set the probe ball diameter in the tool table first.");
+    const auto& geometry = limits->material_geometry;
+    const double top = before.controller.axes[2].machine - before.work[2];
+    const double clearance = std::max(request.start[2], top + geometry.clearance_mm);
+    const double depth = top - radius - geometry.depth_mm;
+    const double outside = geometry.reach_mm + radius + geometry.margin_mm;
+    if (request.outside) {
+      if (!std::ranges::contains(current_marks, tool) ||
+          std::abs(before.tool_offset[2] - previous_length) > 0.001 ||
+          !std::ranges::contains(before.active_codes, "G43"))
+        return std::unexpected(std::format(
+            "Touch off T{} and apply its length first: probing beside the work uses Z0 as the top.",
+            tool));
+      if (!std::isfinite(top) || request.start[2] < top + radius)
+        return std::unexpected("Start with the probe above the top of the work.");
+    }
+    if (!runout_travel_reaches(request.outside, diameter, outside, radius,
+                               limits->material_travel_mm))
+      return std::unexpected(request.outside
+                                 ? "The material probe travel is too short to probe beside the work."
+                                 : "The material probe travel is shorter than the ring radius.");
+    // The ball centre contact along `direction`, aimed through `through` (machine XY).
+    const auto touch = [&](ProbeDirection direction, std::array<double, 2> through)
+        -> std::expected<std::array<double, 2>, std::string> {
+      const auto line = probe_line(direction, 0);
+      const auto* s = impl_->stat();
+      if (s == nullptr || impl_->status.link() != Link::live)
+        return std::unexpected("Controller status was lost during the runout calibration.");
+      const auto status = to_status(*s, impl_->config, impl_->hal, Link::live);
+      FixedSetterMove move{.tool = tool,
+                           .start = {status.controller.axes[0].machine,
+                                     status.controller.axes[1].machine,
+                                     status.controller.axes[2].machine},
+                           .travel_mm = limits->material_travel_mm,
+                           .feed_mm_min = limits->feed_mm_min,
+                           .material = direction};
+      if (request.outside) {
+        const double away = diameter / 2 + outside;
+        move.approach = std::array{through[0] - line.forward[0] * away,
+                                   through[1] - line.forward[1] * away, depth};
+        move.clearance_z = clearance;
+        move.return_to_clearance = true;
+      } else {
+        // Inside the ring a straight traverse at the start height stays clear of its wall.
+        move.approach = std::array{through[0], through[1], request.start[2]};
+      }
+      const auto contact = probe(move, wanted);
+      if (!contact)
+        return std::unexpected(std::format("{}{} face: {}", line.sign > 0 ? "+" : "−",
+                                           line.word(), contact.error()));
+      return std::array{contact->machine[0], contact->machine[1]};
+    };
+    constexpr std::array directions{ProbeDirection::x_plus, ProbeDirection::x_minus,
+                                    ProbeDirection::y_plus, ProbeDirection::y_minus};
+    std::array<std::array<double, 2>, 4> contacts{};
+    // Four contacts: X through `through`, then Y through the X midpoint.
+    const auto pass = [&](std::array<double, 2> through) -> std::expected<void, std::string> {
+      for (std::size_t i = 0; i < directions.size(); ++i) {
+        if (i == 2)
+          through[0] = (contacts[0][0] + contacts[1][0]) / 2;
+        const auto contact = touch(directions.at(i), through);
+        if (!contact)
+          return std::unexpected(contact.error());
+        contacts.at(i) = *contact;
+      }
+      return {};
+    };
+    if (auto first = pass({request.start[0], request.start[1]}); !first)
+      return std::unexpected(first.error());
+    if (auto second = pass({(contacts[0][0] + contacts[1][0]) / 2,
+                            (contacts[2][1] + contacts[3][1]) / 2});
+        !second)
+      return std::unexpected(second.error());
+    // The true surface is half the diameter beyond (ring) or before (pin) the centre along the
+    // travel; the uncompensated one is the contact plus the table radius. The centre, and with
+    // it the eccentricity, cancels in the mean of opposite directions.
+    const double half = request.outside ? -diameter / 2 : diameter / 2;
+    const std::array span{(contacts[0][0] - contacts[1][0]) / 2,
+                          (contacts[2][1] - contacts[3][1]) / 2};
+    ProbeRunout calibrated{.tool = tool, .table_diameter_mm = 2 * radius, .radius_mm = {}};
+    for (std::size_t axis = 0; axis < span.size(); ++axis) {
+      const double correction = half - span.at(axis) - radius;
+      if (!std::isfinite(correction) || std::abs(correction) > max_runout_mm)
+        return std::unexpected(std::format(
+            "The {} trigger radius correction is {:.3f} mm, more than {} mm. Check the diameter "
+            "and the ball calibration.",
+            "XY"[axis], correction, max_runout_mm));
+      calibrated.radius_mm.at(axis) = correction;
+    }
+    if (!write_sidecar(impl_->config.probe_runout_file(), format_probe_runout(calibrated)))
+      return std::unexpected("Could not save the runout compensation.");
+    return SetterState{calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,
+                       std::move(current_marks)};
+  }
   if (request.action == SetterAction::height_map) {
     // A Z height map (#247): Z top at each point of the grid, row by row and back again, with a
     // traverse at the clearance between them. Every point's search start and end, and the lift,
@@ -2726,7 +2853,7 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
       } else if (!back_at(status, request.start)) {
         return std::unexpected("The probe did not return to the confirmed point inside the feature.");
       }
-      const auto contact = probe_fixed_setter(move, wanted);
+      const auto contact = probe(move, wanted);
       // The physical face is beyond the centre of the ball in the direction of travel.
       if (!contact)
         return std::unexpected(std::format("{}{} face: {}", line.sign > 0 ? "+" : "−",
@@ -2786,7 +2913,7 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
     const auto contact = [&](const std::array<double, 3>& from,
                              std::optional<std::array<double, 3>> approach)
         -> std::expected<std::array<double, 3>, std::string> {
-      const auto found = probe_fixed_setter({.tool = tool,
+      const auto found = probe({.tool = tool,
                                              .start = from,
                                              .travel_mm = limits->material_travel_mm,
                                              .feed_mm_min = limits->feed_mm_min,
@@ -2872,7 +2999,7 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
                           std::optional<std::array<double, 3>> approach)
         -> std::expected<double, std::string> {
       const auto line = probe_line(direction, before.rotation_xy);
-      const auto contact = probe_fixed_setter({.tool = tool,
+      const auto contact = probe({.tool = tool,
                                                .start = from,
                                                .travel_mm = limits->material_travel_mm,
                                                .feed_mm_min = limits->feed_mm_min,
@@ -2941,13 +3068,14 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
       const std::array from{reading.controller.axes[0].machine, reading.controller.axes[1].machine,
                             reading.controller.axes[2].machine};
       const double heading = request.angles_deg.at(i);
-      const auto contact = probe_fixed_setter({.tool = tool,
-                                               .start = i == 0 ? request.start : from,
-                                               .travel_mm = limits->material_travel_mm,
-                                               .feed_mm_min = limits->feed_mm_min,
-                                               .material = ProbeDirection::x_plus,
-                                               .heading_deg = heading},
-                                              wanted);
+      // Through the runout wrapper: corrected along the heading, as every other contact.
+      const auto contact = probe({.tool = tool,
+                                  .start = i == 0 ? request.start : from,
+                                  .travel_mm = limits->material_travel_mm,
+                                  .feed_mm_min = limits->feed_mm_min,
+                                  .material = ProbeDirection::x_plus,
+                                  .heading_deg = heading},
+                                 wanted);
       if (!contact)
         return std::unexpected(
             std::format("Contact {} at {:.1f}°: {}", i + 1, heading, contact.error()));
@@ -3013,15 +3141,15 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
       auto approach = base.value_or(start_frame);
       approach[line.axis] -= line.sign * offset;
       approach[2] = depth;
-      const auto contact = probe_fixed_setter({.tool = tool,
-                                               .start = from,
-                                               .travel_mm = limits->material_travel_mm,
-                                               .feed_mm_min = limits->feed_mm_min,
-                                               .approach = to_machine(approach),
-                                               .clearance_z = clearance,
-                                               .material = direction,
-                                               .return_to_clearance = true},
-                                              wanted);
+      const auto contact = probe({.tool = tool,
+                                  .start = from,
+                                  .travel_mm = limits->material_travel_mm,
+                                  .feed_mm_min = limits->feed_mm_min,
+                                  .approach = to_machine(approach),
+                                  .clearance_z = clearance,
+                                  .material = direction,
+                                  .return_to_clearance = true},
+                                 wanted);
       if (!contact)
         return std::unexpected(contact.error());
       record(direction, contact->machine, radius);
@@ -3046,16 +3174,16 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
         if (!from)
           return std::unexpected("Controller status was lost between the boss faces.");
         const double heading = request.angles_deg.at(i);
-        const auto contact = probe_fixed_setter({.tool = tool,
-                                                 .start = *from,
-                                                 .travel_mm = limits->material_travel_mm,
-                                                 .feed_mm_min = limits->feed_mm_min,
-                                                 .approach = approaches.at(i),
-                                                 .clearance_z = clearance,
-                                                 .material = ProbeDirection::x_plus,
-                                                 .return_to_clearance = true,
-                                                 .heading_deg = heading + 180},
-                                                wanted);
+        const auto contact = probe({.tool = tool,
+                                    .start = *from,
+                                    .travel_mm = limits->material_travel_mm,
+                                    .feed_mm_min = limits->feed_mm_min,
+                                    .approach = approaches.at(i),
+                                    .clearance_z = clearance,
+                                    .material = ProbeDirection::x_plus,
+                                    .return_to_clearance = true,
+                                    .heading_deg = heading + 180},
+                                   wanted);
         if (!contact)
           return std::unexpected(
               std::format("Contact {} at {:.1f}°: {}", i + 1, heading, contact.error()));
@@ -3197,7 +3325,7 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
         return std::unexpected(
             "Set the probe ball diameter in the tool table before probing an edge.");
     }
-    const auto contact = probe_fixed_setter({.tool = tool,
+    const auto contact = probe({.tool = tool,
                                              .start = request.start,
                                              .travel_mm = limits->material_travel_mm,
                                              .feed_mm_min = limits->feed_mm_min,
@@ -3287,7 +3415,7 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
     if (limits->clearance_mm > 0)
       move.retract_z = calibration->clearance_z;
   }
-  const auto contact = probe_fixed_setter(move, wanted);
+  const auto contact = probe(move, wanted);
   if (!contact)
     return std::unexpected(checking ? std::format("T{} check failed. {}", tool, contact.error())
                                     : contact.error());

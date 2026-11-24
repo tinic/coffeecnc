@@ -382,6 +382,9 @@ public:
 
 private:
   struct Impl;
+  // fixed_setter without the runout compensation it reports.
+  [[nodiscard]] auto setter_cycle(const FixedSetterRequest& request, SetterEpoch epoch,
+                                  const Wanted& wanted) -> std::expected<SetterState, std::string>;
   [[nodiscard]] auto open_program_file(std::string_view path, const Wanted& wanted,
                                        bool publish_load = false) -> ActionResult;
   [[nodiscard]] auto start_checked(const PreviewInputs&, const Wanted&, const Wanted&,

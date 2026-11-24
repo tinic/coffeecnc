@@ -54,6 +54,11 @@ enum class SetterAction : std::uint8_t {
   boss_arc,
   angle,
   apply_angle,
+  // Stylus runout (#247): finds the centre of a ring or pin of known diameter, then measures it
+  // in +X, -X, +Y and -Y and keeps the trigger radius correction per axis for the touch probe;
+  // clear_runout forgets it.
+  runout,
+  clear_runout,
   // A Z height map (#247): Z top at every point of a grid over an XY rectangle. Writes nothing.
   height_map,
   // Sets the work origin of a measure-only result (FixedSetterRequest::measure_only).
@@ -66,6 +71,89 @@ enum class ProbeDirection : std::uint8_t { z_top, x_minus, x_plus, y_minus, y_pl
 inline auto wrapped_rotation(double degrees) -> double {
   const double turn = std::remainder(degrees, 360.0);
   return turn == -180.0 ? 180.0 : turn;
+}
+
+// A probe search line in machine coordinates: the work axis it measures, its sign along that
+// axis, and its direction in machine axes.
+struct ProbeLine {
+  std::size_t axis;
+  double sign;
+  std::array<double, 3> forward; // Signed direction in machine axes.
+
+  [[nodiscard]] auto distance(const std::array<double, 3>& from,
+                              const std::array<double, 3>& to) const -> double {
+    return (to[0] - from[0]) * forward[0] + (to[1] - from[1]) * forward[1] +
+           (to[2] - from[2]) * forward[2];
+  }
+
+  [[nodiscard]] auto advance(std::array<double, 3> point, double travel) const
+      -> std::array<double, 3> {
+    for (std::size_t i = 0; i < point.size(); ++i)
+      point.at(i) += travel * forward.at(i);
+    return point;
+  }
+
+  [[nodiscard]] auto word() const -> char { return "XYZ"[axis]; }
+};
+
+// The line along `direction` of the work axes, in a work system turned by `rotation_xy` degrees.
+inline auto probe_line(ProbeDirection direction, double rotation_xy) -> ProbeLine {
+  const double angle = rotation_xy * std::numbers::pi / 180;
+  const double sign =
+      direction == ProbeDirection::x_plus || direction == ProbeDirection::y_plus ? 1.0 : -1.0;
+  switch (direction) {
+  case ProbeDirection::x_minus:
+  case ProbeDirection::x_plus:
+    return {0, sign, {sign * std::cos(angle), sign * std::sin(angle), 0}};
+  case ProbeDirection::y_minus:
+  case ProbeDirection::y_plus:
+    return {1, sign, {-sign * std::sin(angle), sign * std::cos(angle), 0}};
+  case ProbeDirection::z_top:
+    break;
+  }
+  return {2, -1, {0, 0, -1}};
+}
+
+// The line a probe move searches along in machine coordinates, in a work system turned by
+// `rotation_xy`: along `material` of the work axes (Z top without one), or with a heading, along
+// the work +X axis turned by `heading_deg` (the contacts of a three-point bore or boss). The
+// runout compensation takes the same line as the search, so a contact is corrected along its
+// actual travel.
+inline auto search_line(std::optional<ProbeDirection> material, std::optional<double> heading_deg,
+                        double rotation_xy) -> ProbeLine {
+  if (heading_deg)
+    return probe_line(ProbeDirection::x_plus, rotation_xy + *heading_deg);
+  return probe_line(material.value_or(ProbeDirection::z_top), rotation_xy);
+}
+
+// The trigger radius correction of the touch probe (#247): per machine axis, how far the probed
+// surface lies beyond where the ball radius of the tool table puts it, mm. Measured on a ring or
+// pin of known diameter after the ball calibration, against that table diameter.
+// Only the radius is kept. The ball's eccentricity from the spindle axis turns with the spindle,
+// and no configured machine can orient the spindle (no M19): after a spindle run, a tool change
+// or a turn by hand, a stored eccentricity points the wrong way and doubles the error.
+struct ProbeRunout {
+  int tool{};
+  double table_diameter_mm{}; // the ball diameter the compensation is relative to
+  std::array<double, 2> radius_mm{}; // X, Y
+  friend auto operator==(const ProbeRunout&, const ProbeRunout&) -> bool = default;
+  // What a ball-centre contact of a search along the machine XY unit direction (ux, uy) moves
+  // by: the radius correction along the travel, between the axes by the squared direction
+  // cosines. A contact moved so gives the surface with the table radius.
+  [[nodiscard]] auto correction(double ux, double uy) const -> std::array<double, 2> {
+    const double along = radius_mm[0] * ux * ux + radius_mm[1] * uy * uy;
+    return {along * ux, along * uy};
+  }
+};
+// More than this per axis is not the trigger radius left after a ball calibration: a wrong
+// gauge diameter (19.00 entered for 19.05 is 0.025 mm) or no ball calibration.
+constexpr double max_runout_mm = 0.05;
+// Before any motion: whether the material search travel reaches the gauge. In a ring the ball
+// searches from near its centre to the wall; beside a pin it starts `outside` beyond the
+// surface, as for a boss (reach, margin and the ball radius).
+constexpr auto runout_travel_reaches(bool pin, double diameter_mm, double outside_mm,
+                                     double ball_radius_mm, double travel_mm) -> bool {
+  return pin ? travel_mm >= outside_mm + ball_radius_mm : travel_mm >= diameter_mm / 2;
 }
 
 // Three probing directions on a circle, degrees counterclockwise from the work +X axis: the
@@ -190,8 +278,10 @@ struct FixedSetterRequest {
   ProbeDirection y_direction{ProbeDirection::y_plus};
   // For a ball calibration, the width in X of the gauge the probe starts over; for a boss, its
   // approximate diameter; for a ridge, the approximate width; for an edge angle, how far apart
-  // along the edge it probes. Millimetres.
+  // along the edge it probes; for a runout, the ring's or pin's known diameter. Millimetres.
   double gauge_width_mm{};
+  // For a runout: a pin probed from outside rather than a ring from inside.
+  bool outside{};
   // For a height map: the rectangle's corners X, Y and X, Y in the active work system, the
   // grid step and the work Z to traverse at between the points. Millimetres.
   std::array<double, 4> grid_mm{};
@@ -324,6 +414,9 @@ struct SetterState {
   std::optional<EdgeRotation> edge_rotation{};
   // Physical widths from the probed faces, in mm. A slot or ridge has only one measured axis.
   std::array<std::optional<double>, 2> feature_size{};
+  // The touch probe's runout compensation in use for its XY results; none when not calibrated
+  // or no longer valid (another ball diameter).
+  std::optional<ProbeRunout> runout{};
   // After a height map: each point's top, in the work system and in machine coordinates, mm;
   // row by row from the first corner. A map that stopped after some points is partial: it keeps
   // the points measured so far, and `partial` says why it stopped.

@@ -11,7 +11,7 @@ export type MaterialGuideTarget =
   | { kind: 'pocket' }
   | { kind: 'slot'; axis: ProbeAxis }
   | { kind: 'ridge'; axis: ProbeAxis }
-  | { kind: 'bore' | 'boss' | 'angle' | 'ball' | 'bore_arc' | 'boss_arc' }
+  | { kind: 'bore' | 'boss' | 'angle' | 'ball' | 'bore_arc' | 'boss_arc' | 'runout_ring' | 'runout_pin' }
 export type ProbeGuideTarget = MaterialGuideTarget | { kind: 'teach' | 'measure' | 'check' }
 
 export interface ProbeGuideStep {
@@ -49,6 +49,8 @@ const inputs = {
   angle: { label: (): string => t('probe.guide.inputDistance'), initial: '50', min: 5, max: 300, signed: true },
   ridge: { label: (): string => t('probe.guide.inputRidge'), initial: '', min: 2, max: 200 },
   boss_arc: { label: (): string => t('probe.guide.inputDiameter'), initial: '', min: 2, max: 200 },
+  runout_ring: { label: (): string => t('probe.guide.inputRing'), initial: '', min: 2, max: 200 },
+  runout_pin: { label: (): string => t('probe.guide.inputPin'), initial: '', min: 2, max: 200 },
 }
 /** The three directions a 3-point cycle starts with: around the whole circle. */
 export const defaultArcAngles: Angles = [0, 120, 240]
@@ -56,7 +58,7 @@ export const defaultArcAngles: Angles = [0, 120, 240]
 /** The dimension the operator enters for this target, labelled in the panel's language. */
 export function guideInput(target: ProbeGuideTarget): GuideInput | undefined {
   if (target.kind !== 'boss' && target.kind !== 'ball' && target.kind !== 'angle' && target.kind !== 'ridge' &&
-      target.kind !== 'boss_arc') return undefined
+      target.kind !== 'boss_arc' && target.kind !== 'runout_ring' && target.kind !== 'runout_pin') return undefined
   const { label, ...input } = inputs[target.kind]
   return { ...input, label: label() }
 }
@@ -257,13 +259,32 @@ export function probeGuide(target: ProbeGuideTarget, limits: FixedSetterLimits |
       })
       break
     }
+    case 'runout_ring': {
+      // Four walls through the centre of a ring of radius 13: +X, -X, +Y, -Y.
+      title = t('probe.guide.titleRunoutRing')
+      setup = t('probe.guide.setupRunoutRing')
+      result = t('probe.guide.resultRunout')
+      object = 'bore'
+      start = [2, -3, -4]
+      datum = [0, 0, 0]
+      const wall = (axis: 0 | 1, sign: number): Face => {
+        const contact = position([0, 0, -4], axis, sign * (13 - tipRadius))
+        const name = `${sign > 0 ? '+' : '−'}${axis === 0 ? 'X' : 'Y'}`
+        return { label: t('probe.guide.wall', { side: name }), above: t('probe.guide.aboveWall', { side: name }),
+          start: [0, 0, -4], contact, surface: position(contact, axis, sign * 13), axis }
+      }
+      faces = [wall(0, 1), wall(0, -1), wall(1, 1), wall(1, -1)]
+      break
+    }
+    case 'runout_pin':
     case 'boss':
     case 'ball': {
-      const boss = target.kind === 'boss'
-      title = boss ? t('probe.guide.titleBoss') : t('probe.guide.titleBall')
-      setup = boss ? t('probe.guide.setupBoss') : t('probe.guide.setupBall')
-      result = boss ? t('probe.guide.resultDiameter') : t('probe.guide.resultBall')
-      example = boss ? t('probe.guide.exampleCentre', { diameter: '28' }) : t('probe.guide.exampleBall', { diameter: '4' })
+      const pin = target.kind === 'runout_pin'
+      const boss = target.kind === 'boss' || pin
+      title = pin ? t('probe.guide.titleRunoutPin') : boss ? t('probe.guide.titleBoss') : t('probe.guide.titleBall')
+      setup = pin ? t('probe.guide.setupRunoutPin') : boss ? t('probe.guide.setupBoss') : t('probe.guide.setupBall')
+      result = pin ? t('probe.guide.resultRunout') : boss ? t('probe.guide.resultDiameter') : t('probe.guide.resultBall')
+      example = pin ? undefined : boss ? t('probe.guide.exampleCentre', { diameter: '28' }) : t('probe.guide.exampleBall', { diameter: '4' })
       object = boss ? 'boss' : 'gauge'
       clearance = 9
       start = [0, 0, clearance]

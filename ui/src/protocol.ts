@@ -654,10 +654,23 @@ export interface SetterState {
   edge_angle?: number
   /** `rotation`: the G5x rotation applying writes, the present rotation plus `edge_angle`. */
   edge_rotation?: { measurement_id: number; wcs: number; rotation?: number }
+  /** The touch probe's runout compensation in use for its XY results (#247). */
+  runout?: ProbeRunout
   /** After a height map: every point's top, row by row from the first corner. */
   height_map?: HeightMap
   /** After a `measure_only` probe: what it found. Nothing was written. */
   measured?: SetterMeasured
+}
+
+/**
+ * The touch probe's trigger radius correction per machine axis: how far the probed surface lies
+ * beyond the table's ball radius along the travel, mm. Only the radius is kept: without spindle
+ * orientation the ball's eccentricity points another way after every spindle run or tool change.
+ */
+export interface ProbeRunout {
+  tool: number
+  table_diameter: number
+  radius: { x: number; y: number }
 }
 
 /** One measured top of a height map, in the work system and in machine XYZ, mm. */
@@ -1001,6 +1014,12 @@ export type FixedSetter = CommandBase & { type: 'fixed_setter' } & (
   /** Measures an edge's angle: the face of `direction` at the start and `spacing` mm along it. */
   | { action: 'angle'; direction: 'x_minus' | 'x_plus' | 'y_minus' | 'y_plus'; spacing: number; tool: number; x: number; y: number; z: number; measure_only?: boolean }
   | { action: 'apply_angle'; measurement_id: number; tool: number }
+  /**
+   * Calibrates the trigger radius on a ring (from inside) or pin (`outside`, below Z0) of the known
+   * `diameter`: it finds the centre, then probes +X, −X, +Y and −Y through it.
+   */
+  | { action: 'runout'; diameter: number; outside: boolean; tool: number; x: number; y: number; z: number }
+  | { action: 'clear_runout'; tool: number }
   /**
    * Z top at every point of a grid over the work rectangle `x_min`..`x_max`, `y_min`..`y_max`,
    * at most `step` apart (2 to 150 points), traversing at work Z `clearance`. Writes nothing.

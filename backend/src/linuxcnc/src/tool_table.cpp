@@ -1,5 +1,6 @@
 #include <coffeecnc/linuxcnc/tool_table.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cctype>
 #include <charconv>
@@ -220,6 +221,55 @@ auto format_touched_off(const TouchedOff& touched) -> std::string {
   for (const auto& [tool, length] : touched.tools)
     text += std::format("T{} {:.6f}\n", tool, length);
   return text;
+}
+
+auto parse_probe_runout(std::string_view text) -> std::optional<ProbeRunout> {
+  std::istringstream in{std::string(text)};
+  ProbeRunout runout;
+  std::string word;
+  if (!(in >> word >> runout.tool) || word != "tool" || runout.tool <= 0 ||
+      !(in >> word >> runout.table_diameter_mm) || word != "diameter" ||
+      !std::isfinite(runout.table_diameter_mm) || runout.table_diameter_mm <= 0 || !(in >> word))
+    return std::nullopt;
+  const auto value = [&](std::string_view name) -> std::optional<double> {
+    double read{};
+    if (word != name || !(in >> read) || !std::isfinite(read))
+      return std::nullopt;
+    // The next word, or none at the end: extraction empties it first.
+    word.clear();
+    in >> word;
+    return read;
+  };
+  if (word == "X") {
+    const auto x = value("X");
+    const auto y = x ? value("Y") : std::nullopt;
+    if (!y)
+      return std::nullopt;
+    runout.radius_mm = {*x, *y};
+  } else {
+    // A file from before radius-only storage: +X, -X, +Y, -Y and `centred`. Their means per
+    // axis are the radius correction; the half differences, an eccentricity, are dropped.
+    std::array<double, 4> along{};
+    for (std::size_t i = 0; i < along.size(); ++i) {
+      const auto read = value(std::array{"+X", "-X", "+Y", "-Y"}.at(i));
+      if (!read)
+        return std::nullopt;
+      along.at(i) = *read;
+    }
+    const auto centred = value("centred");
+    if (!centred || (*centred != 0 && *centred != 1))
+      return std::nullopt;
+    runout.radius_mm = {(along[0] + along[1]) / 2, (along[2] + along[3]) / 2};
+  }
+  if (!word.empty() ||
+      !std::ranges::all_of(runout.radius_mm, [](double r) { return std::abs(r) <= max_runout_mm; }))
+    return std::nullopt;
+  return runout;
+}
+
+auto format_probe_runout(const ProbeRunout& runout) -> std::string {
+  return std::format("tool {}\ndiameter {:.6f}\nX {:.6f}\nY {:.6f}\n", runout.tool,
+                     runout.table_diameter_mm, runout.radius_mm[0], runout.radius_mm[1]);
 }
 
 auto restored_touched_off(std::string_view table, int reference_tool,

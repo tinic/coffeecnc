@@ -1,4 +1,4 @@
-import type { FixedSetter, ProbedPoint, ProbeDirection, SetterMeasured, SetterState, Tool, Vec3 } from '../protocol'
+import type { FixedSetter, ProbedPoint, ProbeDirection, ProbeRunout, SetterMeasured, SetterState, Tool, Vec3 } from '../protocol'
 import { demoFixture, demoProbe, demoProbeTools, demoSetter, type ProbeBlock } from './probe-fixture'
 import { toWork, type Modal } from './gcode'
 import { heightGrid } from '../height-map'
@@ -9,7 +9,7 @@ import {
 
 type XY = [number, number]
 type Lateral = Exclude<ProbeDirection, 'z_top'>
-type Cycle = Exclude<FixedSetter, { action: 'status' }>
+type Cycle = Exclude<FixedSetter, { action: 'status' | 'clear_runout' }>
 type Axis = 'X' | 'Y' | 'Z' | 'XY'
 export interface ProbeMove { target: Vec3; feed?: number; contact?: boolean }
 /** `failure` fails the cycle after its moves; with `partial` the result keeps the setter state (a stopped height map). */
@@ -117,8 +117,19 @@ function rayRound(start: Vec3, direction: XY, centre: XY, radius: number, inside
   return distance > 0 ? distance : null
 }
 
+/** More than this per axis is not the trigger radius left after a ball calibration, mm. */
+const maxRunout = 0.05
+
+/** What a ball-centre contact along machine direction `u` moves by: as runout.correction natively. */
+export function runoutCorrection(runout: ProbeRunout, [ux, uy]: XY): XY {
+  const along = runout.radius.x * ux * ux + runout.radius.y * uy * uy
+  return [along * ux, along * uy]
+}
+
 class Path {
   readonly moves: ProbeMove[] = []
+  /** The runout compensation for the contacts this cycle reports. */
+  runout: ProbeRunout | null = null
   /** Every search: where it began and the ball-centre contact. */
   readonly contacts: { from: Vec3; contact: Vec3 }[] = []
   constructor(readonly start: Vec3) {}
@@ -145,7 +156,9 @@ function lateral(path: Path, from: Vec3, direction: XY, distance: number | null)
   if (distance === null || distance > searchTravel) return null
   const contact = along(from, direction, distance)
   path.touch(from, contact)
-  return contact
+  if (!path.runout) return contact
+  const [dx, dy] = runoutCorrection(path.runout, direction)
+  return [contact[0] + dx, contact[1] + dy, contact[2]]
 }
 
 function outside(path: Path, gaugeZ: number, from: Vec3, direction: XY, distance: number,
@@ -173,6 +186,8 @@ export class SimProbe {
   /** A measured edge: the G5x rotation applying it writes. */
   private angle: { id: number; rotation: number; frame: string } | null = null
   private angleId = 0
+  /** The probe's runout compensation, kept as the controller keeps its file. */
+  private runout: ProbeRunout | null = null
   /** A measure-only result: the machine point applying makes the origin of `axis`. */
   private feature: { id: number; point: Vec3; axis: Axis; frame: string } | null = null
   private featureId = 0
@@ -187,7 +202,17 @@ export class SimProbe {
     }
     if (!this.measured.has(demoSetter.reference_tool)) this.measured.clear()
     if (!this.measured.has(this.teacher)) this.calibration = null
-    return { calibration: this.calibration, measurement: null, measured_tools: [...this.measured.keys()].sort((a, b) => a - b) }
+    // Kept, as the controller keeps its file, but in use only against the same ball diameter.
+    const probe = modal.tools.find(tool => tool.number === this.runout?.tool)
+    const runout = this.runout && probe?.diameter === this.runout.table_diameter ? this.runout : null
+    return { calibration: this.calibration, measurement: null, measured_tools: [...this.measured.keys()].sort((a, b) => a - b),
+      ...(runout ? { runout } : {}) }
+  }
+
+  /** Forgets the kept runout correction, as the controller removes its file. */
+  clearRunout(modal: Modal): SetterState {
+    this.runout = null
+    return this.state(modal)
   }
 
   plan(command: Cycle, start: Vec3, modal: Modal, tool: Tool): ProbePlan | string {
@@ -220,7 +245,9 @@ export class SimProbe {
       const length = Math.hypot(contact[0] - from[0], contact[1] - from[1])
       if (length < 1e-9) return { direction: 'z_top', work: toWork(modal, contact), machine: contact }
       const unit: XY = [(contact[0] - from[0]) / length, (contact[1] - from[1]) / length]
-      const surface = along(contact, unit, tableRadius)
+      // The runout correction moves the contact along its travel, as for every result.
+      const [dx, dy] = path.runout ? runoutCorrection(path.runout, unit) : [0, 0]
+      const surface = along([contact[0] + dx, contact[1] + dy, contact[2]], unit, tableRadius)
       const [u, v] = turn(unit, -rotation)
       const direction: Lateral = Math.abs(u) >= Math.abs(v) ? (u > 0 ? 'x_plus' : 'x_minus') : (v > 0 ? 'y_plus' : 'y_minus')
       return { direction, work: toWork(modal, surface), machine: surface }
@@ -306,6 +333,7 @@ export class SimProbe {
       })
     }
     if (tool.number !== demoProbe) return 'Load T99 to probe material.'
+    if (command.action !== 'ball' && command.action !== 'runout') path.runout = state.runout ?? null
     if (command.action === 'height_map') {
       if (!applied) return 'Apply the measured T99 length before probing Z.'
       const grid = heightGrid([command.x_min, command.y_min, command.x_max, command.y_max], command.step)
@@ -428,6 +456,49 @@ export class SimProbe {
     }
 
     if (tableRadius <= 0) return 'Set the probe ball diameter first.'
+    if (command.action === 'runout') {
+      // A ring (the simulated bore) from inside or a pin (the boss) from outside: a first pass
+      // finds the centre, a second probes +X, -X, +Y and -Y through it. Only the trigger radius
+      // per axis is kept, as natively: the eccentricity cancels in it.
+      if (rotation !== 0) return 'Runout calibration needs a work system without rotation.'
+      if (!(command.diameter >= 2 && command.diameter <= 200)) return 'Enter the ring or pin diameter, 2 to 200 mm.'
+      const pin = command.outside
+      if (pin && (!applied || Math.abs(toWork(modal, [start[0], start[1], gaugeZ])[2]) > 0.1 || start[2] <= gaugeZ))
+        return 'Touch off T99 and apply its length first: probing beside the work uses Z0 as the top.'
+      const away = reach + tableRadius + margin
+      if (pin ? searchTravel < away + tableRadius : searchTravel < command.diameter / 2)
+        return pin ? 'The material probe travel is too short to probe beside the work.' : 'The material probe travel is shorter than the ring radius.'
+      const round = pin ? boss : bore
+      const ballRadius = pin ? bossRadius + rubyRadius : boreRadius - rubyRadius
+      const touch = (through: XY, direction: XY): Vec3 | null => {
+        if (pin) return outside(path, gaugeZ, [through[0], through[1], start[2]], direction, command.diameter / 2 + away,
+          at => rayRound(at, direction, round, ballRadius, false))
+        const from: Vec3 = [through[0], through[1], start[2]]
+        path.move(from)
+        return lateral(path, from, direction, rayRound(from, direction, round, ballRadius, true))
+      }
+      // X through `through`, then Y through the X midpoint.
+      const pass = (through: XY): [Vec3, Vec3, Vec3, Vec3] | null => {
+        const [xp, xm] = [touch(through, [1, 0]), touch(through, [-1, 0])]
+        if (!xp || !xm) return null
+        const midX = (xp[0] + xm[0]) / 2
+        const [yp, ym] = [touch([midX, through[1]], [0, 1]), touch([midX, through[1]], [0, -1])]
+        return yp && ym ? [xp, xm, yp, ym] : null
+      }
+      const first = pass([start[0], start[1]])
+      const contacts = first && pass([(first[0][0] + first[1][0]) / 2, (first[2][1] + first[3][1]) / 2])
+      if (!contacts) return noContact
+      const [xp, xm, yp, ym] = contacts
+      const half = (pin ? -1 : 1) * command.diameter / 2
+      const radius: [number, number] = [half - (xp[0] - xm[0]) / 2 - tableRadius, half - (yp[1] - ym[1]) / 2 - tableRadius]
+      const axis = radius.findIndex(value => !(Math.abs(value) <= maxRunout))
+      if (axis >= 0)
+        return `The ${axis === 0 ? 'X' : 'Y'} trigger radius correction is ${(radius[axis] ?? 0).toFixed(3)} mm, more than ${String(maxRunout)} mm. Check the diameter and the ball calibration.`
+      return result(() => {
+        this.runout = { tool: tool.number, table_diameter: tool.diameter, radius: { x: radius[0], y: radius[1] } }
+        return {}
+      })
+    }
     // Two frame faces as the machine point where the work system reads X0 Y0.
     const corner = (x: number, y: number): Vec3 => fromFrame([x, y, start[2]])
     if (command.action === 'bore_arc' || command.action === 'boss_arc') {

@@ -130,6 +130,16 @@ void protocol_forms() {
   require(ridge.action == SetterAction::ridge && ridge.direction == ProbeDirection::y_plus &&
               ridge.gauge_width_mm == 25.4,
           "Ridge requests carry the axis and approximate width in millimetres");
+  const auto runout = body<FixedSetterRequest>(
+      R"({"id":42,"type":"fixed_setter","action":"runout","tool":99,"x":1,"y":2,"z":3,"diameter":20,"outside":false})");
+  require(runout.action == SetterAction::runout && runout.gauge_width_mm == 20 && !runout.outside,
+          "A runout calibration names the ring diameter and its side");
+  rejected(R"({"id":42,"type":"fixed_setter","action":"runout","tool":99,"x":1,"y":2,"z":3,"diameter":20})", 42);
+  // The centre is always found: no eccentricity is kept, so there is no centred mode (#247).
+  rejected(R"({"id":42,"type":"fixed_setter","action":"runout","tool":99,"x":1,"y":2,"z":3,"diameter":20,"outside":false,"centred":true})", 42);
+  require(body<FixedSetterRequest>(R"({"id":42,"type":"fixed_setter","action":"clear_runout","tool":99})").action ==
+              SetterAction::clear_runout,
+          "Clearing the runout names only the probe");
   const auto map = body<FixedSetterRequest>(
       R"({"id":42,"type":"fixed_setter","action":"height_map","tool":99,"x":1,"y":2,"z":3,"x_min":-5,"y_min":-4,"x_max":15,"y_max":12,"step":10,"clearance":3})");
   require(map.action == SetterAction::height_map && map.grid_mm == std::array{-5.0, -4.0, 15.0, 12.0} &&

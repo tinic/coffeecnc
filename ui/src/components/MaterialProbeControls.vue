@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { translateMessage, translateResult } from '../i18n/messages'
 import { allHomed, homingActive, manualBlock, onResult, panel, send } from '../machine'
 import { homingMessage } from '../machine-block'
-import type { CommandBody, ProbeDirection, SetterMeasured, SetterState } from '../protocol'
+import type { CommandBody, HeightMap, ProbeDirection, ProbeRunout, SetterMeasured, SetterState } from '../protocol'
 import { setterState, touchedOff, type SetterStatusLine } from '../setter-state'
 import { formatLength, wcsName } from '../units'
 import MeasuredResult from './MeasuredResult.vue'
@@ -18,11 +18,10 @@ import { vTooltip } from '../tooltip'
 import HeightMapDialog from './HeightMapDialog.vue'
 import HeightMapResult from './HeightMapResult.vue'
 import { heightGrid, heightMap, heightMapPointAt, heightRange, measuredPoints, type HeightMapGrid } from '../height-map'
-import type { HeightMap } from '../protocol'
 
 const props = defineProps<{ tool: number }>()
 const { t } = useI18n()
-type Request = Extract<CommandBody, { type: 'fixed_setter'; action: 'material' | 'corner' | 'ball' | 'bore' | 'boss' | 'bore_arc' | 'boss_arc' | 'angle' | 'apply_angle' | 'apply_measurement' | 'inside_corner' | 'pocket' | 'slot' | 'ridge' | 'height_map' }>
+type Request = Extract<CommandBody, { type: 'fixed_setter'; action: 'material' | 'corner' | 'ball' | 'bore' | 'boss' | 'bore_arc' | 'boss_arc' | 'angle' | 'apply_angle' | 'apply_measurement' | 'inside_corner' | 'pocket' | 'slot' | 'ridge' | 'runout' | 'clear_runout' | 'height_map' }>
 // The button names the part face. The protocol still specifies the tool's travel.
 const surfaces = [
   { key: 'zTop', label: null, travel: 'z_top', approach: '−Z' },
@@ -118,6 +117,19 @@ function startGuide(size: number, angle: AngleEdge, angles: Angles): void {
   const target = guide.value
   guide.value = null
   if (target !== null) probe(target, size, angle, angles)
+}
+/** The trigger radius correction the controller applies to this probe's XY results. */
+const runout = computed(() => setterState.value?.runout?.tool === props.tool ? setterState.value.runout : null)
+const signed = (mm: number): string => `${mm >= 0 ? '+' : '−'}${Math.abs(mm).toFixed(3)}`
+const radiusValues = (value: ProbeRunout): { rx: string; ry: string } => ({ rx: signed(value.radius.x), ry: signed(value.radius.y) })
+const runoutValues = computed(() => runout.value ? radiusValues(runout.value) : null)
+function clearRunout(): void {
+  if (pending.value || !runout.value) return
+  choosingFeature.value = false
+  const request = { type: 'fixed_setter', action: 'clear_runout', tool: props.tool } as const
+  pending.value = request
+  line.value = { text: (): string => t('probe.materialProbe.runoutClearing'), level: 'busy' }
+  send(request)
 }
 /** A Z height map (#247): its grid dialog, and its last result for the card and the 3D view. */
 const choosingMap = shallowRef(false)
@@ -233,6 +245,7 @@ function probe(target: MaterialGuideTarget, size: number, angle: AngleEdge, angl
     if (target.kind === 'boss' || target.kind === 'boss_arc') reason = (): string => t('probe.materialProbe.touchOffBoss', { tool })
     if (target.kind === 'ridge') reason = (): string => t('probe.materialProbe.touchOffRidge', { tool })
     if (target.kind === 'ball') reason = (): string => t('probe.materialProbe.touchOffGauge', { tool })
+    if (target.kind === 'runout_pin') reason = (): string => t('probe.materialProbe.touchOffPin', { tool })
   }
   if (reason !== null || x === undefined || y === undefined || z === undefined || ![x, y, z].every(Number.isFinite)) {
     line.value = { text: reason ?? ((): string => t('probe.materialProbe.waitPosition')), level: 'blocked' }
@@ -268,6 +281,11 @@ function probe(target: MaterialGuideTarget, size: number, angle: AngleEdge, angl
       request = { ...position, action: 'boss', diameter: size }
       busy = (): string => t('probe.materialProbe.bossBusy')
       break
+    case 'runout_ring':
+    case 'runout_pin':
+      request = { ...position, action: 'runout', diameter: size, outside: target.kind === 'runout_pin' }
+      busy = (): string => t('probe.materialProbe.runoutBusy')
+        break
     case 'bore_arc':
       request = { ...position, action: 'bore_arc', angles: [...angles] }
       busy = (): string => t('probe.materialProbe.arcBoreBusy')
@@ -320,6 +338,21 @@ const removeListener = onResult((command, result) => {
   const failure = (fallback: () => string): Line => ({
     text: (): string => result.reason ? translateResult(result) : fallback(), level: 'blocked',
   })
+  if (request.action === 'runout' || request.action === 'clear_runout') {
+    if (result.outcome !== 'accepted') {
+      line.value = failure((): string => t('probe.materialProbe.noRunout'))
+      return
+    }
+    setterState.value = result.setter ?? null
+    const saved = result.setter?.runout
+    if (request.action === 'clear_runout' || !saved) {
+      line.value = { text: (): string => t('probe.materialProbe.runoutCleared'), level: 'done' }
+      return
+    }
+    const values = { tool: String(props.tool), ...radiusValues(saved) }
+    line.value = { text: (): string => t('probe.materialProbe.runoutDone', values), level: 'done' }
+    return
+  }
   if (request.action === 'height_map') {
     const map = result.setter?.height_map
     // A map that stopped after some points keeps them, labelled partial, for the card and export.
@@ -494,6 +527,13 @@ watch([
   statusRequest = { type: 'fixed_setter', action: 'status' }
   send(statusRequest)
 }, { immediate: true })
+// A tool table change (a ball calibration, an edited diameter or tool number) can void the runout
+// correction: ask again, so "In use" and Clear follow the controller.
+watch((): number | undefined => panel.toolTable?.revision, () => {
+  if (!panel.hello?.fixed_setter || panel.link !== 'live') return
+  statusRequest = { type: 'fixed_setter', action: 'status' }
+  send(statusRequest)
+})
 onBeforeUnmount(() => {
   if (pending.value) send({ type: 'abort' })
   removeListener()
@@ -595,6 +635,15 @@ onBeforeUnmount(() => {
               </button>
             </div>
           </div>
+          <div class="feature-row">
+            <span>{{ t('probe.materialProbe.runout') }}</span>
+            <div class="feature-buttons runout">
+              <button class="btn" type="button" :disabled="measureOnly" :aria-label="t('probe.materialProbe.runoutRingLabel')" @click="openGuide({ kind: 'runout_ring' })">{{ t('probe.materialProbe.runoutRing') }}</button>
+              <button class="btn" type="button" :disabled="measureOnly" :aria-label="t('probe.materialProbe.runoutPinLabel')" @click="openGuide({ kind: 'runout_pin' })">{{ t('probe.materialProbe.runoutPin') }}</button>
+              <button class="btn" type="button" :disabled="!runout" :aria-label="t('probe.materialProbe.runoutClearLabel')" @click="clearRunout">{{ t('probe.materialProbe.runoutClear') }}</button>
+            </div>
+          </div>
+          <p v-if="runoutValues" class="runout-in-use">{{ t('probe.materialProbe.runoutInUse', runoutValues) }}</p>
           <div v-for="kind in narrowFeatures" :key="kind" class="feature-row">
             <span class="feature-name">{{ kind === 'slot' ? t('probe.materialProbe.slot') : t('probe.materialProbe.ridge') }}</span>
             <div class="feature-buttons">
@@ -652,6 +701,8 @@ onBeforeUnmount(() => {
 .feature-name { text-transform: capitalize; }
 .feature-buttons { display: grid; grid-template-columns: repeat(2, minmax(44px, 1fr)); gap: 6px; }
 .feature-buttons.corners { grid-template-columns: repeat(4, minmax(44px, 1fr)); }
+.feature-buttons.runout { grid-template-columns: repeat(3, minmax(44px, 1fr)); }
+.runout-in-use { margin: -3px 0 0; color: var(--text-dim); font-size: 12px; }
 .feature-options button { min-height: 44px; padding-inline: 6px; }
 .feature-buttons button { white-space: nowrap; }
 @container (max-width: 400px) {

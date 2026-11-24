@@ -118,6 +118,8 @@ struct MachineConfig {
   // Found in HAL once the post-GUI file is loaded; not read from the INI.
   std::optional<CoolantOutputs> coolant;
   [[nodiscard]] auto touched_off_file() const -> std::string;
+  // The touch probe's runout compensation, beside the touched-off file.
+  [[nodiscard]] auto probe_runout_file() const -> std::string;
 };
 
 // Reads the INI file LinuxCNC was started with. Fails with a message for the operator when the

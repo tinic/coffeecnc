@@ -41,7 +41,7 @@ const valid = computed(() => {
   return length >= field.min && length <= field.max
 })
 const material = computed(() => !['teach', 'measure', 'check'].includes(props.target.kind))
-const outside = computed(() => ['corner', 'boss', 'boss_arc', 'ball', 'ridge'].includes(props.target.kind))
+const outside = computed(() => ['corner', 'boss', 'ball', 'ridge', 'boss_arc', 'runout_pin'].includes(props.target.kind))
 const travel = computed(() => material.value ? props.limits?.material_travel_mm : props.limits?.travel_mm)
 const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches // i18n-ignore
 const playing = ref(!reduced)

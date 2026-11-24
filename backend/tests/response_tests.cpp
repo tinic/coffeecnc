@@ -75,6 +75,11 @@ void command_results() {
   const auto feature = Json::parse(encode_result(42, CommandOutcome::accepted, "", slot)).at("setter");
   require(feature.at("feature_size") == Json{{"y", 12.5}} && feature.at("material").at("axis") == "Y",
           "Slot response reports the physical width in millimetres for the measured axis only");
+  SetterState compensated{};
+  compensated.runout = ProbeRunout{.tool = 99, .table_diameter_mm = 2, .radius_mm = {-0.008, -0.009}};
+  const auto runout = Json::parse(encode_result(42, CommandOutcome::accepted, "", compensated)).at("setter").at("runout");
+  require(runout == Json{{"tool", 99}, {"table_diameter", 2.0}, {"radius", {{"x", -0.008}, {"y", -0.009}}}},
+          "The runout in use reports only its trigger radius correction per axis in mm");
   SetterState mapped{};
   mapped.height_map = SetterState::HeightMap{
       .wcs = 2, .columns = 2, .rows = 1, .rotation_deg = 7.5,

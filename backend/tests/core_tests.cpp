@@ -208,6 +208,72 @@ void edge_rotation_wraps() {
             std::format("rotation {} wraps to {}, not {}", sum, wrapped, wrapped_rotation(sum)));
 }
 
+// The runout correction (#247): only the trigger radius, along the travel. On the axes it is the
+// measured radius of that axis; between them it is weighted by the squared direction cosines.
+// No eccentricity: the spindle's angle is not known after the calibration (no M19).
+void runout_correction() {
+  const ProbeRunout runout{.tool = 99, .table_diameter_mm = 2, .radius_mm = {-0.01, -0.02}};
+  const std::array<std::array<double, 2>, 4> axes{{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}};
+  for (std::size_t i = 0; i < axes.size(); ++i) {
+    const auto [ux, uy] = axes.at(i);
+    const auto shift = runout.correction(ux, uy);
+    const double expected = runout.radius_mm.at(i / 2);
+    require(std::abs(shift[0] * ux + shift[1] * uy - expected) < 1e-12 &&
+                std::abs(shift[0] * uy - shift[1] * ux) < 1e-12,
+            "along a calibrated direction the correction is that axis's radius, along the travel");
+  }
+  const double c = std::cos(std::numbers::pi / 6);
+  const double s = std::sin(std::numbers::pi / 6);
+  const double along = -0.01 * c * c - 0.02 * s * s;
+  const auto turned = runout.correction(c, s);
+  require(std::abs(turned[0] - along * c) < 1e-12 && std::abs(turned[1] - along * s) < 1e-12,
+          "between the axes: the radius weighted by the squared direction cosines, along the travel");
+  // A heading of 210° (the boss and bore arcs of #318) is corrected along that heading.
+  const auto back = runout.correction(-c, -s);
+  require(std::abs(back[0] + along * c) < 1e-12 && std::abs(back[1] + along * s) < 1e-12,
+          "the opposite heading is corrected by the same radius, along its own travel");
+  require(std::abs(max_runout_mm - 0.05) < 1e-12, "a gauge-diameter typo of 0.05 mm (19.00 for 19.05) is the limit");
+}
+
+// The line of a search (#247): along its work axis direction, or with a heading (the three-point
+// bore and boss of #318, material +X), along that heading. The runout correction follows it.
+void search_line_heading() {
+  const auto near = [](const ProbeLine& line, double ux, double uy) {
+    return std::abs(line.forward[0] - ux) < 1e-12 && std::abs(line.forward[1] - uy) < 1e-12 &&
+           line.forward[2] == 0;
+  };
+  const double c = std::cos(std::numbers::pi / 6);
+  const double s = std::sin(std::numbers::pi / 6);
+  require(near(search_line(ProbeDirection::y_minus, std::nullopt, 0), 0, -1),
+          "without a heading the search runs along its work axis direction");
+  require(search_line(std::nullopt, std::nullopt, 30).axis == 2,
+          "without a direction or heading the search is Z top");
+  require(near(search_line(ProbeDirection::x_plus, 120, 0), -s, c),
+          "with a heading the search runs along it, not along +X");
+  require(near(search_line(ProbeDirection::x_plus, 210, 0), -c, -s),
+          "a boss heading of 30° + 180° runs inward, the opposite way");
+  require(near(search_line(ProbeDirection::x_plus, 90, -60), c, s),
+          "a heading turns with the work system: 90° in a system turned -60° is machine 30°");
+  // The correction of a contact along its heading.
+  const ProbeRunout runout{.tool = 99, .table_diameter_mm = 2, .radius_mm = {-0.04, 0.02}};
+  const auto line = search_line(ProbeDirection::x_plus, 120, 0);
+  const auto shift = runout.correction(line.forward[0], line.forward[1]);
+  const double along = -0.04 * s * s + 0.02 * c * c;
+  require(std::abs(shift[0] - along * -s) < 1e-12 && std::abs(shift[1] - along * c) < 1e-12,
+          "a contact at 120° is corrected along 120°, not along +X");
+}
+
+// Before any motion the runout calibration checks that the search reaches the gauge: in a ring
+// its radius, beside a pin the boss's approach (outside plus the ball radius).
+void runout_travel() {
+  require(runout_travel_reaches(false, 20, 14, 1, 20) && runout_travel_reaches(false, 40, 14, 1, 20),
+          "a ring of radius up to the search travel is reachable");
+  require(!runout_travel_reaches(false, 44, 14, 1, 20), "a ring wider than twice the travel is refused");
+  require(runout_travel_reaches(true, 200, 14, 1, 15), "beside a pin, the diameter does not matter");
+  require(!runout_travel_reaches(true, 12, 14, 1, 14.9),
+          "beside a pin, the travel must reach from outside to the surface, as for a boss");
+}
+
 // The height-map grid (#247): both corners included, at most one step apart, 2 to 150 points.
 void height_map_grid() {
   const auto grid = height_grid({0, 0, 20, 16}, 10);
@@ -350,6 +416,17 @@ void fixed_setter_homing() {
   }
   require(homing.evaluate(FixedSetterRequest{.action = SetterAction::status}, s).allowed,
           "read-only setter status is available before homing");
+  // Clearing the runout (#247) only removes a file: another tool, the spindle on, a program
+  // reading and no homing do not refuse it.
+  auto busy = s;
+  busy.tool_in_spindle = 3;
+  busy.spindle_active = true;
+  busy.interp = InterpState::reading;
+  busy.in_position = false;
+  const auto clear = homing.evaluate(FixedSetterRequest{.action = SetterAction::clear_runout, .tool = 99}, busy);
+  require(clear.allowed && !clear.required_mode, "clearing the runout needs no probe, rest or mode");
+  require(!homing.evaluate(FixedSetterRequest{.action = SetterAction::runout, .tool = 99}, busy).allowed,
+          "a runout calibration still needs the probe at rest");
   s.axes[0].homed = true;
   const auto nan = std::numeric_limits<double>::quiet_NaN();
   require(!homing.evaluate(FixedSetterRequest{.action = SetterAction::bore,
@@ -890,6 +967,9 @@ auto main() -> int {
     execution_gates();
     pending_manual_tool_change();
     reference_mark_homing();
+    runout_correction();
+    search_line_heading();
+    runout_travel();
     height_map_grid();
     fixed_setter_homing();
     edge_rotation_wraps();

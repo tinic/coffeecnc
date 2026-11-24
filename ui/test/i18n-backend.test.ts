@@ -68,6 +68,8 @@ const notOperatorText: Record<string, string[]> = {
   'tool_table.cpp': [
     // A tool table row comment written to the file.
     'reference 7\n',
+    // The probe runout file's contents (#247).
+    'tool 7\ndiameter 7\nX 7\nY 7\n',
   ],
 }
 

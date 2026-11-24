@@ -1102,6 +1102,32 @@ void coolant_wiring() {
           "bidirectional pins also consume a signal");
 }
 
+// The probe runout file (#247) round trips and refuses what is not a whole record. A file of the
+// earlier form, with an eccentricity in it, reads as the radius part only (the means of opposite
+// directions); one whose radius part is more than max_runout_mm is no record.
+void probe_runout_file() {
+  const ProbeRunout saved{.tool = 99, .table_diameter_mm = 1.98, .radius_mm = {-0.008, -0.009}};
+  require(parse_probe_runout(format_probe_runout(saved)) == saved, "the runout file round trips");
+  require(!parse_probe_runout(""), "an empty runout file is no record");
+  require(!parse_probe_runout("tool 99\ndiameter 2\nX 0\n"), "a missing axis is refused");
+  require(!parse_probe_runout("tool 99\ndiameter 2\nY 0\nX 0\n"), "the axes come in their order");
+  require(!parse_probe_runout("tool 99\ndiameter 2\nX 0.051\nY 0\n"), "more than 0.05 mm is refused");
+  require(!parse_probe_runout("tool 99\ndiameter 2\nX nan\nY 0\n"), "a value that is not finite is refused");
+  require(!parse_probe_runout(format_probe_runout(saved) + "extra 1\n"), "trailing words are refused");
+  // The file of the earlier form, eccentricity (+0.05, -0.03) and radius (-0.01, -0.01).
+  const auto old = parse_probe_runout("tool 99\ndiameter 2.000000\n+X 0.040000\n-X -0.060000\n"
+                                      "+Y -0.040000\n-Y 0.020000\ncentred 1\n");
+  require(old && old->tool == 99 && std::abs(old->table_diameter_mm - 2) < 1e-12 &&
+              std::abs(old->radius_mm[0] + 0.01) < 1e-12 && std::abs(old->radius_mm[1] + 0.01) < 1e-12,
+          "an earlier file with an eccentricity loads as its radius part only");
+  require(!parse_probe_runout("tool 99\ndiameter 2\n+X 0.4\n-X 0.2\n+Y 0\n-Y 0\ncentred 0\n"),
+          "an earlier file whose radius part is more than 0.05 mm is ignored");
+  require(!parse_probe_runout("tool 99\ndiameter 2\n-X 0\n+X 0\n+Y 0\n-Y 0\ncentred 1\n"),
+          "the earlier directions come in their order");
+  require(!parse_probe_runout("tool 99\ndiameter 2\n+X 0\n-X 0\n+Y 0\n-Y 0\ncentred 2\n"),
+          "an earlier file with a bad centred flag is ignored");
+}
+
 // Touched-off marks beside the tool table: the file round trips, and a teach of the reference
 // tool restores exactly the tools whose length and the reference length are unchanged.
 void touched_off_marks() {
@@ -1187,6 +1213,7 @@ auto main(int argc, char** argv) -> int {
     work_systems();
     parameter_file_systems();
     tool_comments();
+    probe_runout_file();
     touched_off_marks();
     source_status_and_age();
     source_inactive_systems();

@@ -86,6 +86,12 @@ auto encode_result(RequestId id, CommandOutcome outcome, std::string_view reason
       message["setter"]["feature_size"]["x"] = *width;
     if (const auto width = setter->feature_size[1])
       message["setter"]["feature_size"]["y"] = *width;
+    if (const auto& runout = setter->runout) {
+      message["setter"]["runout"] = {
+          {"tool", runout->tool},
+          {"table_diameter", runout->table_diameter_mm},
+          {"radius", {{"x", runout->radius_mm[0]}, {"y", runout->radius_mm[1]}}}};
+    }
     if (const auto& map = setter->height_map) {
       auto points = Json::array();
       // A point a partial map did not reach is null.

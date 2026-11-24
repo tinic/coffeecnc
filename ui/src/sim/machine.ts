@@ -1452,6 +1452,16 @@ export class SimMachine {
       this.emit({ type: 'result', id, outcome: 'accepted', reason: '', setter: probe.state(this.modal) })
       return
     }
+    if (command.action === 'clear_runout') {
+      // Only forgets the kept correction: any tool, moving or not, but not during a probe cycle.
+      const busy = this.busy('probe')
+      if (busy !== null || command.tool !== demoProbe) {
+        refused(busy?.reason ?? 'Only the touch probe has a runout compensation to clear.')
+        return
+      }
+      this.emit({ type: 'result', id, outcome: 'accepted', reason: '', setter: probe.clearRunout(this.modal) })
+      return
+    }
     const blocked = this.notOn('probe') ?? this.busy('probe')
     const tool = this.modal.tools.find(row => row.number === this.toolInSpindle)
     const start = this.reported()

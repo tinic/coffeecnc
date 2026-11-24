@@ -663,7 +663,7 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
             };
           }
           if (auto written = upload_writer.receive(name, bytes, replace, publish); !written)
-            return std::unexpected(written.error());
+            return std::unexpected(written.error().text);
           return {};
         };
       }

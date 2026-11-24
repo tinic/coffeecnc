@@ -1088,6 +1088,16 @@ const examples = [
   },
   {
     "type": "result",
+    "id": 48,
+    "outcome": "failed",
+    "reason": "A program named part.ngc exists already.",
+    "localization": {
+      "key": "backend.programEdit.exists",
+      "params": { "name": "part.ngc" }
+    }
+  },
+  {
+    "type": "result",
     "id": 45,
     "outcome": "accepted",
     "reason": "",

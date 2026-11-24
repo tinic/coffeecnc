@@ -820,8 +820,10 @@ auto Session::copy_work(ProgramWriter& writer) -> std::optional<Outcome> {
     return Outcome{};
   Outcome outcome;
   outcome.page = request.page;
-  outcome.messages.push_back(encode_result(request.id, result ? CommandOutcome::accepted : CommandOutcome::failed,
-                                           result ? std::string{} : result.error()));
+  outcome.messages.push_back(
+      encode_result(request.id, result ? CommandOutcome::accepted : CommandOutcome::failed,
+                    result ? std::string{} : result.error().text, {}, {}, {},
+                    result ? std::nullopt : result.error().localization));
   return outcome;
 }
 
@@ -1795,7 +1797,10 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
           const auto observed = loaded_program();
           const auto result = program_writer_->manage(c, observed.empty() ? state.program_file : observed);
           return answer(result ? Reply{CommandOutcome::accepted, ""}
-                               : Reply{CommandOutcome::failed, result.error()});
+                               : Reply{CommandOutcome::failed,
+                                       result.error().text,
+                                       {},
+                                       result.error().localization});
         } else if constexpr (std::is_same_v<T, SetMachine>) {
           // E-stop and power-off go out first; stops for held jogs follow.
           auto result = act(request, [&](const Wanted& still) -> ActionResult {
@@ -1882,7 +1887,8 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
           // changed between this check and that open is not caught here.
           const auto file = programs_.resolve_program(c.path);
           if (!file)
-            return answer({CommandOutcome::rejected, file.error()});
+            return answer(
+                {CommandOutcome::rejected, file.error().text, {}, file.error().localization});
           return act(request, [&](const Wanted& still) -> ActionResult {
             return port_.open_program(*file, still);
           });
@@ -1892,7 +1898,8 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
                           RefusalMessage{"messages.session.cannotEdit"});
           const auto file = programs_.resolve_program(c.path);
           if (!file)
-            return answer({CommandOutcome::rejected, file.error()});
+            return answer(
+                {CommandOutcome::rejected, file.error().text, {}, file.error().localization});
           const auto loaded = programs_.resolve_program(state.program_file);
           if (!loaded || *file != *loaded)
             return refuse("Only the loaded program can be edited.",
@@ -1900,7 +1907,7 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
           return act(request, [&](const Wanted& still) -> ActionResult {
             auto written = program_writer_->replace_line(*file, c.line, c.before, c.after);
             if (!written)
-              return {ActionStatus::failed, written.error()};
+              return {ActionStatus::failed, written.error().text, written.error().localization};
             // LinuxCNC reads the new text only when the program is opened again.
             return port_.open_program(*written, still);
           });
@@ -1911,30 +1918,36 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
           if (c.stamp) {
             const auto file = programs_.resolve_program(c.path);
             if (!file)
-              return answer({CommandOutcome::rejected, file.error()});
+              return answer(
+                  {CommandOutcome::rejected, file.error().text, {}, file.error().localization});
             const auto loaded = programs_.resolve_program(state.program_file);
             if (!loaded || *file != *loaded)
               return refuse("Only the loaded program can be edited.",
                             RefusalMessage{"messages.session.onlyLoadedEditable"});
             return act(request, [&](const Wanted& still) -> ActionResult {
-              const auto check_controller = [&]() -> std::string {
+              const auto check_controller = [&]() -> LocalizedReason {
                 if (!still())
-                  return "The save was cancelled before the program was replaced.";
+                  return {"The save was cancelled before the program was replaced.",
+                          MessageKey{"messages.session.saveCancelled"}};
                 const auto now = port_.snapshot();
                 if (const auto recheck = policy_.evaluate(request.command, now); !recheck.allowed)
-                  return recheck.reason;
+                  return {recheck.reason, recheck.refusal};
                 const auto active = programs_.resolve_program(now.program_file);
                 if (!active || *active != *file)
-                  return "The loaded program changed before the save finished.";
+                  return {"The loaded program changed before the save finished.",
+                          MessageKey{"messages.session.programChangedDuringSave"}};
                 return {};
               };
               auto written = program_writer_->replace(*file, c.text, *c.stamp, check_controller);
               if (!written)
-                return {ActionStatus::failed, written.error()};
+                return {ActionStatus::failed, written.error().text, written.error().localization};
               // LinuxCNC reads the new text only when the program is opened again.
               auto reopened = port_.open_program(*written, still);
               if (reopened.status != ActionStatus::accepted)
-                return {ActionStatus::failed, "Saved on disk, but not reopened. " + reopened.reason};
+                return {
+                    ActionStatus::failed,
+                    std::format("Saved on disk, but not reopened. {}", reopened.reason),
+                    MessageKey{"messages.session.savedNotReopened", {{"detail", reopened.reason}}}};
               return reopened;
             });
           }
@@ -1950,7 +1963,8 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
           }
           auto written = program_writer_->create(c.path, c.text, c.replace);
           if (!written)
-            return answer({CommandOutcome::failed, written.error()});
+            return answer(
+                {CommandOutcome::failed, written.error().text, {}, written.error().localization});
           return answer({CommandOutcome::accepted, ""});
         } else if constexpr (std::is_same_v<T, Run>) {
           return act(request, [&](const Wanted& still) -> ActionResult {
@@ -2373,10 +2387,13 @@ auto Session::stop_all() -> ActionResult {
 auto Session::list_directory(const ListDirectory& request, Stage& step) -> Reply {
   const auto directory = programs_.list(request.path);
   if (!directory)
-    return {CommandOutcome::rejected, directory.error()};
+    return {CommandOutcome::rejected, directory.error().text, {}, directory.error().localization};
   auto message = encode_directory(*directory);
   if (!message)
-    return {CommandOutcome::rejected, "Directory cannot be sent: " + message.error()};
+    return {CommandOutcome::rejected,
+            std::format("Directory cannot be sent: {}", message.error()),
+            {},
+            MessageKey{"messages.session.directoryNotSent", {{"detail", message.error()}}}};
   step.produced.push_back(std::move(*message)); // `truncated` in it tells of a cut listing.
   return {};
 }

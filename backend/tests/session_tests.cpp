@@ -1520,8 +1520,8 @@ void late_jog_starts() {
             std::format("{}: the press is {} \"{}\", got {}", row.name, row.outcome, row.reason,
                         press ? press->dump() : std::string("none")));
     if (row.watchdog)
-      require(press->at("localization") ==
-                  Json{{"key", "backend.jogStop.watchdog"}, {"params", Json::object()}},
+      require(press && press->at("localization") ==
+                           Json{{"key", "backend.jogStop.watchdog"}, {"params", Json::object()}},
               row.name + ": the press result can identify the watchdog");
     require(!error, row.name + ": no operator message");
     rig.acted(row.calls, row.name + ": the axis still gets its accepted stop");

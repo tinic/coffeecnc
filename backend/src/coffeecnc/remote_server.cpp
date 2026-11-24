@@ -256,7 +256,7 @@ public:
         if (!error)
           self->serve();
         else if (error == http::error::body_limit)
-          self->upload_reply(http::status::payload_too_large, "The program is longer than 16 MiB.");
+          self->upload_reply(http::status::payload_too_large, upload_too_large());
       });
   }
 
@@ -391,10 +391,17 @@ private:
     return send_file(std::move(file), asset->content_type, host);
   }
 
-  void upload_reply(http::status status, std::string reason = {}) {
+  static auto upload_too_large() -> LocalizedReason {
+    return {"The program is longer than 16 MiB.", MessageKey{"backend.programFiles.size"}};
+  }
+
+  void upload_reply(http::status status, LocalizedReason reason = {}) {
     http::response<http::string_body> response{status, request_.get().version()};
     response.set(http::field::content_type, "application/json");
-    response.body() = nlohmann::json{{"reason", std::move(reason)}}.dump();
+    nlohmann::json payload{{"reason", std::move(reason.text)}};
+    if (const auto& key = reason.localization)
+      payload["localization"] = {{"key", key->key}, {"params", key->params}};
+    response.body() = payload.dump();
     response.prepare_payload();
     respond(std::move(response), {}, !request_.is_done());
   }
@@ -425,14 +432,18 @@ private:
   void begin_upload(std::string_view host, net::thread_pool& worker) {
     const auto& request = request_.get();
     if (request[http::field::origin] != "http://" + std::string(host))
-      return upload_reply(http::status::forbidden, "Upload from the CoffeeCNC LAN screen.");
+      return upload_reply(http::status::forbidden, {"Upload from the CoffeeCNC LAN screen.",
+                                                    MessageKey{"backend.programFiles.sameOrigin"}});
     if (request[http::field::content_type] != "application/octet-stream")
       return upload_reply(http::status::unsupported_media_type);
     auto name = program_upload_name(request["X-CoffeeCNC-Filename"]);
     if (!name || request_.is_done())
-      return upload_reply(http::status::bad_request, "Choose a program file to upload.");
+      return upload_reply(http::status::bad_request, {"Choose a program file to upload.",
+                                                      MessageKey{"backend.programFiles.choose"}});
     if (owner_.upload_active)
-      return upload_reply(http::status::service_unavailable, "Another program upload is in progress.");
+      return upload_reply(
+          http::status::service_unavailable,
+          {"Another program upload is in progress.", MessageKey{"backend.programFiles.busy"}});
     owner_.upload_active = uploading_ = true;
     const bool replace = request["X-CoffeeCNC-Replace"] == "1";
     read_upload(worker, std::move(*name), replace);
@@ -443,7 +454,7 @@ private:
     http::async_read_some(socket_, request_buffer_, request_,
       [self = shared_from_this(), &worker, name = std::move(name), replace](Error error, std::size_t) mutable -> void {
         if (error == http::error::body_limit)
-          return self->upload_reply(http::status::payload_too_large, "The program is longer than 16 MiB.");
+          return self->upload_reply(http::status::payload_too_large, upload_too_large());
         if (error)
           return self->close();
         if (self->request_.is_done())
@@ -456,11 +467,12 @@ private:
   void write_upload(net::thread_pool& worker, std::string name, bool replace) {
     auto& body = request_.get().body();
     if (body.empty() || body.find('\0') != std::string::npos)
-      return upload_reply(http::status::bad_request, "The upload must be a program text file.");
+      return upload_reply(http::status::bad_request, {"The upload must be a program text file.",
+                                                      MessageKey{"backend.programFiles.text"}});
     net::post(worker, [self = shared_from_this(), name = std::move(name), replace,
                                      bytes = std::move(body)]() mutable -> void {
       auto status = http::status::created;
-      std::string reason;
+      LocalizedReason reason;
       try {
         if (auto saved = self->owner_.upload(name, bytes, replace); !saved) {
           status = http::status::conflict;
@@ -468,7 +480,8 @@ private:
         }
       } catch (const std::exception&) {
         status = http::status::internal_server_error;
-        reason = "The upload could not be saved.";
+        reason = {"The upload could not be saved.",
+                  MessageKey{"backend.programFiles.uploadFailed"}};
       }
       auto& io = self->owner_.io;
       net::post(io, [self = std::move(self), status, reason = std::move(reason)]() mutable -> void {

@@ -82,7 +82,7 @@ class StatusPublisher {
 public:
   [[nodiscard]] auto publish(const PanelState& state, bool snapshots,
                              std::vector<PanelRecord>* records = nullptr)
-      -> std::expected<std::vector<std::string>, std::string>;
+      -> std::expected<std::vector<std::string>, LocalizedReason>;
 
 private:
   std::uint64_t seq_{};

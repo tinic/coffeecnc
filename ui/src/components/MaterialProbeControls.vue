@@ -15,10 +15,14 @@ import type { AngleEdge, MaterialGuideTarget } from '../probe-guide'
 import type { Angles } from '../arc'
 import ModalDialog from './ModalDialog.vue'
 import { vTooltip } from '../tooltip'
+import HeightMapDialog from './HeightMapDialog.vue'
+import HeightMapResult from './HeightMapResult.vue'
+import { heightGrid, heightMap, heightMapPointAt, heightRange, measuredPoints, type HeightMapGrid } from '../height-map'
+import type { HeightMap } from '../protocol'
 
 const props = defineProps<{ tool: number }>()
 const { t } = useI18n()
-type Request = Extract<CommandBody, { type: 'fixed_setter'; action: 'material' | 'corner' | 'ball' | 'bore' | 'boss' | 'bore_arc' | 'boss_arc' | 'angle' | 'apply_angle' | 'apply_measurement' | 'inside_corner' | 'pocket' | 'slot' | 'ridge' }>
+type Request = Extract<CommandBody, { type: 'fixed_setter'; action: 'material' | 'corner' | 'ball' | 'bore' | 'boss' | 'bore_arc' | 'boss_arc' | 'angle' | 'apply_angle' | 'apply_measurement' | 'inside_corner' | 'pocket' | 'slot' | 'ridge' | 'height_map' }>
 // The button names the part face. The protocol still specifies the tool's travel.
 const surfaces = [
   { key: 'zTop', label: null, travel: 'z_top', approach: '−Z' },
@@ -114,6 +118,58 @@ function startGuide(size: number, angle: AngleEdge, angles: Angles): void {
   const target = guide.value
   guide.value = null
   if (target !== null) probe(target, size, angle, angles)
+}
+/** A Z height map (#247): its grid dialog, and its last result for the card and the 3D view. */
+const choosingMap = shallowRef(false)
+const mapResult = shallowRef<HeightMap | null>(null)
+const showingMap = shallowRef(false)
+/** The running map's grid, and the last of its points (1-based, probing order) the probe was over. */
+const mapGrid = computed(() => pending.value?.action === 'height_map' ? pending.value : null)
+const mapTotal = computed(() => {
+  const grid = mapGrid.value
+  const size = grid === null ? null : heightGrid([grid.x_min, grid.y_min, grid.x_max, grid.y_max], grid.step)
+  return size === null ? 0 : size.columns * size.rows
+})
+const mapPoint = shallowRef(1)
+watch((): [number | undefined, number | undefined] => [
+  panel.status?.axes.find((entry) => entry.axis === 'x')?.work, panel.status?.axes.find((entry) => entry.axis === 'y')?.work,
+], ([x, y]) => {
+  const grid = mapGrid.value
+  if (grid === null || x === undefined || y === undefined) return
+  const point = heightMapPointAt(grid, x, y)
+  if (point !== null && point > mapPoint.value) mapPoint.value = point
+})
+/** Stops the running map: the same abort as the panel's other stops. Points measured so far stay. */
+function stopMap(): void {
+  if (pending.value?.action === 'height_map') send({ type: 'abort' })
+}
+function openMap(): void {
+  if (pending.value !== null) return
+  choosingFeature.value = false
+  choosingMap.value = true
+}
+function startMap(grid: HeightMapGrid): void {
+  choosingMap.value = false
+  const status = panel.status
+  const [x, y, z] = ['x', 'y', 'z'].map((axis) => status?.axes.find((entry) => entry.axis === axis)?.machine)
+  const machine = machineReason.value
+  let reason: (() => string) | null = machine === null ? null : (): string => translateMessage(machine)
+  if (reason === null && (status?.tool.in_spindle !== props.tool || status.wait.kind === 'tool_change'))
+    reason = (): string => t('probe.materialProbe.loadTool', { tool: String(props.tool) })
+  if (reason === null && !spindleStopped.value) reason = (): string => t('probe.materialProbe.waitSpindle')
+  if (reason === null && !status?.motion.in_position) reason = (): string => t('probe.materialProbe.waitAxes')
+  if (reason === null && !touchedOff(props.tool)) reason = (): string => t('probe.materialProbe.touchOffZTop', { tool: `T${String(props.tool)}` })
+  if (reason !== null || x === undefined || y === undefined || z === undefined || ![x, y, z].every(Number.isFinite)) {
+    line.value = { text: reason ?? ((): string => t('probe.materialProbe.waitPosition')), level: 'blocked' }
+    return
+  }
+  edgeRotation.value = null
+  mapResult.value = null
+  const request = { type: 'fixed_setter', action: 'height_map', tool: props.tool, x, y, z, ...grid } as const
+  pending.value = request
+  mapPoint.value = 1
+  line.value = { text: (): string => t('probe.heightMap.progress', { point: mapPoint.value, total: mapTotal.value }), level: 'busy' }
+  send(request)
 }
 const askingRotation = shallowRef(false)
 /** A measured edge: the turn from the present work axes, and the rotation applying it writes. */
@@ -264,6 +320,29 @@ const removeListener = onResult((command, result) => {
   const failure = (fallback: () => string): Line => ({
     text: (): string => result.reason ? translateResult(result) : fallback(), level: 'blocked',
   })
+  if (request.action === 'height_map') {
+    const map = result.setter?.height_map
+    // A map that stopped after some points keeps them, labelled partial, for the card and export.
+    const partial = map?.partial !== undefined && measuredPoints(map).length > 0
+    if (!map || (result.outcome !== 'accepted' && !partial)) {
+      line.value = failure((): string => t('probe.heightMap.failed'))
+      return
+    }
+    if (result.setter) setterState.value = result.setter
+    mapResult.value = map
+    heightMap.value = map
+    if (partial) {
+      const values = { count: String(measuredPoints(map).length), total: String(map.points.length) }
+      const reason = failure((): string => t('probe.heightMap.failed')).text
+      line.value = { text: (): string => t('probe.heightMap.partial', { ...values, reason: reason() }), level: 'blocked' }
+      return
+    }
+    const { low, high } = heightRange(map)
+    const values = { count: String(map.points.length), low: formatLength(low, panel.unit), high: formatLength(high, panel.unit),
+      unit: panel.unit === 'inch' ? 'in' : 'mm' }
+    line.value = { text: (): string => t('probe.heightMap.done', values), level: 'done' }
+    return
+  }
   if (request.action === 'apply_measurement') {
     measuredResult.value = null
     const material = result.setter?.material
@@ -460,6 +539,8 @@ onBeforeUnmount(() => {
     </div>
     <SetterStatusBand class="probe-status" :line="displayLine">
       <template #actions>
+        <button v-if="mapGrid" class="btn rotation-action stop-map" type="button" @click="stopMap">{{ t('probe.heightMap.stop') }}</button>
+        <button v-else-if="mapResult" class="btn rotation-action" type="button" aria-haspopup="dialog" @click="showingMap = true">{{ t('probe.heightMap.result') }}</button>
         <button v-if="measuredResult" class="btn rotation-action" type="button" aria-haspopup="dialog" @click="showingResult = true">{{ t('probe.materialProbe.result') }}</button>
         <button v-if="canApplyRotation" class="btn rotation-action" type="button" @click="askingRotation = true">{{ t('probe.materialProbe.applyRotationMenu') }}</button>
       </template>
@@ -474,6 +555,7 @@ onBeforeUnmount(() => {
           <button class="btn" type="button" @click="openGuide({ kind: 'bore' })">{{ t('probe.materialProbe.boreCentre') }}</button>
           <button class="btn" type="button" @click="openGuide({ kind: 'boss' })">{{ t('probe.materialProbe.bossCentre') }}</button>
           <button class="btn" type="button" @click="openGuide({ kind: 'angle' })">{{ t('probe.materialProbe.edgeAngle') }}</button>
+          <button class="btn" type="button" @click="openMap">{{ t('probe.heightMap.button') }}</button>
           <button v-if="extendedFeatures" class="btn" type="button" @click="openGuide({ kind: 'pocket' })">{{ t('probe.materialProbe.pocket') }}</button>
         </div>
         <div class="feature-row">
@@ -528,6 +610,8 @@ onBeforeUnmount(() => {
         </template>
       </div>
     </ModalDialog>
+    <HeightMapDialog v-if="choosingMap" @start="startMap" @close="choosingMap = false" />
+    <HeightMapResult v-if="showingMap && mapResult" :map="mapResult" @close="showingMap = false" />
     <MeasuredResult
       v-if="showingResult && measuredResult" :result="measuredResult.setter" :measured="measuredResult.measured"
       :can-apply="canApplyMeasured" :stale="frame !== measuredResult.frame" @apply="applyMeasured" @close="showingResult = false"
@@ -551,6 +635,9 @@ onBeforeUnmount(() => {
 <style scoped>
 .probe-status { height: 48px; margin-bottom: 0; }
 .rotation-action { flex: none; min-height: 44px; padding-inline: 8px; font-size: 12px; }
+/* Stop takes the danger tones, as a stop button does elsewhere; the band's busy accent on the
+   control fill is under 4.5:1 in the light theme. */
+.btn.stop-map:not(:disabled, [aria-disabled='true']) { background: var(--stop-soft); color: var(--stop); }
 .rotation-effect { margin: 0; line-height: 1.5; }
 .material-probe { min-width: 0; container-type: inline-size; }
 .probe-layout { display: grid; grid-template-columns: 1fr minmax(186px, 0.96fr); align-items: stretch; gap: 12px; }

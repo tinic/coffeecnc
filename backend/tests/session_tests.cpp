@@ -178,8 +178,8 @@ public:
     return record("remove_tool", std::to_string(number));
   }
   // Read by a restore of the loaded tool's length; not an action, so not recorded.
-  std::expected<ToolLengthInEffect, std::string> length_in_effect{ToolLengthInEffect{}};
-  auto tool_length_in_effect() -> std::expected<ToolLengthInEffect, std::string> override {
+  std::expected<ToolLengthInEffect, LocalizedReason> length_in_effect{ToolLengthInEffect{}};
+  auto tool_length_in_effect() -> std::expected<ToolLengthInEffect, LocalizedReason> override {
     return length_in_effect;
   }
 
@@ -505,10 +505,11 @@ public:
   };
   std::vector<Submitted> submitted;
   std::vector<SetOperatorSettings> operator_submitted;
+  std::optional<LocalizedReason> settings_refusal;
   auto submit_operator_settings(PageToken, RequestId, SetOperatorSettings&& command)
-      -> std::optional<std::string> override {
+      -> std::optional<LocalizedReason> override {
     operator_submitted.push_back(std::move(command));
-    return refusal;
+    return settings_refusal;
   }
   std::vector<std::uint64_t> ended;
   // Not empty: the next commands are refused with it.
@@ -650,6 +651,18 @@ void operator_settings_go_to_storage() {
       at(0ms));
   require(outcome.messages.empty() && models.operator_submitted.size() == 1,
           "Operator preferences go directly to storage");
+  models.settings_refusal =
+      LocalizedReason{"Default jog speed exceeds the configured machine limit.",
+                      MessageKey{"backend.operatorSettings.jogSpeedLimit"}};
+  const auto denied = results(driver.handle(
+      page,
+      R"({"id":3,"type":"set_operator_settings","machine_id":"mill-1","base_revision":0,"document":)"
+      R"({"version":1,"startup_units":"inch","enabled_wcs":[1,9],"default_spindle_rpm":1800,"default_jog_velocity":1001}})",
+      at(0ms)));
+  require(denied.size() == 1 && denied.front().at("outcome") == "rejected" &&
+              denied.front().at("reason") == models.settings_refusal->text &&
+              denied.front().at("refusal").at("key") == "backend.operatorSettings.jogSpeedLimit",
+          "An immediate settings validation failure carries its English fallback and refusal key");
   require(port.calls.empty() && port.snapshots == 0,
           "Saving preferences issues no controller commands or reads");
 }
@@ -930,6 +943,14 @@ void decode_errors() {
                         message.at("localization").at("params").at("detail").get<std::string>(),
             "It is an operator error stamped with the wall clock");
   }
+  const auto missing_id = rig.handle(rig.page, R"({"type":"abort"})", at(250ms));
+  const auto warning = Json::parse(missing_id.messages.at(0));
+  require(warning.at("text") == "Panel request ignored: Missing required field: id." &&
+              warning.at("localization").at("params").at("detail") ==
+                  "Missing required field: id." &&
+              warning.at("localization").at("params_localization").at("detail") ==
+                  Json{{"key", "messages.request.missingField"}, {"params", {{"field", "id"}}}},
+          "An ignored request retains the missing-ID decoder key and its English fallback");
   require(rig.port.calls.empty(), "A request without an ID is not executed");
   rig.accepted(R"("type":"abort")");
 
@@ -1169,6 +1190,16 @@ void directory_listing() {
                        {"params", {{"detail", "Permission denied"}}}},
           "A directory error carries the original detail and its catalog key");
   rig.acted({}, "A refused listing is not a controller action either");
+
+  rig.files.file("/home/cnc/nc_files/invalid-time/part.ngc", "", 9007199254740992);
+  const auto encoded = rig.result(R"("type":"list_directory","path":"invalid-time")");
+  require(encoded.at("outcome") == "rejected" &&
+              encoded.at("reason") ==
+                  "Directory cannot be sent: entries.modified is outside ±(2^53 - 1)." &&
+              encoded.at("localization").at("params_localization").at("detail") ==
+                  Json{{"key", "messages.wire.outsideSigned"},
+                       {"params", {{"field", "entries.modified"}}}},
+          "The listing's encoding failure carries the field and reason key");
 
   // The listing does not need the machine.
   rig.port.state.link = Link::down;
@@ -1429,6 +1460,7 @@ void late_jog_starts() {
     std::string_view outcome;
     std::string_view reason;
     Calls calls;
+    bool watchdog{};
   };
   const std::vector<Row> rows{
       {"released in flight",
@@ -1484,7 +1516,8 @@ void late_jog_starts() {
        "failed",
        "Jog stopped by the HAL watchdog: CoffeeCNC's heartbeat stalled for longer than the "
        "watchdog timeout.",
-       {"start_jog x 1 600 axis", "stop_jog x"}},
+       {"start_jog x 1 600 axis", "stop_jog x"},
+       true},
       {"released, then the watchdog tripped",
        [](Rig& rig) -> void {
          static_cast<void>(rig.session.submit(
@@ -1494,7 +1527,8 @@ void late_jog_starts() {
        "failed",
        "Jog stopped by the HAL watchdog: CoffeeCNC's heartbeat stalled for longer than the "
        "watchdog timeout.",
-       {"start_jog x 1 600 axis", "stop_jog x"}},
+       {"start_jog x 1 600 axis", "stop_jog x"},
+       true},
   };
   for (const auto& row : rows) {
     Rig rig;
@@ -1516,6 +1550,10 @@ void late_jog_starts() {
     require(press && press->at("outcome") == row.outcome && press->at("reason") == row.reason,
             std::format("{}: the press is {} \"{}\", got {}", row.name, row.outcome, row.reason,
                         press ? press->dump() : std::string("none")));
+    if (row.watchdog)
+      require(press && press->at("localization") ==
+                           Json{{"key", "backend.jogStop.watchdog"}, {"params", Json::object()}},
+              row.name + ": the press result can identify the watchdog");
     require(!error, row.name + ": no operator message");
     rig.acted(row.calls, row.name + ": the axis still gets its accepted stop");
     rig.clock += 10ms;
@@ -2264,8 +2302,13 @@ void no_start_over_an_unconfirmed_stop() {
                                  {ActionStatus::failed, "Still not connected."}};
   rig.expect(release_x, "failed", "Not connected.");
   rig.port.calls.clear();
-  rig.expect(hold_x, "failed",
-             "The previous jog stop on this axis is not confirmed: Still not connected.");
+  const auto denied = rig.result(hold_x);
+  require(denied.at("outcome") == "failed" &&
+              denied.at("reason") ==
+                  "The previous jog stop on this axis is not confirmed: Still not connected." &&
+              denied.at("localization") == Json{{"key", "messages.session.previousStopThisAxis"},
+                                                {"params", {{"detail", "Still not connected."}}}},
+          "The denied press names the unconfirmed stop on the same axis");
   rig.acted({"stop_jog x"}, "A new press first retries the stop and does not start");
   rig.accepted(hold_x);
   rig.acted({"stop_jog x", "start_jog x 1 600 axis"},
@@ -2721,8 +2764,15 @@ void tool_length_restore() {
   in_effect(90);
   rig.accepted(restore);
   rig.acted({"mdi G10 L1 P3 Z48.2"}, "A G43.2 sum stays: G10 L1 only");
-  rig.port.length_in_effect = std::unexpected(std::string("Cannot read tool table tool.tbl."));
-  rig.expect(restore, "rejected", "Cannot read tool table tool.tbl.");
+  rig.port.length_in_effect = std::unexpected(
+      LocalizedReason{"Cannot read tool table tool.tbl.",
+                      MessageKey{"backend.nmlPort.cannotReadToolTable", {{"file", "tool.tbl"}}}});
+  const auto unreadable = rig.result(restore);
+  require(unreadable.at("outcome") == "rejected" &&
+              unreadable.at("reason") == "Cannot read tool table tool.tbl." &&
+              unreadable.at("localization") == Json{{"key", "backend.nmlPort.cannotReadToolTable"},
+                                                    {"params", {{"file", "tool.tbl"}}}},
+          "An unreadable tool table reports its path and a translation key");
   rig.acted({}, "An unreadable offset in effect sends nothing");
   rig.port.state.tool_in_spindle = 2;
   rig.accepted(restore);
@@ -3029,7 +3079,10 @@ void uploads_do_not_replace_the_running_program() {
   port.script["open_program"].push_back({ActionStatus::failed, "LinuxCNC refused the open."});
   const auto failed = publish(part);
   require(!failed && published == 3 &&
-              failed.error() == "Saved on disk, but not reopened. LinuxCNC refused the open.",
+              failed.error().text ==
+                  "Saved on disk, but not reopened. LinuxCNC refused the open." &&
+              failed.error().localization == MessageKey{"messages.session.savedNotReopened",
+                                                        {{"detail", "LinuxCNC refused the open."}}},
           "A failed reopen reports the successful disk publication");
 }
 

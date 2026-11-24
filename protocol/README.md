@@ -24,6 +24,9 @@ The optional `hello.fixed_setter` advertises `reference_tool`, `travel_mm`, `fee
 | `angle` | `tool`, machine start `x`, `y`, `z`, `direction`, and `spacing` |
 | `apply_angle` | `tool` and the `measurement_id` of an `angle` result |
 | `apply_measurement` | `tool` and the `measurement_id` of a `measure_only` result |
+| `height_map` | `tool`, machine start `x`, `y`, `z`, work `x_min`, `y_min`, `x_max`, `y_max`, `step` and `clearance` |
+
+`height_map` probes Z top at each point of the grid from (`x_min`, `y_min`) to (`x_max`, `y_max`) in the active work system. Both corners are included and the points are at most `step` apart. There must be 2 to 150 points, and `step` must be at least 0.5 mm. Between the points the probe moves at work Z `clearance`. The controller checks every point's search start and end, and the lift, against the travel before anything moves. It also refuses a grid whose worst case is longer than 2 hours (`height_map_seconds` in `fixed_setter.hpp`: per point the full search, three latch passes, the retract and the release waits; the XY traverses at the slower of the X and Y maximum velocities, from the start to the first point and one `step` to each next one; and the first feed down). Each later point must start where the last one ended: commanded there, XY measured within the setter's XY tolerance, and Z measured within `HEIGHT_MAP_Z_LAG_TOLERANCE_MM` (default 0.15 mm; the Z encoder lags after the retract). Every other probe must start with the command and the encoder within the position tolerance. The map stops when a top comes within the latch back-off under the clearance, because the next traverse would be too low. The result's `setter.height_map` has `wcs`, `columns`, `rows`, `rotation` (degrees) and `points`: row by row from the first corner, each with `work` and `machine` XYZ in mm. Nothing is written, so it takes no `measure_only`. When the map stops after one or more points (a miss, a stop, an E-stop, a lost position, the margin), the result is `failed` with the reason, and `setter.height_map` keeps the points measured so far, with `null` for the others and `partial` set to the reason.
 
 Every action from `material` to `angle` except `ball` takes an optional `measure_only: true`. The probe then moves as usual but writes no offset. The result has no `setter.material` and has `setter.measured`: `wcs`, `axes` (`X`, `Y`, `Z`, `XY`; empty for an angle), `work` (the measured point, only its measured axes, in the work system at the time of the probe), `machine` (the same point in machine XYZ: an axis not measured at the start, Z of an XY feature at the probing depth), `faces` (each probed surface point: `direction`, `work` and `machine` XYZ; the ball-centre contact moved one ball radius along the travel) and, except for an angle, `measurement_id`. `apply_measurement` sets those axes as the original action would have. The controller accepts the ID once, in the same operator session, work frame and tool, and forgets it when another probe action begins.
 
@@ -60,6 +63,8 @@ The alarm-log snapshot may include top-level `localization` for its storage `rea
 A hello with a different protocol version puts the panel in an incompatible connection state. It clears controller snapshots and ignores subsequent messages until a compatible hello arrives; fresh status is then required to show a live connection again. New commands are rejected locally with a result and an operator message.
 
 A rejected `result` may include `refusal`. Operator `message` records, results with an operator message, `alarm_log.entries`, `preview.error`, and `operator_settings` may include `localization` with the same shape. Each carries a catalog `key` and `params`, an object of named string arguments. Static messages use an empty object. English `reason` and `text` continue to be sent. The panel translates by key when it recognizes the key and its expected arguments. It uses the fallback text for older peers, unknown keys, and invalid arguments. The alarm log retains the optional metadata across reloads with the same version 1 format.
+
+A message can also include `params_localization` alongside `key` and `params`. Each member names a string already present in `params` and carries a `key` with string `params` for that argument. The panel translates one level of arguments and falls back to the original argument when its metadata is absent or invalid. An ignored request with no usable ID uses this field for the decoder's explanation.
 
 Program Check keeps its English `errors` and `warnings` arrays and may also send `errors_localization` or `warnings_localization`. Entries in these arrays match the corresponding English array by position. A null entry uses its English fallback.
 
@@ -188,6 +193,8 @@ the verified rotation in `setter.edge_angle`.
 ## HAL diagnostics
 
 `hello.diagnostics: true` enables two additive v1 commands and one message. Absent or false: the panel offers no diagnostics view. The LAN screen's hello never carries it.
+
+The LAN viewer's optional `POST /program-upload` route replies with JSON. The `reason` field holds the English fallback or is empty on success. A reply may include `localization` with the same `key` and `params` fields as a command result. Existing HTTP statuses and request fields apply.
 
 | Command | Fields | Answer |
 | --- | --- | --- |

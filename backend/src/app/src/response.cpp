@@ -1,5 +1,7 @@
 #include <coffeecnc/app/response.hpp>
 
+#include "message_key_json.hpp"
+
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
@@ -43,14 +45,14 @@ auto encode_result(RequestId id, CommandOutcome outcome, std::string_view reason
                    const std::optional<MessageKey>& localization) -> std::string {
   Json message{{"type", "result"}, {"id", id}, {"outcome", name(outcome)}, {"reason", reason}};
   if (outcome == CommandOutcome::rejected && refusal)
-    message["refusal"] = {{"key", refusal->key}, {"params", refusal->params}};
+    message["refusal"] = message_key_json(*refusal);
   // A refusal following a command already sent (for example a mode change) is a failure.
   const auto& key =
       !localization && outcome != CommandOutcome::rejected && outcome != CommandOutcome::accepted
           ? refusal
           : localization;
   if (key && (outcome != CommandOutcome::accepted || !reason.empty()))
-    message["localization"] = {{"key", key->key}, {"params", key->params}};
+    message["localization"] = message_key_json(*key);
   if (setter) {
     auto measurement = Json(nullptr);
     if (const auto& r = setter->measurement) {
@@ -84,6 +86,20 @@ auto encode_result(RequestId id, CommandOutcome outcome, std::string_view reason
       message["setter"]["feature_size"]["x"] = *width;
     if (const auto width = setter->feature_size[1])
       message["setter"]["feature_size"]["y"] = *width;
+    if (const auto& map = setter->height_map) {
+      auto points = Json::array();
+      // A point a partial map did not reach is null.
+      std::ranges::transform(map->points, std::back_inserter(points), [](const auto& point) {
+        return point.measured ? Json{{"work", point.work}, {"machine", point.machine}} : Json(nullptr);
+      });
+      message["setter"]["height_map"] = {{"wcs", map->wcs},
+                                         {"columns", map->columns},
+                                         {"rows", map->rows},
+                                         {"rotation", map->rotation_deg},
+                                         {"points", std::move(points)}};
+      if (map->partial)
+        message["setter"]["height_map"]["partial"] = *map->partial;
+    }
     if (const auto& measured = setter->measured) {
       const auto direction = [](ProbeDirection d) {
         switch (d) {
@@ -161,7 +177,7 @@ auto encode_message(MessageLevel level, std::string_view text_for_operator,
                {"text", text_for_operator},
                {"time", unix_time.count()}};
   if (localization)
-    message["localization"] = {{"key", localization->key}, {"params", localization->params}};
+    message["localization"] = message_key_json(*localization);
   return text(message);
 }
 

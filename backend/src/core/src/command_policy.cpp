@@ -539,6 +539,8 @@ auto CommandPolicy::evaluate(const Command& command, const ControllerState& s,
             return reject("Fixed setter requires the confirmed tool and a stopped spindle.",
                           RefusalMessage{"messages.policy.fixedSetterNeeds"});
           if (!std::ranges::all_of(c.start, [](double value) { return std::isfinite(value); }) ||
+              !std::ranges::all_of(c.grid_mm, [](double value) { return std::isfinite(value); }) ||
+              !std::isfinite(c.step_mm) || !std::isfinite(c.clearance_mm) ||
               !std::ranges::all_of(c.angles_deg, [](double value) { return std::isfinite(value); }) ||
               !std::isfinite(c.gauge_width_mm))
             return reject("Probe positions and dimensions must be finite.",

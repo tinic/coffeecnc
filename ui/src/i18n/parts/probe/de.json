@@ -346,6 +346,37 @@
       "diameter": "Durchmesser",
       "toolRemoved": "Das Werkzeug wurde entfernt",
       "noEarlier": "Kein früherer Wert bekannt"
+    },
+    "heightMap": {
+      "button": "Höhenkarte…",
+      "title": "Z-Höhenkarte",
+      "setup": "Tastet Z oben an jedem Punkt eines Rasters in {wcs}-Werkstückkoordinaten an. Zuerst den Taster einmessen und seine Länge anwenden. Zwischen den Punkten fährt der Taster auf der Sicherheits-Z: Sie muss über dem Werkstück liegen.",
+      "xFrom": "X von",
+      "xTo": "X bis",
+      "yFrom": "Y von",
+      "yTo": "Y bis",
+      "step": "Schritt",
+      "clearance": "Sicherheits-Z",
+      "points": "{columns} × {rows} Punkte, etwa {minutes} min.",
+      "invalid": "Wählen Sie ein Rechteck und einen Schritt für 2 bis {max} Punkte.",
+      "tooLong": "Bis zu {minutes} min, mehr als die Grenze von {limit} min. Verwenden Sie weniger Punkte.",
+      "progress": "Höhenkarte wird angetastet: Punkt {point} von {total}…",
+      "done": "Höhenkarte: {count} Punkte, Z {low} bis {high} {unit}. Nichts wurde gesetzt.",
+      "failed": "Die Höhenkarte wurde nicht abgeschlossen.",
+      "partial": "{reason} {count} von {total} Punkten bleiben als unvollständige Karte erhalten.",
+      "result": "Karte",
+      "stop": "Stopp",
+      "resultTitle": "Höhenkarte",
+      "summary": "{wcs}, {count} Punkte: Z {low} bis {high} {unit}, eine Spanne von {spread} {unit}. Das Raster unten ist von oben gesehen.",
+      "partialSummary": "Unvollständige Karte: {count} von {total} Punkten. {reason} Gespeicherte Dateien sind so gekennzeichnet.",
+      "heights": "Höhen",
+      "show": "In 3D zeigen",
+      "hide": "In 3D ausblenden",
+      "saveCsv": "CSV speichern",
+      "saveProbe": "LinuxCNC-Antastdatei speichern",
+      "saving": "{name} wird gespeichert…",
+      "saved": "{name} im Programmordner gespeichert.",
+      "notSaved": "Die Datei wurde nicht gespeichert."
     }
   }
 }

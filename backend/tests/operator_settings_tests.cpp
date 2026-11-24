@@ -129,7 +129,10 @@ void documents_and_limits() {
   require(!decode_operator_settings_file(broken.dump()), "On-disk revision starts at one");
   auto requested = command();
   requested.document.default_jog_velocity = 1001;
-  require(!operator_settings_command_error(requested, limits).empty(), "Jog INI ceiling enforced");
+  const auto jog_limit = operator_settings_command_error(requested, limits);
+  require(jog_limit.text == "Default jog speed exceeds the configured machine limit." &&
+              jog_limit.localization == MessageKey{"backend.operatorSettings.jogSpeedLimit"},
+          "Jog INI ceiling returns a keyed refusal");
   requested = command();
   requested.document.default_spindle_rpm = 3001;
   require(!operator_settings_command_error(requested, limits).empty(),
@@ -256,7 +259,8 @@ void damaged_requests() {
     auto invalid = document;
     invalid[field] = damaged;
     const auto decoded = decode_operator_preferences(invalid.dump());
-    require(!decoded, "A save request with a damaged " + field + " is refused");
+    require(!decoded && decoded.error().localization.has_value(),
+            "A save request with a damaged " + field + " receives a keyed refusal");
   }
 }
 // The writer never writes a file the reader refuses: that would leave the settings unavailable.
@@ -437,8 +441,10 @@ void writer_delivery() {
             "reason");
   }
   store.page_ended(PageToken{1});
-  require(store.submit_operator_settings(PageToken{1}, 30, command(1)).has_value(),
-          "Ended page cannot queue a write");
+  const auto ended = store.submit_operator_settings(PageToken{1}, 30, command(1));
+  require(ended && ended->text == "This settings page has ended." &&
+              ended->localization == MessageKey{"backend.toolModelStore.settingsPageEnded"},
+          "Ended page cannot queue a write and returns a keyed refusal");
   store.send_snapshot(PageToken{2});
   wait(4);
   {

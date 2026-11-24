@@ -1039,8 +1039,14 @@ const examples = [
   {
     "type": "message",
     "level": "info",
-    "text": "Probe tripped",
-    "time": 1700000001000
+    "text": "T1 restored in the spindle.",
+    "time": 1700000001000,
+    "localization": {
+      "key": "backend.nmlPort.restored",
+      "params": {
+        "tool": "1"
+      }
+    }
   },
   {
     "type": "message",
@@ -1053,6 +1059,32 @@ const examples = [
     }
   },
   {
+    "type": "message",
+    "level": "error",
+    "text": "Panel request ignored: Missing required field: id.",
+    "time": 1700000001200,
+    "localization": {
+      "key": "messages.session.requestIgnored",
+      "params": { "detail": "Missing required field: id." },
+      "params_localization": {
+        "detail": { "key": "messages.request.missingField", "params": { "field": "id" } }
+      }
+    }
+  },
+  {
+    "type": "message",
+    "level": "error",
+    "text": "The machine status cannot be shown: status: motion.velocity is not a finite number.",
+    "time": 1700000001300,
+    "localization": {
+      "key": "messages.panelFeed.statusCannotShow",
+      "params": { "detail": "status: motion.velocity is not a finite number." },
+      "params_localization": {
+        "detail": { "key": "messages.wire.notFinite", "params": { "field": "status: motion.velocity" } }
+      }
+    }
+  },
+  {
     "type": "result",
     "id": 41,
     "outcome": "accepted",
@@ -1060,9 +1092,29 @@ const examples = [
   },
   {
     "type": "result",
+    "id": 58,
+    "outcome": "rejected",
+    "reason": "This line is inside a canned cycle.",
+    "refusal": {
+      "key": "backend.previewRestart.cannedCycle",
+      "params": {}
+    }
+  },
+  {
+    "type": "result",
     "id": 42,
     "outcome": "rejected",
     "reason": "Home all configured axes first."
+  },
+  {
+    "type": "result",
+    "id": 51,
+    "outcome": "rejected",
+    "reason": "The interpreter modes changed. Review a fresh program check.",
+    "refusal": {
+      "key": "backend.nmlPort.modesChanged",
+      "params": {}
+    }
   },
   {
     "type": "result",
@@ -1092,6 +1144,16 @@ const examples = [
   },
   {
     "type": "result",
+    "id": 56,
+    "outcome": "timed_out",
+    "reason": "The previous jog stop on X is not confirmed: LinuxCNC did not answer.",
+    "localization": {
+      "key": "messages.session.previousStopAxis",
+      "params": { "axis": "X", "detail": "LinuxCNC did not answer." }
+    }
+  },
+  {
+    "type": "result",
     "id": 47,
     "outcome": "timed_out",
     "reason": "LinuxCNC did not answer.",
@@ -1108,6 +1170,16 @@ const examples = [
     "localization": {
       "key": "backend.programEdit.exists",
       "params": { "name": "part.ngc" }
+    }
+  },
+  {
+    "type": "result",
+    "id": 57,
+    "outcome": "rejected",
+    "reason": "This line runs in G55. Select G55, then choose the line again.",
+    "refusal": {
+      "key": "backend.nmlPort.restartSelectWcs",
+      "params": { "wcs": "G55" }
     }
   },
   {
@@ -1147,6 +1219,16 @@ const examples = [
     "refusal": {
       "key": "messages.request.missingField",
       "params": { "field": "path" }
+    }
+  },
+  {
+    "type": "result",
+    "id": 52,
+    "outcome": "failed",
+    "reason": "Tool measured. The updated program check is unavailable.",
+    "localization": {
+      "key": "backend.toolChangeMeasurement.measuredCheckUnavailable",
+      "params": {}
     }
   },
   {
@@ -1364,6 +1446,26 @@ const examples = [
     }
   },
   {
+    "type": "result",
+    "id": 53,
+    "outcome": "rejected",
+    "reason": "Default jog speed exceeds the configured machine limit.",
+    "refusal": {
+      "key": "backend.operatorSettings.jogSpeedLimit",
+      "params": {}
+    }
+  },
+  {
+    "type": "result",
+    "id": 54,
+    "outcome": "rejected",
+    "reason": "Invalid panel presentation.",
+    "refusal": {
+      "key": "backend.operatorSettings.invalidPresentation",
+      "params": {}
+    }
+  },
+  {
     "type": "offset_history",
     "revision": 4,
     "storage": "saved",
@@ -1553,6 +1655,16 @@ const examples = [
     "refusal": {
       "key": "backend.halDiagnostics.notInstalled",
       "params": { "name": "halscope", "path": "/usr/bin:/bin" }
+    }
+  },
+  {
+    "type": "result",
+    "id": 55,
+    "outcome": "failed",
+    "reason": "LinuxCNC is not waiting for that tool change any more.",
+    "localization": {
+      "key": "backend.nmlPort.toolChangeGone",
+      "params": {}
     }
   }
 ] satisfies FromMachine[]

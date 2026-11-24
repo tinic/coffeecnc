@@ -130,7 +130,7 @@ void PanelComposer::observe(const PanelReading& reading) {
 
 auto PanelComposer::compose(const PanelReading& reading, PageToken page, bool ready_again,
                             std::chrono::milliseconds unix_time, std::vector<PanelRecord>* records)
-    -> std::expected<std::vector<std::string>, std::string> {
+    -> std::expected<std::vector<std::string>, LocalizedReason> {
   observe(reading);
   if (page_ != page) {
     page_ = page;
@@ -263,13 +263,15 @@ void PanelFeed::loop() {
           if (std::exchange(snapshots_owed, false) && snapshots_sent_)
             snapshots_sent_(*page);
         }
-      } else if (page && messages.error() != reported) {
-        reported = messages.error();
+      } else if (page && messages.error().text != reported) {
+        reported = messages.error().text;
         deliver_(*page,
                  {encode_message(
                      MessageLevel::error,
                      std::format("The machine status cannot be shown: {}", reported), unix_now(),
-                     MessageKey{"messages.panelFeed.statusCannotShow", {{"detail", reported}}})});
+                     MessageKey{"messages.panelFeed.statusCannotShow",
+                                {{"detail", reported}},
+                                parameter_localization("detail", messages.error().localization)})});
       }
     } else {
       composer.observe(reading);

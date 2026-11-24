@@ -401,7 +401,8 @@ void Session::close() {
   const std::scoped_lock lock{mutex_};
   closing_ = true;
   if (publication_) {
-    publication_->result.set_value(std::unexpected("CoffeeCNC is closing."));
+    publication_->result.set_value(std::unexpected(
+        LocalizedReason{"CoffeeCNC is closing.", MessageKey{"backend.programFiles.closing"}}));
     publication_.reset();
   }
   problems_.clear();
@@ -471,12 +472,14 @@ auto Session::submit(PageToken page, std::string_view json, Instant now,
   if (!page_open_ || page != PageToken{pages_})
     return outcome;
   if (const auto* error = std::get_if<DecodeError>(&decoded)) {
-    if (!error->id)
-      outcome.messages.push_back(encode_message(
-          MessageLevel::error, std::format("Panel request ignored: {}", error->reason),
-          now.unix_time,
-          MessageKey{"messages.session.requestIgnored", {{"detail", error->reason}}}));
-    else if (in_order(*error->id))
+    if (!error->id) {
+      outcome.messages.push_back(
+          encode_message(MessageLevel::error,
+                         std::format("Panel request ignored: {}", error->reason), now.unix_time,
+                         MessageKey{"messages.session.requestIgnored",
+                                    {{"detail", error->reason}},
+                                    parameter_localization("detail", error->localization)}));
+    } else if (in_order(*error->id))
       outcome.messages.push_back(
           encode_result(*error->id, CommandOutcome::rejected, error->reason, {}, {},
                         error->localization));
@@ -522,7 +525,7 @@ auto Session::submit(PageToken page, std::string_view json, Instant now,
              RefusalMessage{"messages.session.noOperatorSettings"});
     else if (const auto refused =
                  tool_models_->submit_operator_settings(page, request.id, std::move(*settings)))
-      result(CommandOutcome::rejected, *refused);
+      result(CommandOutcome::rejected, refused->text, refused->localization);
     return outcome;
   }
 
@@ -694,14 +697,16 @@ auto Session::loaded_program() const -> std::string {
 }
 
 auto Session::publish_program(std::string path, Publication publish)
-    -> std::future<std::expected<void, std::string>> {
+    -> std::future<std::expected<void, LocalizedReason>> {
   ProgramPublication request{std::move(path), std::move(publish), {}};
   auto result = request.result.get_future();
   const std::scoped_lock lock{mutex_};
   if (closing_) {
-    request.result.set_value(std::unexpected("CoffeeCNC is closing."));
+    request.result.set_value(std::unexpected(
+        LocalizedReason{"CoffeeCNC is closing.", MessageKey{"backend.programFiles.closing"}}));
   } else if (publication_) {
-    request.result.set_value(std::unexpected("Another program upload is in progress."));
+    request.result.set_value(std::unexpected(LocalizedReason{
+        "Another program upload is in progress.", MessageKey{"backend.programFiles.busy"}}));
   } else {
     publication_.emplace(std::move(request));
     wake();
@@ -901,7 +906,9 @@ void Session::publish_program(ProgramPublication& request, const Clock& clock) {
     return std::pair{status(clock().monotonic), epoch_};
   }();
   if (observed.link != Link::live) {
-    request.result.set_value(std::unexpected("Cannot verify the loaded program while the controller is offline."));
+    request.result.set_value(std::unexpected(
+        LocalizedReason{"Cannot verify the loaded program while the controller is offline.",
+                        MessageKey{"backend.programFiles.verify"}}));
     return;
   }
   const auto active = [](const ControllerState& state) -> bool {
@@ -918,10 +925,12 @@ void Session::publish_program(ProgramPublication& request, const Clock& clock) {
             started_program_.source.inputs->program_file == request.path));
   };
   if (using_file(controller) || using_file(observed)) {
-    request.result.set_value(std::unexpected("Stop the loaded program before replacing it."));
+    request.result.set_value(std::unexpected(LocalizedReason{
+        "Stop the loaded program before replacing it.", MessageKey{"backend.programFiles.stop"}}));
     return;
   }
-  auto published = request.publish();
+  auto published = request.publish().transform_error(
+      [](std::string error) { return LocalizedReason{std::move(error)}; });
   if (published) {
     const auto now = port_.snapshot();
     if (loaded(now)) {
@@ -934,7 +943,9 @@ void Session::publish_program(ProgramPublication& request, const Clock& clock) {
       const auto reopened = active(now) ? ActionResult{ActionStatus::failed, "The program is running."}
                                         : port_.open_program(request.path, reopen_current);
       if (reopened.status != ActionStatus::accepted)
-        published = std::unexpected("Saved on disk, but not reopened. " + reopened.reason);
+        published = std::unexpected(LocalizedReason{
+            std::format("Saved on disk, but not reopened. {}", reopened.reason),
+            MessageKey{"messages.session.savedNotReopened", {{"detail", reopened.reason}}}});
     }
   }
   request.result.set_value(std::move(published));
@@ -1348,7 +1359,7 @@ auto Session::check_program_start(const Queued& request, const Run& command,
                              MessageKey{"messages.session.programCheckChanged"}};
   auto reason = port_.validate_program_inputs(*check.source.inputs);
   if (!reason.empty())
-    return ProgramCheckIssue{std::move(reason)};
+    return ProgramCheckIssue{std::move(reason.text), std::move(reason.localization)};
   return std::nullopt;
 }
 
@@ -1381,7 +1392,8 @@ auto Session::plan_restart(Queued& request, PlanRestart command, const Controlle
   const auto& outcome = computed.outcome;
   if (!outcome.restart || outcome.restart->line != command.line || !computed.files_changed) {
     if (!outcome.restart_blocked.empty())
-      return answer({CommandOutcome::rejected, outcome.restart_blocked});
+      return answer({CommandOutcome::rejected, outcome.restart_blocked,
+                     outcome.restart_blocked_localization});
     if (const auto& error = outcome.error)
       return answer({CommandOutcome::rejected, error->text, error->localization});
     return refuse("No verified motion is available at that line.",
@@ -1392,7 +1404,8 @@ auto Session::plan_restart(Queued& request, PlanRestart command, const Controlle
     return refuse("Restart requires a tool verified for machining.",
                   RefusalMessage{"messages.session.restartNeedsTool"});
   if (auto reason = port_.validate_restart(point, inputs); !reason.empty())
-    return answer({CommandOutcome::rejected, std::move(reason)});
+    return answer(
+        {CommandOutcome::rejected, std::move(reason.text), std::move(reason.localization)});
   if (!wanted(request))
     return cancelled();
   RestartPlan plan{++restart_id_, point.tool != state.tool_in_spindle, point};
@@ -1445,7 +1458,8 @@ auto Session::start_restart(const Queued& request, StartRestart command) -> Stag
   auto check = restart.plan.point;
   check.clearance_z = restart.programmed_clearance;
   if (auto reason = port_.validate_restart(check, *restart.source.inputs); !reason.empty())
-    return answer({CommandOutcome::rejected, std::move(reason)});
+    return answer(
+        {CommandOutcome::rejected, std::move(reason.text), std::move(reason.localization)});
   if (check.clearance_z > restart.plan.point.clearance_z + 1e-6)
     return refuse("The required clearance changed. Review a new plan.",
                   RefusalMessage{"messages.session.clearanceChanged"});
@@ -1503,9 +1517,6 @@ auto Session::resume_restart(const Queued& request, const ControllerState& state
 }
 
 auto Session::measure_tool_change(Queued& request, const ControllerState& state) -> Stage {
-  const auto refused = [](std::string reason) {
-    return answer({CommandOutcome::rejected, std::move(reason)});
-  };
   const auto& source = started_program_.source;
   const auto& preview = started_program_.preview;
   if (preview_ == nullptr || restart_engine_ == nullptr || !port_.fixed_setter_available() ||
@@ -1513,16 +1524,19 @@ auto Session::measure_tool_change(Queued& request, const ControllerState& state)
       !source.program_snapshot || !started_program_.files_changed ||
       source.inputs->program_file != state.program_file || !state.tool_change_line ||
       !state.requested_tool)
-    return refused("Measuring at M6 requires a complete check of the running program.");
+    return refuse("Measuring at M6 requires a complete check of the running program.",
+                  RefusalMessage{"backend.toolChangeMeasurement.needsProgramCheck"});
   const auto tool = *state.requested_tool;
   if (tool_models_ != nullptr && tool_models_->touch_probe_loaded(tool) != false)
-    return refused("Restart requires a tool verified for machining.");
+    return refuse("Restart requires a tool verified for machining.",
+                  RefusalMessage{"messages.session.restartNeedsTool"});
   const auto line = *state.tool_change_line;
   const auto target = std::ranges::find_if(preview->segments, [line](const auto& segment) {
     return segment.line > line;
   });
   if (target == preview->segments.end() || target->tool != tool)
-    return refused("There is no verified motion to restart after this tool change.");
+    return refuse("There is no verified motion to restart after this tool change.",
+                  RefusalMessage{"backend.toolChangeMeasurement.noMotionAfterChange"});
 
   std::string_view remaining = *source.program_snapshot;
   for (int index = 1; index < line && !remaining.empty(); ++index)
@@ -1530,12 +1544,14 @@ auto Session::measure_tool_change(Queued& request, const ControllerState& state)
   const auto exchange = inspect_probe_code(program_line(remaining));
   if (!exchange.changes_tool || exchange.relabels_tool || exchange.stops_program ||
       !exchange.refusal.empty())
-    return refused("The original M6 block could not be verified.");
+    return refuse("The original M6 block could not be verified.",
+                  RefusalMessage{"backend.toolChangeMeasurement.notVerifiedM6"});
   for (int index = line + 1; index < target->line; ++index) {
     const auto block = inspect_probe_code(program_line(remaining));
     if (block.changes_tool || block.relabels_tool || block.stops_program ||
         block.refusal == probe_code_unknown)
-      return refused("Restart would skip a tool change, stop, or unsupported block.");
+      return refuse("Restart would skip a tool change, stop, or unsupported block.",
+                    RefusalMessage{"backend.toolChangeMeasurement.skipUnsupported"});
   }
   const auto context = [&]() -> SetterEpoch {
     const std::scoped_lock lock{mutex_};
@@ -1545,7 +1561,8 @@ auto Session::measure_tool_change(Queued& request, const ControllerState& state)
   const auto still = [&] { return wanted(request) && context().datum == before.datum; };
   const auto setter = port_.fixed_setter({SetterAction::status}, before, still);
   if (!setter || !setter->calibration)
-    return refused("Teach the fixed setter before measuring at a program tool change.");
+    return refuse("Teach the fixed setter before measuring at a program tool change.",
+                  RefusalMessage{"backend.toolChangeMeasurement.teachFirst"});
 
   const auto anchored = [&](const RestartPoint& point, double length) {
     return point.line == target->line && point.tool == tool && point.h == tool &&
@@ -1557,7 +1574,8 @@ auto Session::measure_tool_change(Queued& request, const ControllerState& state)
   };
   const auto old_tool = std::ranges::find(source.inputs->tools, tool, &Tool::number);
   if (old_tool == source.inputs->tools.end())
-    return refused("A cutting tool in the tool table and a fixed setter are required.");
+    return refuse("A cutting tool in the tool table and a fixed setter are required.",
+                  RefusalMessage{"backend.toolChangeMeasurement.requiresToolAndSetter"});
   auto trial_inputs = *source.inputs;
   trial_inputs.restart_line = target->line;
   trial_inputs.restart_loaded_tool = tool;
@@ -1565,12 +1583,16 @@ auto Session::measure_tool_change(Queued& request, const ControllerState& state)
   if (!still() || trial.cancelled || !trial.program_snapshot ||
       *trial.program_snapshot != *source.program_snapshot ||
       started_program_.files_changed([&] { return !still(); }))
-    return refused("The program or tool data changed before measurement.");
+    return refuse("The program or tool data changed before measurement.",
+                  RefusalMessage{"backend.toolChangeMeasurement.dataChangedBeforeMeasure"});
   const auto& trial_point = trial.outcome.restart;
-  if (!trial_point || !anchored(*trial_point, old_tool->length) || !trial.files_changed)
-    return refused(trial.outcome.restart_blocked.empty()
-                       ? "There is no verified motion to restart after this tool change."
-                       : trial.outcome.restart_blocked);
+  if (!trial_point || !anchored(*trial_point, old_tool->length) || !trial.files_changed) {
+    if (!trial.outcome.restart_blocked.empty())
+      return answer({CommandOutcome::rejected, trial.outcome.restart_blocked,
+                     trial.outcome.restart_blocked_localization});
+    return refuse("There is no verified motion to restart after this tool change.",
+                  RefusalMessage{"backend.toolChangeMeasurement.noMotionAfterChange"});
+  }
 
   auto prepared = port_.prepare_tool_measurement(tool, state.tool_request, line,
                                                  *trial_point, *source.inputs, still);
@@ -1587,12 +1609,18 @@ auto Session::measure_tool_change(Queued& request, const ControllerState& state)
       return loaded() || !current(request);
     });
     if (!current(request) || !loaded())
-      return answer({CommandOutcome::failed, "The program stopped before the tool could be measured."});
+      return answer({CommandOutcome::failed,
+                     "The program stopped before the tool could be measured.",
+                     {},
+                     MessageKey{"backend.toolChangeMeasurement.stoppedBeforeMeasure"}});
   }
   const auto measurement_epoch = context();
   const auto maintain = [&] { return still() && context() == measurement_epoch; };
   if (!maintain() || original.files_changed([&] { return !maintain(); }))
-    return answer({CommandOutcome::failed, "The program stopped before the tool could be measured."});
+    return answer({CommandOutcome::failed,
+                   "The program stopped before the tool could be measured.",
+                   {},
+                   MessageKey{"backend.toolChangeMeasurement.stoppedBeforeMeasure"}});
   const auto ready = port_.snapshot();
   const FixedSetterRequest measurement{SetterAction::touch_off, tool,
                                         {ready.axes[0].machine, ready.axes[1].machine, ready.axes[2].machine}};
@@ -1601,7 +1629,10 @@ auto Session::measure_tool_change(Queued& request, const ControllerState& state)
     return answer({CommandOutcome::failed, measured.error()});
   const auto& recorded = measured->measurement;
   if (!recorded || recorded->calibration)
-    return answer({CommandOutcome::failed, "LinuxCNC did not measure the tool length."});
+    return answer({CommandOutcome::failed,
+                   "LinuxCNC did not measure the tool length.",
+                   {},
+                   MessageKey{"backend.toolChangeMeasurement.noMeasurement"}});
   const auto length = recorded->value;
 
   Stage result;
@@ -1616,7 +1647,8 @@ auto Session::measure_tool_change(Queued& request, const ControllerState& state)
   CheckedPreview fresh;
   for (;;) {
     if (!maintain())
-      return cannot_restart("Tool measured. Restart preparation was cancelled.");
+      return cannot_restart("Tool measured. Restart preparation was cancelled.",
+                            MessageKey{"backend.toolChangeMeasurement.measuredCancelled"});
     fresh = preview_->checked_preview();
     if (fresh.preview && fresh.preview->state == PreviewState::ready && fresh.source.inputs &&
         fresh.source.inputs->program_file == state.program_file && fresh.files_changed &&
@@ -1628,7 +1660,8 @@ auto Session::measure_tool_change(Queued& request, const ControllerState& state)
         }))
       break;
     if (std::chrono::steady_clock::now() >= deadline)
-      return cannot_restart("Tool measured. The updated program check is unavailable.");
+      return cannot_restart("Tool measured. The updated program check is unavailable.",
+                            MessageKey{"backend.toolChangeMeasurement.measuredCheckUnavailable"});
     std::unique_lock lock{mutex_};
     work_ready_.wait_for(lock, std::chrono::milliseconds{50}, [&] { return !current(request); });
   }
@@ -1642,9 +1675,11 @@ auto Session::measure_tool_change(Queued& request, const ControllerState& state)
   auto replay = restart_engine_->compute(inputs, [&] { return !maintain(); });
   if (!maintain() || replay.cancelled || !replay.program_snapshot ||
       *replay.program_snapshot != *original.source.program_snapshot)
-    return cannot_restart("Tool measured. The restart source changed.");
+    return cannot_restart("Tool measured. The restart source changed.",
+                          MessageKey{"backend.toolChangeMeasurement.measuredSourceChanged"});
   if (replay.outcome.state != PreviewState::ready || !replay.outcome.check || !replay.files_changed)
-    return cannot_restart("Tool measured. The updated program check is unavailable.");
+    return cannot_restart("Tool measured. The updated program check is unavailable.",
+                          MessageKey{"backend.toolChangeMeasurement.measuredCheckUnavailable"});
   if (!replay.outcome.check->errors.empty()) {
     const auto& issue = replay.outcome.check->errors.front();
     return cannot_restart(issue.text, issue.localization);
@@ -1655,17 +1690,22 @@ auto Session::measure_tool_change(Queued& request, const ControllerState& state)
   if (!maintain() || computed.cancelled || !computed.program_snapshot ||
       *computed.program_snapshot != *original.source.program_snapshot ||
       preview_->restart_source(fresh.preview->context).inputs != fresh.source.inputs)
-    return cannot_restart("Tool measured. The restart source changed.");
+    return cannot_restart("Tool measured. The restart source changed.",
+                          MessageKey{"backend.toolChangeMeasurement.measuredSourceChanged"});
   auto point = computed.outcome.restart;
-  if (!point || !anchored(*point, length) || !computed.files_changed)
-    return cannot_restart(computed.outcome.restart_blocked.empty()
-                              ? "Tool measured. There is no verified restart at the next motion."
-                              : computed.outcome.restart_blocked);
+  if (!point || !anchored(*point, length) || !computed.files_changed) {
+    if (!computed.outcome.restart_blocked.empty())
+      return cannot_restart(computed.outcome.restart_blocked,
+                            computed.outcome.restart_blocked_localization);
+    return cannot_restart("Tool measured. There is no verified restart at the next motion.",
+                          MessageKey{"backend.toolChangeMeasurement.measuredNoRestart"});
+  }
   const double clearance = point->clearance_z;
   if (auto reason = port_.validate_restart(*point, *fresh.source.inputs); !reason.empty())
-    return cannot_restart(std::move(reason));
+    return cannot_restart(std::move(reason.text), std::move(reason.localization));
   if (!maintain())
-    return cannot_restart("Tool measured. Restart preparation was cancelled.");
+    return cannot_restart("Tool measured. Restart preparation was cancelled.",
+                          MessageKey{"backend.toolChangeMeasurement.measuredCancelled"});
   RestartPlan plan{++restart_id_, false, *point};
   inputs.restart_line.reset();
   inputs.restart_loaded_tool.reset();
@@ -2076,6 +2116,9 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
           if (!result)
             return answer({CommandOutcome::failed, std::move(result.error())});
           Stage step;
+          // A height map that stopped after some points fails with the points measured so far.
+          if (const auto& map = result->height_map; map && map->partial)
+            step = answer({CommandOutcome::failed, *map->partial});
           step.setter = std::move(*result);
           return step;
         } else if constexpr (std::is_same_v<T, SetTool>) {
@@ -2190,7 +2233,8 @@ auto Session::restore_offset(const Queued& request, const RestoreOffset& command
       entry->number == state.tool_in_spindle) {
     const auto effect = port_.tool_length_in_effect();
     if (!effect)
-      return answer({CommandOutcome::rejected, effect.error()});
+      return answer(
+          {CommandOutcome::rejected, effect.error().text, {}, effect.error().localization});
     follow_up = after_tool_length_write(entry->number, state.tool_in_spindle, *effect);
   }
   const auto mark = history_->begin(HistorySource::restore, entry->id);
@@ -2302,7 +2346,10 @@ auto Session::jog(Queued& request, const Jog& command, const Decision& decision,
       if (started.status != ActionStatus::failed || !is_jog_inhibit_refusal(started.reason))
         return answer(reply(std::move(started)));
       if (watchdog_epoch_ > request.epoch)
-        return answer({CommandOutcome::failed, std::string(watchdog_stop_text)});
+        return answer({CommandOutcome::failed,
+                       std::string(watchdog_stop_text),
+                       {},
+                       MessageKey{"backend.jogStop.watchdog"}});
       // No period has raised the level since the stop decision: the inhibit that refused the
       // start was not ours, or not yet. No period for longer than control_fresh: the control
       // thread is stalled and may not have read a trip.
@@ -2348,12 +2395,16 @@ auto Session::start_gate(Queued& request, std::size_t index, bool held) -> std::
     if (auto stopped = tracked_stop(i); stopped.status != ActionStatus::accepted) {
       forget_press(request);
       const auto failure = stopped.status;
-      auto reason =
-          (i == index ? std::string("The previous jog stop on this axis is not confirmed: ")
-                      : std::string("The previous jog stop on ") + letter(axes.at(i)) +
-                            " is not confirmed: ") +
-          reply(std::move(stopped)).reason;
-      return answer(reply({failure, std::move(reason)}));
+      const auto detail = reply(std::move(stopped)).reason;
+      if (i == index)
+        return answer(
+            reply({failure,
+                   std::format("The previous jog stop on this axis is not confirmed: {}", detail),
+                   MessageKey{"messages.session.previousStopThisAxis", {{"detail", detail}}}}));
+      const std::string axis(1, letter(axes.at(i)));
+      return answer(reply(
+          {failure, std::format("The previous jog stop on {} is not confirmed: {}", axis, detail),
+           MessageKey{"messages.session.previousStopAxis", {{"axis", axis}, {"detail", detail}}}}));
     }
   }
   const std::scoped_lock lock{mutex_};
@@ -2363,8 +2414,11 @@ auto Session::start_gate(Queued& request, std::size_t index, bool held) -> std::
   if (request.epoch != epoch_ || (held && (axis.latched || !leases_.active(axes.at(index))))) {
     if (request.epoch == epoch_)
       axis.pressed = false;
-    return answer({request.sent ? CommandOutcome::failed : CommandOutcome::rejected,
-                   held && axis.latched ? release_reason : stopped_reason});
+    const auto outcome = request.sent ? CommandOutcome::failed : CommandOutcome::rejected;
+    if (held && axis.latched)
+      return answer({outcome, release_reason, {}, MessageKey{"messages.session.releaseJog"}});
+    return answer(
+        {outcome, stopped_reason, {}, MessageKey{"messages.session.jogStoppedBeforeStart"}});
   }
   // Not before the level has been low for whole control periods: LinuxCNC's servo thread, and
   // the HAL logic between the pin and motion, must have seen it fall.
@@ -2392,9 +2446,11 @@ auto Session::list_directory(const ListDirectory& request, Stage& step) -> Reply
   auto message = encode_directory(*directory);
   if (!message)
     return {CommandOutcome::rejected,
-            std::format("Directory cannot be sent: {}", message.error()),
+            std::format("Directory cannot be sent: {}", message.error().text),
             {},
-            MessageKey{"messages.session.directoryNotSent", {{"detail", message.error()}}}};
+            MessageKey{"messages.session.directoryNotSent",
+                       {{"detail", message.error().text}},
+                       parameter_localization("detail", message.error().localization)}};
   step.produced.push_back(std::move(*message)); // `truncated` in it tells of a cut listing.
   return {};
 }

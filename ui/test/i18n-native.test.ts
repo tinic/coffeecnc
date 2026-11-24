@@ -13,25 +13,29 @@ const native = import.meta.glob<string>([
   '../../backend/src/app/src/session.cpp',
   '../../backend/src/app/src/request.cpp',
   '../../backend/src/app/src/response.cpp',
-  '../../backend/src/app/src/messages.cpp',
   '../../backend/src/app/src/panel_feed.cpp',
   '../../backend/src/app/include/coffeecnc/app/session.hpp',
   '../../backend/src/app/include/coffeecnc/app/panel_feed.hpp',
 ], { query: '?raw', import: 'default', eager: true })
 const adapter = import.meta.glob<string>([
+  '../../backend/src/coffeecnc/application.cpp',
+  '../../backend/src/coffeecnc/remote_server.cpp',
   '../../backend/src/linuxcnc/src/nml_status.cpp',
   '../../backend/src/core/include/coffeecnc/core/controller_port.hpp',
   '../../backend/src/app/src/alarm_log.cpp',
   '../../backend/src/core/include/coffeecnc/core/jog_stop_report.hpp',
   '../../backend/src/linuxcnc/src/nml_port.cpp',
+  '../../backend/src/linuxcnc/src/tool_table.cpp',
   '../../backend/src/linuxcnc/src/nml_panel_source.cpp',
   '../../backend/src/linuxcnc/src/hal_diagnostics.cpp',
   '../../backend/src/app/src/diagnostics_feed.cpp',
   '../../backend/src/linuxcnc/src/preview_engine.cpp',
+  '../../backend/src/linuxcnc/src/preview_wire.cpp',
   '../../backend/src/app/src/machine_data.cpp',
   '../../backend/src/app/src/backup_archive.cpp',
   '../../backend/src/app/src/restore_helper.cpp',
   '../../backend/src/app/src/operator_settings_store.cpp',
+  '../../backend/src/app/src/operator_settings.cpp',
   '../../backend/src/app/src/offset_history.cpp',
   '../../backend/src/app/src/tool_models.cpp',
   '../../backend/src/app/src/tool_model_store.cpp',
@@ -39,6 +43,7 @@ const adapter = import.meta.glob<string>([
   '../../backend/src/app/include/coffeecnc/app/tool_model_store.hpp',
   '../../backend/src/app/src/program_store.cpp',
   '../../backend/src/app/src/program_edit.cpp',
+  '../../backend/src/app/src/messages.cpp',
 ], { query: '?raw', import: 'default', eager: true })
 /** Panel modules whose English reaches the operator as run-time text (a result reason, an import error). */
 const modules = import.meta.glob<string>(['../src/bridge.ts', '../src/step.worker.ts', '../src/step-model.ts'],
@@ -61,9 +66,6 @@ const detail = 'Sample detail.'
  * with the composed sentence the operator sees.
  */
 const composed: Record<string, string> = {
-  // session.cpp: "The previous jog stop on " + letter + " is not confirmed: " + reason.
-  'The previous jog stop on ': `The previous jog stop on X is not confirmed: ${detail}`,
-  ' is not confirmed: ': `The previous jog stop on X is not confirmed: ${detail}`,
   // session.cpp: a refusal of its own, without a final period.
   'A touch probe is loaded': 'A touch probe is loaded',
 }
@@ -163,8 +165,6 @@ function nativeSentences(path: string, source: string): string[] {
   }
   for (const literal of Object.keys(composed).filter((key) => key.startsWith(' ')))
     if (source.includes(`"${literal}"`)) sentences.push(composed[literal] ?? literal)
-  // messages.cpp: Fields::fail(field, problem) reports "<field> <problem>.".
-  for (const match of source.matchAll(/\bfail\([^,()]+,\s*"([^"]+)"\)/g)) sentences.push(`max_jog_velocity ${match[1] ?? ''}.`)
   return sentences
 }
 
@@ -196,7 +196,7 @@ describe('native and store sentences', () => {
   const files = Object.entries(native)
 
   it('reads every source file', () => {
-    expect(files.length).toBe(8)
+    expect(files.length).toBe(7)
     expect(store).toContain('export function describeCommand')
   })
 
@@ -315,8 +315,15 @@ describe('native and store sentences', () => {
       expect(i18n.global.te(key, 'en'), key).toBe(true)
       let parameter = 0
       let argumentIndex = 0
-      const formatted = fallback.replace(/\{(?::[^{}]*)?\}/g,
-        () => args[argumentIndex++] ?? markers[parameter++] ?? '{}')
+      const bound = new Map<number, string>()
+      const formatted = fallback.replace(/\{(\d+)?(?::[^{}]*)?\}/g, (_, position: string | undefined) => {
+        const index = position === undefined ? argumentIndex++ : Number(position)
+        const existing = args[index] ?? bound.get(index)
+        if (existing !== undefined) return existing
+        const marker = markers[parameter++] ?? '{}'
+        bound.set(index, marker)
+        return marker
+      })
       expect(i18n.global.t(key as never, params, { locale: 'en' }), key).toBe(formatted)
       expect(parameter, key).toBe(names.length)
     }
@@ -350,6 +357,19 @@ describe('native and store sentences', () => {
 })
 
 describe('translateMessage', () => {
+  it('translates a keyed argument and falls back to its text for invalid metadata', async () => {
+    await setLanguage('de')
+    const fallback = 'Panel request ignored: Bad packet.'
+    const localization = { key: 'messages.session.requestIgnored', params: { detail: 'Bad packet.' } }
+    const detail = { key: 'messages.request.missingField', params: { field: 'id' } }
+    expect(translateMessage(fallback, {
+      ...localization, params_localization: { detail },
+    })).toBe('Anfrage der Bedienoberfläche ignoriert: Pflichtfeld fehlt: id.')
+    expect(translateMessage(fallback, {
+      ...localization, params_localization: { detail: { ...detail, params: {} } },
+    })).toBe('Anfrage der Bedienoberfläche ignoriert: Bad packet.')
+  })
+
   it('uses a structured key for a timeout without matching its English reason', async () => {
     await setLanguage('de')
     expect(translateResult({ type: 'result', id: 8, outcome: 'timed_out', reason: 'Older fallback.',

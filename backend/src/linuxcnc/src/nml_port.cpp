@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -54,9 +55,10 @@ auto file_stamp(const std::string& path) -> std::optional<FileStamp> {
   struct stat info{};
   if (path.empty() || ::stat(path.c_str(), &info) != 0)
     return std::nullopt;
+  const auto modified =
+      std::chrono::seconds{info.st_mtim.tv_sec} + std::chrono::nanoseconds{info.st_mtim.tv_nsec};
   return FileStamp{.inode = static_cast<std::uint64_t>(info.st_ino),
-                   .modified = (std::int64_t{info.st_mtim.tv_sec} * 1'000'000'000) +
-                               std::int64_t{info.st_mtim.tv_nsec},
+                   .modified = modified.count(),
                    .size = std::int64_t{info.st_size}};
 }
 
@@ -122,20 +124,23 @@ auto load_spindle_tool(const std::filesystem::path& path) -> std::optional<int> 
 constexpr std::string_view breakpoint_message = "CoffeeCNC breakpoint ";
 
 auto with_breakpoint(std::string_view program, int target, std::string_view receipt)
-    -> std::expected<std::string, std::string> {
+    -> std::expected<std::string, LocalizedReason> {
   std::size_t insertion = std::string_view::npos;
   auto remaining = program;
   for (int line = 1; !remaining.empty(); ++line) {
     const auto end = remaining.find('\n');
     const auto block = remaining.substr(0, end);
     if (o_word_name(block))
-      return std::unexpected("A breakpoint needs a program without subroutines or loops.");
+      return std::unexpected(
+          LocalizedReason{"A breakpoint needs a program without subroutines or loops.",
+                          MessageKey{"backend.nmlPort.breakpointPlainProgram"}});
     if (line == target && motion_use(block) != MotionUse::none)
       insertion = program.size() - remaining.size();
     remaining.remove_prefix(end == std::string_view::npos ? remaining.size() : end + 1);
   }
   if (insertion == std::string_view::npos)
-    return std::unexpected("Choose a motion block in the loaded program.");
+    return std::unexpected(LocalizedReason{"Choose a motion block in the loaded program.",
+                                           MessageKey{"backend.nmlPort.breakpointMotionBlock"}});
   // The copy preserves the original words, comments and line endings on every source line.
   std::string copied{program};
   // LinuxCNC tags M0 with the previous motion line. This queued message is delivered after
@@ -911,16 +916,22 @@ struct NmlPort::Impl {
     return millimetres_per_minute / config.millimetres_per_unit / seconds_per_minute;
   }
 
-  [[nodiscard]] auto read_tool_table() const -> std::expected<std::string, std::string> {
+  [[nodiscard]] auto read_tool_table() const -> std::expected<std::string, LocalizedReason> {
     if (config.tool_table.empty())
-      return std::unexpected(std::string("No tool table is configured ([EMCIO] TOOL_TABLE)."));
+      return std::unexpected(LocalizedReason{"No tool table is configured ([EMCIO] TOOL_TABLE).",
+                                             MessageKey{"backend.nmlPort.noToolTable"}});
     auto text = read_text_file(config.tool_table, max_tool_table_bytes);
-    if (!text)
-      return std::unexpected(text.error() == TextFileError::too_large
-                                 ? std::format("Tool table {} is larger than 4 MiB.",
-                                               config.tool_table)
-                                 : std::format("Cannot read tool table {}.", config.tool_table));
-    return std::move(*text);
+    if (text)
+      return std::move(*text);
+
+    const auto& file = config.tool_table;
+    if (text.error() == TextFileError::too_large)
+      return std::unexpected(
+          LocalizedReason{std::format("Tool table {} is larger than 4 MiB.", file),
+                          MessageKey{"backend.nmlPort.toolTableTooLarge", {{"file", file}}}});
+    return std::unexpected(
+        LocalizedReason{std::format("Cannot read tool table {}.", file),
+                        MessageKey{"backend.nmlPort.cannotReadToolTable", {{"file", file}}}});
   }
 
   // Replaces the file in one step, then has LinuxCNC read it: two commits. Until the first the
@@ -929,14 +940,17 @@ struct NmlPort::Impl {
     // On disk before LinuxCNC reads it: a power cut leaves the old table or the new one.
     const std::string temporary = config.tool_table + ".coffeecnc";
     if (!write_synced(temporary, table))
-      return failed(std::format("Cannot write tool table {}.", temporary));
+      return failed(std::format("Cannot write tool table {}.", temporary),
+                    MessageKey{"backend.nmlPort.cannotWriteToolTable", {{"file", temporary}}});
     if (!still()) {
       std::error_code error;
       std::filesystem::remove(temporary, error);
       return withdrawn();
     }
     if (!rename_synced(temporary, config.tool_table))
-      return failed(std::format("Cannot replace tool table {}.", config.tool_table));
+      return failed(
+          std::format("Cannot replace tool table {}.", config.tool_table),
+          MessageKey{"backend.nmlPort.cannotReplaceToolTable", {{"file", config.tool_table}}});
     const auto from = mark();
     EMC_TOOL_LOAD_TOOL_TABLE message;
     std::ranges::fill(message.file, '\0'); // the configured table
@@ -944,9 +958,11 @@ struct NmlPort::Impl {
     // Withdrawn between the two commits. Nothing is rolled back: the file may have been edited
     // again by now.
     if (loaded.status == ActionStatus::cancelled)
-      return failed(std::format("The tool table file {} was changed, but the request was "
-                                "cancelled before LinuxCNC was told to load it.",
-                                config.tool_table));
+      return failed(
+          std::format("The tool table file {} was changed, but the request was "
+                      "cancelled before LinuxCNC was told to load it.",
+                      config.tool_table),
+          MessageKey{"backend.nmlPort.toolTableNotLoaded", {{"file", config.tool_table}}});
     if (accepted(loaded) && loads != nullptr)
       ++loads->tool_tables;
     return loaded;
@@ -1242,9 +1258,15 @@ void NmlPort::idle_maintenance(const Wanted& wanted) {
   });
   if (mode != TaskMode::mdi && wanted() && status().controller.machine == MachineState::on)
     static_cast<void>(set_task_mode(mode, wanted));
-  impl_->messages.push_back({!verified, verified
-      ? std::format("T{} restored in the spindle.", tool)
-      : std::format("Could not verify restoring T{} in the spindle. Check the active tool.", tool)});
+  if (verified)
+    impl_->messages.push_back(
+        {false, std::format("T{} restored in the spindle.", tool),
+         MessageKey{"backend.nmlPort.restored", {{"tool", std::to_string(tool)}}}});
+  else
+    impl_->messages.push_back(
+        {true,
+         std::format("Could not verify restoring T{} in the spindle. Check the active tool.", tool),
+         MessageKey{"backend.nmlPort.restoreUnverified", {{"tool", std::to_string(tool)}}}});
 }
 
 auto NmlPort::set_machine_state(MachineState state, const Wanted& wanted) -> ActionResult {
@@ -1623,6 +1645,15 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   bool traversing_xy = false;
   std::optional<std::array<double, 3>> vertical_at;
   bool lifting = false;
+  // Z held at `z`: measured there or, for a height map's later point, commanded there with the
+  // encoder within the start's allowed lag of it (the last retract's: 0.125 mm on the G0759).
+  const auto z_held = [&](const EMC_STAT& current, double z) {
+    const double commanded = current.motion.traj.position.tran.z * machine_scale;
+    const double measured = current.motion.traj.actualPosition.tran.z * machine_scale;
+    return near(measured, z) ||
+           (move.start_z_lag_mm > 0 && near(commanded, z) &&
+            std::abs(measured - z) <= move.start_z_lag_mm);
+  };
   const auto steady_context = [&](const EMC_STAT& current) -> bool {
     const auto s = to_status(current, impl_->config, hal, Link::live);
     return normal_mode(s) && std::ranges::contains(s.active_codes, "G40") &&
@@ -1632,7 +1663,7 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
            s.controller.program_units == c.program_units && s.feed_mode == before.feed_mode &&
            s.wcs == before.wcs && s.g5x == before.g5x && s.g92 == before.g92 &&
            s.tool_offset == before.tool_offset && s.rotation_xy == before.rotation_xy &&
-           (traversing_xy ? near(s.controller.axes[2].machine, lift_z)
+           (traversing_xy ? z_held(current, lift_z)
             : lifting     ? near(s.controller.axes[0].machine, move.start[0]) &&
                                near(s.controller.axes[1].machine, move.start[1])
             : vertical_at ? near(s.controller.axes[0].machine, (*vertical_at)[0]) &&
@@ -1782,10 +1813,20 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
     return interrupt(std::format("Could not prepare the probing feed ({}).", block_failure));
   raw = live_cycle();
   const auto probe_pin = interlock();
+  // The start is measured, and the command must agree with it. Only a height map's later point
+  // (`start_z_lag_mm`) lets the command and the encoder differ along Z, in either direction, by
+  // the last retract's settling.
+  const auto commanded_at_start = [&](const EMC_STAT& current) {
+    const auto commanded = machine_position(current.motion.traj.position);
+    if (line.axis != 2 || !(move.start_z_lag_mm > 0))
+      return near(line.distance(move.start, commanded), 0);
+    return std::abs(commanded[2] - machine_position(current.motion.traj.actualPosition)[2]) <=
+           move.start_z_lag_mm;
+  };
   if (raw == nullptr || !probe_pin || probe_pin->probe_input.value_or(true) || raw->motion.traj.probeval != 0 ||
       raw->motion.traj.feed_override_enabled || raw->motion.traj.adaptive_feed_enabled ||
       !near(line.distance(move.start, machine_position(raw->motion.traj.actualPosition)), 0) ||
-      !near(line.distance(move.start, machine_position(raw->motion.traj.position)), 0))
+      !commanded_at_start(*raw))
     return interrupt("Probe input, position or feed controls changed before descent.");
 
   // Back-offs and the final retract move away from the setter: twice the search feed (turo).
@@ -2386,6 +2427,162 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
   const auto encloses_start = [&](std::size_t axis, double low, double high) {
     return low < start_frame[axis] && start_frame[axis] < high;
   };
+  if (request.action == SetterAction::height_map) {
+    // A Z height map (#247): Z top at each point of the grid, row by row and back again, with a
+    // traverse at the clearance between them. Every point's search start and end, and the lift,
+    // is checked against the travel before anything moves. Nothing is written.
+    if (frame.wcs < 1 || frame.wcs > 9)
+      return std::unexpected("The active work coordinate system is unavailable.");
+    if (!std::ranges::contains(current_marks, tool))
+      return std::unexpected(std::format("Touch off T{} at the tool setter before probing Z.", tool));
+    if (std::abs(before.tool_offset[2] - previous_length) > 0.001 ||
+        !std::ranges::contains(before.active_codes, "G43"))
+      return std::unexpected(std::format("Apply the measured T{} length before probing Z.", tool));
+    const auto grid = height_grid(request.grid_mm, request.step_mm);
+    if (!grid)
+      return std::unexpected(std::format(
+          "Choose a rectangle and a step of 0.5 mm or more for 2 to {} points.", max_height_map_points));
+    // Work XYZ to machine XYZ: the inverse of the work position.
+    const auto machine_of = [&](double x, double y, double z) -> std::array<double, 3> {
+      const double gx = x + before.g92[0];
+      const double gy = y + before.g92[1];
+      return {gx * cos_turn - gy * sin_turn + before.g5x[0] + before.tool_offset[0],
+              gx * sin_turn + gy * cos_turn + before.g5x[1] + before.tool_offset[1],
+              z + before.g5x[2] + before.g92[2] + before.tool_offset[2]};
+    };
+    const auto& [x0, y0, x1, y1] = request.grid_mm;
+    const auto at_column = [&](int column) {
+      return grid->columns == 1 ? x0 : x0 + (x1 - x0) * column / (grid->columns - 1);
+    };
+    const auto at_row = [&](int row) {
+      return grid->rows == 1 ? y0 : y0 + (y1 - y0) * row / (grid->rows - 1);
+    };
+    const auto in_travel = [&](const std::array<double, 3>& point) {
+      for (std::size_t i = 0; i < point.size(); ++i) {
+        const auto& travel = impl_->config.travel.at(i);
+        if (!std::isfinite(point.at(i)) || point.at(i) < travel.min || point.at(i) > travel.max)
+          return false;
+      }
+      return true;
+    };
+    const double search = limits->material_travel_mm;
+    const double clearance_z = machine_of(x0, y0, request.clearance_mm)[2];
+    const double lift = std::max(request.start[2], clearance_z);
+    // Lengths in the operator's messages are in the machine's units.
+    const bool inch = std::abs(machine_scale - 25.4) < 1e-9;
+    const auto length = [&](double mm) {
+      return inch ? std::format("{:.4f}", mm / 25.4) : std::format("{:.3f}", mm);
+    };
+    const std::string unit = inch ? "in" : "mm";
+    const auto where = [&](int column, int row) {
+      return std::format("X{} Y{} {}", length(at_column(column)), length(at_row(row)), unit);
+    };
+    for (int row = 0; row < grid->rows; ++row)
+      for (int column = 0; column < grid->columns; ++column) {
+        const auto point = machine_of(at_column(column), at_row(row), request.clearance_mm);
+        if (!in_travel(point) || !in_travel({point[0], point[1], point[2] - search}) ||
+            !in_travel({point[0], point[1], lift}))
+          return std::unexpected(std::format(
+              "Grid point {} is outside the configured travel at the clearance or the search depth.",
+              where(column, row)));
+      }
+    // XY at the slower of X and Y's fastest moves, from the start to the first point and then one
+    // step to each next point, in work XY (the same distances in a rotated system).
+    const auto& velocity = impl_->config.limits.max_axis_jog_velocity;
+    const double worst = height_map_seconds(
+        *limits, {.points = grid->columns * grid->rows,
+                  .step_mm = request.step_mm,
+                  .first_mm = std::hypot(before.work[0] - x0, before.work[1] - y0),
+                  .descent_mm = request.start[2] - clearance_z,
+                  .xy_rapid_mm_min = std::min(velocity[0], velocity[1])});
+    if (!(worst <= max_height_map_seconds))
+      return std::unexpected(std::format(
+          "The height map could take up to {} min, more than the {} min limit. Use fewer points.",
+          std::isfinite(worst) ? std::ceil(worst / 60) : 0.0, max_height_map_seconds / 60));
+    SetterState::HeightMap map{.wcs = frame.wcs, .columns = grid->columns, .rows = grid->rows,
+                               .rotation_deg = before.rotation_xy, .points = {}};
+    map.points.resize(static_cast<std::size_t>(grid->columns) * static_cast<std::size_t>(grid->rows));
+    int points_done = 0; // points measured so far
+    // A stop after the first point keeps the points measured so far, marked partial.
+    const auto stop = [&](std::string reason) -> std::expected<SetterState, std::string> {
+      if (points_done == 0)
+        return std::unexpected(std::move(reason));
+      map.partial = std::move(reason);
+      SetterState state{calibration ? std::optional{calibration->plane} : std::nullopt,
+                        std::nullopt, std::move(current_marks)};
+      state.height_map = std::move(map);
+      return state;
+    };
+    // Where the last point left the probe: its search start at the clearance.
+    std::optional<std::array<double, 3>> left_at;
+    // After a point's retract the Z encoder may differ from the command, in either direction
+    // (lag or overshoot), by at most this much.
+    const double z_lag = impl_->config.motion_tolerances.height_map_z_lag_mm;
+    for (int row = 0; row < grid->rows; ++row) {
+      for (int along = 0; along < grid->columns; ++along) {
+        // Back and forth: every other row from its far end.
+        const int column = row % 2 == 0 ? along : grid->columns - 1 - along;
+        if (wanted && !wanted())
+          return stop("The height map was stopped.");
+        const auto* s = impl_->stat();
+        if (s == nullptr || impl_->status.link() != Link::live)
+          return stop("Controller status was lost during the height map.");
+        const auto reading = to_status(*s, impl_->config, impl_->hal, Link::live);
+        if (frame_of(reading) != frame || reading.tool_offset != before.tool_offset)
+          return stop("The work frame or tool changed during the height map.");
+        const std::array here{reading.controller.axes[0].machine, reading.controller.axes[1].machine,
+                              reading.controller.axes[2].machine};
+        // Each later point starts where the last one ended: commanded there, and measured there
+        // but for the Z encoder's settling after the retract (0.125 mm on the G0759).
+        if (left_at) {
+          const auto& commanded = reading.commanded_position;
+          const bool held =
+              near(commanded[0], (*left_at)[0]) && near(commanded[1], (*left_at)[1]) &&
+              near(commanded[2], (*left_at)[2]) &&
+              std::hypot(here[0] - (*left_at)[0], here[1] - (*left_at)[1]) <= limits->xy_tolerance_mm &&
+              std::abs(here[2] - (*left_at)[2]) <= z_lag;
+          if (!held)
+            return stop("The machine moved between the height map points.");
+        }
+        const auto above = machine_of(at_column(column), at_row(row), request.clearance_mm);
+        const auto contact =
+            probe_fixed_setter({.tool = tool,
+                                .start = here,
+                                .travel_mm = search,
+                                .feed_mm_min = limits->feed_mm_min,
+                                .approach = above,
+                                // A later point lifts to the command it holds, the first to
+                                // where it is.
+                                .clearance_z = std::max(left_at ? reading.commanded_position[2] : here[2],
+                                                        above[2]),
+                                .material = ProbeDirection::z_top,
+                                .start_z_lag_mm = left_at ? z_lag : 0.0},
+                               wanted);
+        if (!contact)
+          return stop(std::format("Point {}: {}", where(column, row), contact.error()));
+        auto& point = map.points.at((static_cast<std::size_t>(row) * static_cast<std::size_t>(grid->columns)) +
+                                    static_cast<std::size_t>(column));
+        point.machine = contact->machine;
+        point.work = work_position(contact->machine, before.g5x, before.g92, before.tool_offset,
+                                   before.rotation_xy);
+        point.measured = true;
+        ++points_done;
+        left_at = above;
+        // The next traverse runs at the clearance: a top within the latch back-off of it is too
+        // close to rapid over.
+        const double gap = above[2] - contact->machine[2];
+        if (points_done < grid->columns * grid->rows && gap < limits->latch_backoff_mm)
+          return stop(std::format("The top at {} is {} {} below the clearance Z, within the {} {} "
+                                  "latch back-off. Raise the clearance Z.",
+                                  where(column, row), length(gap), unit,
+                                  length(limits->latch_backoff_mm), unit));
+      }
+    }
+    SetterState state{calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,
+                      std::move(current_marks)};
+    state.height_map = std::move(map);
+    return state;
+  }
   // A three-point bore or boss (#247): refused before any motion unless the three directions
   // spread far enough around the circle for a usable centre.
   if (bore_arc || boss_arc) {
@@ -3255,9 +3452,9 @@ auto NmlPort::start_checked(const PreviewInputs& inputs, const Wanted& current,
     return withdrawn();
   constexpr auto stale = "The program or tool data changed. Review the new program check.";
   if (!current())
-    return failed(stale);
-  if (const auto reason = validate_program_inputs(inputs); !reason.empty())
-    return failed(reason);
+    return failed(stale, MessageKey{"messages.session.programOrToolsChanged"});
+  if (auto reason = validate_program_inputs(inputs); !reason.empty())
+    return {ActionStatus::failed, std::move(reason.text), std::move(reason.localization)};
   EMC_TASK_PLAN_OPEN open;
   if (!inputs.program_file || !put(open.file, execution_path.value_or(*inputs.program_file)))
     return failed("The program path is too long for LinuxCNC.",
@@ -3278,9 +3475,9 @@ auto NmlPort::start_checked(const PreviewInputs& inputs, const Wanted& current,
       !accepted(settled))
     return settled;
   if (!current())
-    return failed(stale);
-  if (const auto reason = validate_program_inputs(inputs); !reason.empty())
-    return failed(reason);
+    return failed(stale, MessageKey{"messages.session.programOrToolsChanged"});
+  if (auto reason = validate_program_inputs(inputs); !reason.empty())
+    return {ActionStatus::failed, std::move(reason.text), std::move(reason.localization)};
   EMC_TASK_PLAN_RUN message;
   message.line = 0;
   return impl_->start(message, from);
@@ -3294,12 +3491,12 @@ auto NmlPort::run_to_breakpoint(const PreviewInputs& inputs, std::string_view pr
   const auto receipt = std::to_string(Clock::now().time_since_epoch().count());
   const auto copy = with_breakpoint(program, line, receipt);
   if (!copy)
-    return failed(copy.error());
+    return failed(copy.error().text, copy.error().localization);
   if (!current())
     return failed("The program or tool data changed. Review the new program check.",
                   MessageKey{"messages.session.programOrToolsChanged"});
-  if (const auto reason = validate_program_inputs(inputs); !reason.empty())
-    return failed(reason);
+  if (auto reason = validate_program_inputs(inputs); !reason.empty())
+    return {ActionStatus::failed, std::move(reason.text), std::move(reason.localization)};
   impl_->breakpoint = std::make_shared<const BreakpointSource>(
       *inputs.program_file, impl_->breakpoint_copy.string(), line, receipt);
   if (!impl_->save_breakpoint() || !write_sidecar(impl_->breakpoint_copy, *copy)) {
@@ -3394,15 +3591,18 @@ auto restart_idle(const NmlStatus& status, const MachineConfig& config) -> bool 
 
 auto check_restart_approach(RestartPoint& point, const NmlStatus& status,
                             const MachineConfig& config, std::optional<double> tool_length)
-    -> std::string {
+    -> LocalizedReason {
   if (point.tool == config.touch_probe_tool)
-    return "Remove the touch probe before running a program from a line.";
+    return {"Remove the touch probe before running a program from a line.",
+            MessageKey{"backend.nmlPort.removeProbe"}};
   if (point.spindle_direction != SpindleDirection::stopped &&
       point.spindle_rpm > config.limits.max_spindle_rpm)
-    return "The restart spindle speed exceeds the machine limit.";
+    return {"The restart spindle speed exceeds the machine limit.",
+            MessageKey{"backend.nmlPort.restartSpindleLimit"}};
   if (point.h > 0 && (!tool_length ||
       std::abs(*tool_length * config.millimetres_per_unit - point.tool_offset[2]) > 0.001))
-    return "The required tool length changed in the tool table.";
+    return {"The required tool length changed in the tool table.",
+            MessageKey{"backend.nmlPort.requiredLengthChanged"}};
   // Raise the controlled point enough for both tools before a manual exchange.
   const double original_clearance = restart_clearance(point);
   const double old_tool_difference = std::max(0.0, status.tool_offset[2] - point.tool_offset[2]);
@@ -3415,17 +3615,19 @@ auto check_restart_approach(RestartPoint& point, const NmlStatus& status,
   const double clearance = restart_clearance(point);
   if (!restart_travel(end, config) || !restart_travel({end[0], end[1], clearance}, config) ||
       !restart_travel({position[0], position[1], clearance}, config))
-    return "The restart approach is outside the configured machine travel.";
+    return {"The restart approach is outside the configured machine travel.",
+            MessageKey{"backend.nmlPort.approachOutside"}};
   return {};
 }
 
 } // namespace
 
-auto NmlPort::validate_program_inputs(const PreviewInputs& inputs) -> std::string {
+auto NmlPort::validate_program_inputs(const PreviewInputs& inputs) -> LocalizedReason {
   const auto s = status();
   const auto& start = inputs.start;
   if (s.controller.link == Link::live && s.active_codes != start.active_codes)
-    return "The interpreter modes changed. Review a fresh program check.";
+    return {"The interpreter modes changed. Review a fresh program check.",
+            MessageKey{"backend.nmlPort.modesChanged"}};
   if (start.wcs < 1 || start.wcs > 9 || s.controller.link != Link::live ||
       !restart_idle(s, impl_->config) || s.controller.program_file != inputs.program_file ||
       s.wcs != start.wcs || s.block_delete != inputs.block_delete ||
@@ -3435,11 +3637,13 @@ auto NmlPort::validate_program_inputs(const PreviewInputs& inputs) -> std::strin
       std::abs(s.spindle_rpm - start.spindle_speed) > 1e-6 ||
       std::abs(s.programmed_feed - start.feed) > 1e-6 || !restart_at(s, start.position, impl_->config.motion_tolerances.restart_position_mm) ||
       !restart_near(s.tool_offset, start.tool_offset) || !restart_near(s.g92, inputs.g92))
-    return "The machine state changed. Review a fresh program check.";
+    return {"The machine state changed. Review a fresh program check.",
+            MessageKey{"backend.nmlPort.stateChanged"}};
   const auto& system = inputs.systems.at(static_cast<std::size_t>(start.wcs - 1));
   if (!system.available || !restart_near(s.g5x, system.offset) ||
       std::abs(s.rotation_xy - system.rotation_xy) > 1e-6)
-    return "The work origin changed. Review a fresh program check.";
+    return {"The work origin changed. Review a fresh program check.",
+            MessageKey{"backend.nmlPort.workOriginChanged"}};
   return {};
 }
 
@@ -3476,20 +3680,23 @@ auto NmlPort::prepare_tool_measurement(int tool, std::uint64_t request, int line
   const auto& calibration = impl_->setter_calibration;
   if (tool <= 0 || !limits || tool == limits->reference_tool ||
       tool == config.touch_probe_tool || !length || !calibration)
-    return failed("A cutting tool in the tool table and a fixed setter are required.");
+    return failed("A cutting tool in the tool table and a fixed setter are required.",
+                  MessageKey{"backend.toolChangeMeasurement.requiresToolAndSetter"});
   const auto setter_plane = calibration->plane;
   const double setter_clearance = calibration->clearance_z;
   const bool retract_to_setter_clearance = limits->clearance_mm > 0;
   const auto* raw = impl_->stat();
   if (raw == nullptr)
-    return failed("The controller is unavailable.");
+    return failed("The controller is unavailable.",
+                  MessageKey{"backend.toolChangeMeasurement.controllerUnavailable"});
   const auto before = reading(*raw);
   const auto& state = before.controller;
   if (!safe(*raw, before) || state.mode != TaskMode::automatic || state.interp == InterpState::idle ||
       state.requested_tool != tool || state.tool_request != request || state.tool_change_line != line ||
       point.tool != tool || point.h != tool || !restart_frame(before, point, inputs) ||
       !restart_at(before, restart_machine_position(point), config.motion_tolerances.restart_position_mm))
-    return failed("The program tool change or its stationary position could not be verified.");
+    return failed("The program tool change or its stationary position could not be verified.",
+                  MessageKey{"backend.toolChangeMeasurement.verifyStationaryChange"});
   // Use the table length for the approach estimate while M6 is pending. The measured length
   // and actual position are checked again before the operator is offered a restart.
   auto nominal = point;
@@ -3500,7 +3707,7 @@ auto NmlPort::prepare_tool_measurement(int tool, std::uint64_t request, int line
                                   : std::max(setter_clearance, before.commanded_position[2])};
   at_setter.tool_offset = point.tool_offset;
   if (auto reason = check_restart_approach(nominal, at_setter, config, length); !reason.empty())
-    return failed(std::move(reason));
+    return failed(reason.text, std::move(reason.localization));
   if (!impl_->still())
     return withdrawn();
 
@@ -3536,13 +3743,16 @@ auto NmlPort::prepare_tool_measurement(int tool, std::uint64_t request, int line
       !accepted(switched))
     return switched;
   if (impl_->read_tool_table() != table)
-    return failed("The tool table changed before registering the installed tool.");
+    return failed("The tool table changed before registering the installed tool.",
+                  MessageKey{"backend.toolChangeMeasurement.tableChanged"});
   raw = impl_->stat();
   if (raw == nullptr || raw->task.mode != mode.mode || !stationary(*raw))
-    return failed("The mill changed state before registering the installed tool.");
+    return failed("The mill changed state before registering the installed tool.",
+                  MessageKey{"backend.toolChangeMeasurement.millChanged"});
   EMC_TASK_PLAN_EXECUTE register_tool;
   if (!put(register_tool.command, std::format("M61 Q{}", tool)))
-    return failed("Could not register the installed tool.");
+    return failed("Could not register the installed tool.",
+                  MessageKey{"backend.toolChangeMeasurement.registrationFailed"});
   if (auto registered = impl_->run(register_tool, from); !accepted(registered))
     return registered;
   if (impl_->loads)
@@ -3556,7 +3766,8 @@ auto NmlPort::prepare_tool_measurement(int tool, std::uint64_t request, int line
                         });
 }
 
-auto NmlPort::validate_restart(RestartPoint& point, const PreviewInputs& inputs) -> std::string {
+auto NmlPort::validate_restart(RestartPoint& point, const PreviewInputs& inputs)
+    -> LocalizedReason {
   const auto s = status();
   const auto& config = impl_->config;
   // Task skips the blocks before the line without their effect on motion, the selection of a
@@ -3565,14 +3776,17 @@ auto NmlPort::validate_restart(RestartPoint& point, const PreviewInputs& inputs)
     static constexpr std::array names{"G54", "G55", "G56", "G57", "G58",
                                       "G59", "G59.1", "G59.2", "G59.3"};
     const auto* name = names.at(static_cast<std::size_t>(point.wcs - 1));
-    return std::format("This line runs in {}. Select {}, then choose the line again.", name, name);
+    return {std::format("This line runs in {0}. Select {0}, then choose the line again.", name),
+            MessageKey{"backend.nmlPort.restartSelectWcs", {{"wcs", name}}}};
   }
   if (!restart_frame(s, point, inputs))
-    return "Machine power, the program or the work coordinate system changed.";
+    return {"Machine power, the program or the work coordinate system changed.",
+            MessageKey{"backend.nmlPort.restartContextChanged"}};
   if (!restart_idle(s, config) || s.controller.tool_in_spindle != inputs.start.tool_in_spindle ||
       !restart_near(s.tool_offset, inputs.start.tool_offset) ||
       !restart_at(s, inputs.start.position, config.motion_tolerances.restart_position_mm))
-    return "The machine must remain stopped at the position shown in the preview.";
+    return {"The machine must remain stopped at the position shown in the preview.",
+            MessageKey{"backend.nmlPort.remainStopped"}};
   std::optional<double> length;
   if (point.h > 0) {
     const auto table = impl_->read_tool_table();
@@ -4255,22 +4469,26 @@ auto NmlPort::tool_changed(int tool, std::uint64_t request, const Wanted& wanted
   static_cast<void>(impl_->begin(&wanted));
   const Impl::Scope scope{*impl_};
   if (impl_->hal == nullptr)
-    return failed("The CoffeeCNC HAL component is not available.");
+    return failed("The CoffeeCNC HAL component is not available.",
+                  MessageKey{"backend.nmlPort.halUnavailable"});
   if (!impl_->hal->view(HalShared::Clock::now()))
-    return failed("The CoffeeCNC HAL component is not being serviced.");
+    return failed("The CoffeeCNC HAL component is not being serviced.",
+                  MessageKey{"backend.nmlPort.halNotServiced"});
   // Asked at the moment the confirmation is handed to the control thread.
   if (!impl_->still())
     return withdrawn();
   // The request the decision was made on, not whatever the pins show by now.
   if (!impl_->hal->confirm_tool_changed({request, tool}))
-    return failed("LinuxCNC is not waiting for that tool change any more.");
+    return failed("LinuxCNC is not waiting for that tool change any more.",
+                  MessageKey{"backend.nmlPort.toolChangeGone"});
   return {};
 }
 
-auto NmlPort::tool_length_in_effect() -> std::expected<ToolLengthInEffect, std::string> {
+auto NmlPort::tool_length_in_effect() -> std::expected<ToolLengthInEffect, LocalizedReason> {
   const auto current = status();
   if (current.controller.link != Link::live)
-    return std::unexpected(std::string("The tool length offset in effect cannot be read."));
+    return std::unexpected(LocalizedReason{"The tool length offset in effect cannot be read.",
+                                           MessageKey{"backend.nmlPort.lengthOffsetUnreadable"}});
   ToolLengthInEffect effect;
   effect.offset = current.tool_offset;
   const int tool = current.controller.tool_in_spindle;
@@ -4291,9 +4509,10 @@ auto NmlPort::set_tool(const Tool& tool, const Wanted& wanted) -> ActionResult {
     return withdrawn();
   const auto table = impl_->read_tool_table();
   if (!table)
-    return failed(table.error());
+    return failed(table.error().text, table.error().localization);
   const auto edited = with_tool(*table, tool, impl_->config.millimetres_per_unit);
-  return edited ? impl_->load_tool_table(*edited) : failed(edited.error());
+  return edited ? impl_->load_tool_table(*edited)
+                : failed(edited.error().text, edited.error().localization);
 }
 
 auto NmlPort::remove_tool(int number, const Wanted& wanted) -> ActionResult {
@@ -4302,13 +4521,16 @@ auto NmlPort::remove_tool(int number, const Wanted& wanted) -> ActionResult {
   if (!impl_->still())
     return withdrawn();
   if (const EMC_STAT* s = impl_->stat(); s != nullptr && s->io.tool.toolInSpindle == number)
-    return failed(std::format("Tool {} is in the spindle.", number));
+    return failed(
+        std::format("Tool {} is in the spindle.", number),
+        MessageKey{"backend.nmlPort.toolInSpindleNumber", {{"tool", std::to_string(number)}}});
   const auto table = impl_->read_tool_table();
   if (!table)
-    return failed(table.error());
+    return failed(table.error().text, table.error().localization);
   const auto edited = without_tool(*table, number);
   if (!edited)
-    return failed(std::format("Tool {} is not in the tool table.", number));
+    return failed(std::format("Tool {} is not in the tool table.", number),
+                  MessageKey{"backend.nmlPort.toolNotInTable", {{"tool", std::to_string(number)}}});
   return impl_->load_tool_table(*edited);
 }
 

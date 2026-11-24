@@ -295,7 +295,7 @@ export class SimMachine {
     const first = this.modal.tools.find(tool => tool.number === 1)
     if (first) Object.assign(first, { diameter: 10, comment: 'Carbide end mill 10 mm' })
     this.modal.tools.push(...demoProbeTools.map(tool => ({ ...tool })))
-    this.probe = new SimProbe(this.modal.tools)
+    this.probe = new SimProbe(this.modal.tools, travel)
   }
 
   /**
@@ -972,9 +972,10 @@ export class SimMachine {
           this.velocity = 0
           this.syncModal()
           const failure = pending.plan.failure
+          // A stopped height map fails with the points it measured.
           const result = failure === undefined
             ? { outcome: 'accepted' as const, reason: '', setter: pending.plan.finish() }
-            : fail(failure)
+            : pending.plan.partial === true ? { ...fail(failure), setter: pending.plan.finish() } : fail(failure)
           this.historySource = { source: pending.source, restores: null }
           this.checkTools()
           this.checkOffsets()
@@ -1438,6 +1439,11 @@ export class SimMachine {
     }
     // As the controller's policy: an action that writes never runs as a measurement (#247).
     const measureOnly = (command as { measure_only?: unknown }).measure_only === true
+    // A height map writes nothing: the controller has no measure_only field for it.
+    if (command.action === 'height_map' && 'measure_only' in command) {
+      this.emit({ type: 'result', id, ...reject('Unexpected field in request.', 'messages.request.unexpectedField') })
+      return
+    }
     if (measureOnly && ['status', 'touch_off', 'check', 'ball', 'apply_angle', 'apply_measurement'].includes(command.action)) {
       this.emit({ type: 'result', id, ...reject('This probe action always writes its result.', 'messages.policy.probeAlwaysWrites') })
       return

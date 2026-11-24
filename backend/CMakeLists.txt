@@ -294,6 +294,12 @@ if(BUILD_TESTING)
           $<TARGET_FILE:coffeecnc_fixed_setter_tests> rotated)
         set_tests_properties(linuxcnc_rotated_probe_${units} PROPERTIES LABELS linuxcnc
           RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 810)
+        # Z height map over a tilted top (#247): unrotated, then +7.5° in mm and -30° in inch.
+        add_test(NAME linuxcnc_height_map_${units} COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh
+          -u ${units} -t 480 -d ${PROJECT_BINARY_DIR}/sim/linuxcnc_height_map_${units}
+          $<TARGET_FILE:coffeecnc_fixed_setter_tests> height-map)
+        set_tests_properties(linuxcnc_height_map_${units} PROPERTIES LABELS linuxcnc
+          RUN_SERIAL TRUE RESOURCE_LOCK linuxcnc TIMEOUT 810)
         # Three-point bore and boss (#247): unrotated in mm, then +7.5° in mm and -30° in inch.
         if(units STREQUAL "mm")
           add_test(NAME linuxcnc_arc_probe_mm COMMAND ${PROJECT_SOURCE_DIR}/tests/sim/run.sh

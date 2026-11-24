@@ -621,6 +621,11 @@ void hold_until_reconciled() {
   require(second.outcome(refused) == "failed:The previous jog stop on X is not confirmed: No." &&
               second.port.take_calls() == Calls{"stop_jog x"},
           "No jog starts on any axis while a stop is not confirmed: " + second.outcome(refused));
+  const auto denial = second.delivered.result(second.page, refused);
+  require(denial &&
+              denial->at("localization") == Json{{"key", "messages.session.previousStopAxis"},
+                                                 {"params", {{"axis", "X"}, {"detail", "No."}}}},
+          "The jog denial identifies the axis with an unconfirmed stop");
   require(second.control() && second.outputs.jog_stop_high(), "The level is still high");
   const auto wanted = second.send(hold_y);
   require(second.work() == WorkStatus::done, "The retry that is due goes before the request");

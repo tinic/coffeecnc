@@ -549,6 +549,7 @@ export interface OperatorMessage {
 export interface MessageKey {
   key: string
   params: Record<string, string>
+  params_localization?: Record<string, Pick<MessageKey, 'key' | 'params'>>
 }
 
 export type RefusalMessage = MessageKey
@@ -653,8 +654,26 @@ export interface SetterState {
   edge_angle?: number
   /** `rotation`: the G5x rotation applying writes, the present rotation plus `edge_angle`. */
   edge_rotation?: { measurement_id: number; wcs: number; rotation?: number }
+  /** After a height map: every point's top, row by row from the first corner. */
+  height_map?: HeightMap
   /** After a `measure_only` probe: what it found. Nothing was written. */
   measured?: SetterMeasured
+}
+
+/** One measured top of a height map, in the work system and in machine XYZ, mm. */
+export interface HeightMapPoint { work: Vec3; machine: Vec3 }
+/**
+ * A Z height map (#247): `columns` × `rows` points. A map that stopped after some points is
+ * `partial` (the reason); the points it did not reach are null.
+ */
+export interface HeightMap {
+  wcs: number
+  columns: number
+  rows: number
+  /** The work system's XY rotation, degrees. */
+  rotation?: number
+  points: (HeightMapPoint | null)[]
+  partial?: string
 }
 
 /** A point on a probed surface: the ball-centre contact moved one ball radius along the travel. */
@@ -982,6 +1001,11 @@ export type FixedSetter = CommandBase & { type: 'fixed_setter' } & (
   /** Measures an edge's angle: the face of `direction` at the start and `spacing` mm along it. */
   | { action: 'angle'; direction: 'x_minus' | 'x_plus' | 'y_minus' | 'y_plus'; spacing: number; tool: number; x: number; y: number; z: number; measure_only?: boolean }
   | { action: 'apply_angle'; measurement_id: number; tool: number }
+  /**
+   * Z top at every point of a grid over the work rectangle `x_min`..`x_max`, `y_min`..`y_max`,
+   * at most `step` apart (2 to 150 points), traversing at work Z `clearance`. Writes nothing.
+   */
+  | { action: 'height_map'; x_min: number; y_min: number; x_max: number; y_max: number; step: number; clearance: number; tool: number; x: number; y: number; z: number }
   /** Sets the work origin a `measure_only` probe reported, after the operator confirms it. */
   | { action: 'apply_measurement'; measurement_id: number; tool: number }
 )

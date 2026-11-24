@@ -189,6 +189,10 @@ struct FixedSetterMove {
   double retract_above_contact_mm{};
   std::optional<ProbeDirection> material{};
   bool return_to_clearance{}; // lift on the search-start XY with the probe interlock still active
+  // A height map's later point: at the start the Z encoder may differ from the command by up to
+  // this much in either direction, mm (the last retract's settling). Zero for every other probe: the command and the encoder
+  // must agree within the position tolerance.
+  double start_z_lag_mm{};
   // A material search along this direction instead of `material`'s axis: degrees
   // counterclockwise from the active work system's +X axis, turned by its rotation.
   std::optional<double> heading_deg{};
@@ -327,14 +331,15 @@ public:
   [[nodiscard]] auto open_program(std::string_view path, const Wanted& wanted)
       -> ActionResult override;
   [[nodiscard]] auto run(const Wanted& wanted) -> ActionResult override;
-  [[nodiscard]] auto validate_program_inputs(const PreviewInputs& inputs) -> std::string override;
+  [[nodiscard]] auto validate_program_inputs(const PreviewInputs& inputs)
+      -> LocalizedReason override;
   [[nodiscard]] auto run_checked(const PreviewInputs& inputs, const Wanted& current,
                                  const Wanted& wanted) -> ActionResult override;
   [[nodiscard]] auto run_to_breakpoint(const PreviewInputs& inputs, std::string_view program,
                                        int line, const Wanted& current, const Wanted& wanted)
       -> ActionResult override;
   [[nodiscard]] auto validate_restart(RestartPoint& point, const PreviewInputs& inputs)
-      -> std::string override;
+      -> LocalizedReason override;
   [[nodiscard]] auto start_restart(const RestartPoint& point, const PreviewInputs& inputs,
                                    bool after_change, const Wanted& files_current,
                                    const Wanted& wanted) -> ActionResult override;
@@ -362,7 +367,7 @@ public:
       -> ActionResult override;
   // Rewrite [EMCIO] TOOL_TABLE and have LinuxCNC load it again.
   [[nodiscard]] auto tool_length_in_effect()
-      -> std::expected<ToolLengthInEffect, std::string> override;
+      -> std::expected<ToolLengthInEffect, LocalizedReason> override;
   [[nodiscard]] auto set_tool(const Tool& tool, const Wanted& wanted) -> ActionResult override;
   [[nodiscard]] auto remove_tool(int number, const Wanted& wanted) -> ActionResult override;
 

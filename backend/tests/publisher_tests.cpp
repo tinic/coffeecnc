@@ -49,14 +49,15 @@ struct Rig {
     tool_table.tools = {{1, 1, 40, 6, "End mill"}};
   }
 
-  auto publish(bool snapshots = false) -> std::expected<std::vector<std::string>, std::string> {
+  auto publish(bool snapshots = false) -> std::expected<std::vector<std::string>, LocalizedReason> {
     return publisher.publish(
         {hello, status, tool_table, work_offsets, loaded ? &program : nullptr, preview}, snapshots);
   }
   // The types of the messages one successful call sends, in order.
   auto types(bool snapshots = false) -> Types {
     const auto messages = publish(snapshots);
-    require(messages.has_value(), "Publishing succeeds: " + messages.error_or(""));
+    require(messages.has_value(),
+            "Publishing succeeds: " + messages.error_or(LocalizedReason{}).text);
     Types found;
     sent.clear();
     if (!messages)
@@ -188,7 +189,9 @@ void failures_send_nothing() {
   rig.status.motion.velocity = nan;
   auto failed = rig.publish();
   require(!failed.has_value() &&
-              failed.error_or("") == "status: motion.velocity is not a finite number.",
+              failed.error().text == "status: motion.velocity is not a finite number." &&
+              failed.error().localization ==
+                  MessageKey{"messages.wire.notFinite", {{"field", "status: motion.velocity"}}},
           "A status that cannot be encoded sends nothing and names the message and field");
   rig.status.motion.velocity = 0;
   require(rig.types() == Types{"tool_table", "status"},
@@ -198,7 +201,7 @@ void failures_send_nothing() {
   rig.tool_table.tools.front().diameter = nan;
   rig.work_offsets.revision = 4;
   failed = rig.publish();
-  require(!failed.has_value() && failed.error_or("").starts_with("tool_table: tools.diameter "),
+  require(!failed.has_value() && failed.error().text.starts_with("tool_table: tools.diameter "),
           "A snapshot that cannot be encoded sends nothing, the status neither");
   rig.tool_table.tools.front().diameter = 6;
   require(rig.types() == Types{"work_offsets", "status"} && rig.seq() == 3,
@@ -206,7 +209,7 @@ void failures_send_nothing() {
 
   rig.hello.max_jog_velocity = nan;
   failed = rig.publish(true);
-  require(!failed.has_value() && failed.error_or("").starts_with("hello: max_jog_velocity "),
+  require(!failed.has_value() && failed.error().text.starts_with("hello: max_jog_velocity "),
           "A hello that cannot be encoded sends no snapshot");
 }
 

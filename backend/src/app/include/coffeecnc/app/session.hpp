@@ -48,8 +48,9 @@ public:
   [[nodiscard]] virtual auto submit(PageToken page, RequestId id, ToolModelCommand command)
       -> std::optional<LocalizedReason> = 0;
   [[nodiscard]] virtual auto submit_operator_settings(PageToken, RequestId, SetOperatorSettings&&)
-      -> std::optional<std::string> {
-    return "Operator settings storage is not part of this session.";
+      -> std::optional<LocalizedReason> {
+    return LocalizedReason{"Operator settings storage is not part of this session.",
+                           MessageKey{"messages.session.noOperatorSettings"}};
   }
   // This page and every one before it has ended: what waits for them is dropped, and what
   // they are still owed is not sent.
@@ -285,7 +286,7 @@ public:
   // atomic publication through the controller worker, serialized against program start.
   using Publication = std::function<std::expected<void, std::string>()>;
   [[nodiscard]] auto publish_program(std::string path, Publication publish)
-      -> std::future<std::expected<void, std::string>>;
+      -> std::future<std::expected<void, LocalizedReason>>;
 
   // The dead-man, once per control period, well inside JogLease::timeout. True while the
   // jog-stop level must be high.
@@ -358,7 +359,7 @@ private:
   struct ProgramPublication {
     std::string path;
     Publication publish;
-    std::promise<std::expected<void, std::string>> result;
+    std::promise<std::expected<void, LocalizedReason>> result;
   };
   struct ProgramCopy {
     PageToken page;

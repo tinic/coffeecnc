@@ -29,8 +29,9 @@ template <typename T> auto body(std::string_view wire) -> T {
 auto rejected(std::string_view wire, std::optional<RequestId> id) -> std::string {
   const auto decoded = decode_request(wire);
   const auto* error = std::get_if<DecodeError>(&decoded);
-  require(error && error->id == id && !error->reason.empty(),
-          "Expected rejection with an unambiguous ID only: " + std::string(wire));
+  require(error && error->id == id && !error->reason.empty() && error->localization &&
+              !error->localization->key.empty(),
+          "Expected a keyed rejection with an unambiguous ID only: " + std::string(wire));
   return error->reason;
 }
 

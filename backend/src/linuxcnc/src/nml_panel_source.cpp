@@ -308,7 +308,9 @@ struct NmlPanelSource::Impl {
       program = std::make_shared<const ProgramText>(std::move(*text));
     else
       messages.push_back(
-          {true, std::format("The text of {} cannot be shown: {}", program_file, text.error())});
+          {true, std::format("The text of {} cannot be shown: {}", program_file, text.error()),
+           MessageKey{"backend.nmlPanelSource.textNotShown",
+                      {{"file", program_file}, {"detail", text.error()}}}});
   }
 };
 

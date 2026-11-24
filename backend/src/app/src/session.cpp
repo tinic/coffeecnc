@@ -543,9 +543,10 @@ auto Session::submit(PageToken page, std::string_view json, Instant now,
       report(outcome, now.unix_time);
       lock.unlock();
       const auto refused = diagnostics_->launch(std::get<LaunchHalTool>(request.command).tool);
-      outcome.messages.push_back(encode_result(
-          request.id, refused ? CommandOutcome::rejected : CommandOutcome::accepted,
-          refused.value_or("")));
+      outcome.messages.push_back(refused
+                                     ? encode_result(request.id, CommandOutcome::rejected,
+                                                     refused->text, {}, {}, refused->localization)
+                                     : encode_result(request.id, CommandOutcome::accepted, ""));
     }
     return outcome;
   }
@@ -820,8 +821,10 @@ auto Session::copy_work(ProgramWriter& writer) -> std::optional<Outcome> {
     return Outcome{};
   Outcome outcome;
   outcome.page = request.page;
-  outcome.messages.push_back(encode_result(request.id, result ? CommandOutcome::accepted : CommandOutcome::failed,
-                                           result ? std::string{} : result.error()));
+  outcome.messages.push_back(
+      encode_result(request.id, result ? CommandOutcome::accepted : CommandOutcome::failed,
+                    result ? std::string{} : result.error().text, {}, {}, {},
+                    result ? std::nullopt : result.error().localization));
   return outcome;
 }
 
@@ -1189,10 +1192,10 @@ auto Session::execute(Queued& request, const Clock& clock) -> Stage {
   if (preview_ != nullptr && decision.allowed) {
     if (const auto* run_command = std::get_if<Run>(&command)) {
       verified = preview_->checked_preview();
-      if (auto reason = check_program_start(request, *run_command, state, *verified); !reason.empty()) {
+      if (auto issue = check_program_start(request, *run_command, state, *verified)) {
         if (!wanted(request))
           return cancelled();
-        decision = {false, {}, std::move(reason), {}};
+        decision = {false, {}, std::move(issue->text), {}, std::move(issue->localization)};
       }
     }
   } else if (decision.allowed) {
@@ -1295,12 +1298,14 @@ auto Session::execute(Queued& request, const Clock& clock) -> Stage {
 
 auto Session::check_program_start(const Queued& request, const Run& command,
                                   const ControllerState& state, const CheckedPreview& check) const
-    -> std::string {
+    -> std::optional<ProgramCheckIssue> {
   if (!check.preview || !check.source.inputs ||
       check.source.inputs->program_file != state.program_file)
-    return "Wait for the program check to finish.";
+    return ProgramCheckIssue{"Wait for the program check to finish.",
+                             MessageKey{"messages.session.waitProgramCheck"}};
   if (command.preview_context && *command.preview_context != check.preview->context)
-    return "The program check changed. Review the current results.";
+    return ProgramCheckIssue{"The program check changed. Review the current results.",
+                             MessageKey{"messages.session.programCheckChanged"}};
   const auto& program_check = check.preview->check;
   if (program_check && !program_check->errors.empty())
     return program_check->errors.front();
@@ -1310,11 +1315,13 @@ auto Session::check_program_start(const Queued& request, const Run& command,
     if (!check.source.program_snapshot || !check.files_changed || !program_check ||
         (check.preview->state != PreviewState::ready &&
          check.preview->state != PreviewState::failed))
-      return "A breakpoint needs a complete program check.";
+      return ProgramCheckIssue{"A breakpoint needs a complete program check.",
+                               MessageKey{"messages.session.breakpointNeedsCheck"}};
     if (std::ranges::none_of(check.preview->segments, [&](const auto& segment) {
           return segment.line == command.breakpoint->line;
         }))
-      return "Choose a motion line in the current program preview.";
+      return ProgramCheckIssue{"Choose a motion line in the current program preview.",
+                               MessageKey{"messages.session.chooseMotionLine"}};
     // Bind the operator's picked text to the checked bytes, including when a program on disk
     // was replaced after the panel loaded its text.
     std::string_view remaining = *check.source.program_snapshot;
@@ -1322,19 +1329,27 @@ auto Session::check_program_start(const Queued& request, const Run& command,
       static_cast<void>(program_line(remaining));
     const auto selected = program_line(remaining);
     if (selected.empty() || selected != command.breakpoint->text)
-      return "The selected program line changed. Reopen the program and choose the line again.";
+      return ProgramCheckIssue{
+          "The selected program line changed. Reopen the program and choose the line again.",
+          MessageKey{"messages.session.selectedLineChanged"}};
   }
   const bool units_mismatch =
       program_check && command.display_units && std::ranges::any_of(program_check->units, [&](LengthUnit unit) {
         return unit != *command.display_units;
       });
   if ((!program_check || !program_check->warnings.empty() || units_mismatch) && !command.confirmed)
-    return "Review the program check warnings before starting.";
+    return ProgramCheckIssue{"Review the program check warnings before starting.",
+                             MessageKey{"messages.session.reviewWarnings"}};
   if (check.files_changed && check.files_changed([&] { return !wanted(request); }))
-    return "The program or tool data changed. Review the new program check.";
+    return ProgramCheckIssue{"The program or tool data changed. Review the new program check.",
+                             MessageKey{"messages.session.programOrToolsChanged"}};
   if (preview_->checked_preview().preview != check.preview)
-    return "The program check changed. Review the current results.";
-  return port_.validate_program_inputs(*check.source.inputs);
+    return ProgramCheckIssue{"The program check changed. Review the current results.",
+                             MessageKey{"messages.session.programCheckChanged"}};
+  auto reason = port_.validate_program_inputs(*check.source.inputs);
+  if (!reason.empty())
+    return ProgramCheckIssue{std::move(reason)};
+  return std::nullopt;
 }
 
 auto Session::plan_restart(Queued& request, PlanRestart command, const ControllerState& state)
@@ -1591,8 +1606,10 @@ auto Session::measure_tool_change(Queued& request, const ControllerState& state)
 
   Stage result;
   result.setter = *measured;
-  const auto cannot_restart = [&](std::string reason) {
-    result.reply = {CommandOutcome::failed, std::move(reason)};
+  const auto cannot_restart = [&](std::string reason, std::optional<MessageKey> localization = {}) {
+    result.reply.outcome = CommandOutcome::failed;
+    result.reply.reason = std::move(reason);
+    result.reply.localization = std::move(localization);
     return result;
   };
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{10};
@@ -1628,8 +1645,10 @@ auto Session::measure_tool_change(Queued& request, const ControllerState& state)
     return cannot_restart("Tool measured. The restart source changed.");
   if (replay.outcome.state != PreviewState::ready || !replay.outcome.check || !replay.files_changed)
     return cannot_restart("Tool measured. The updated program check is unavailable.");
-  if (!replay.outcome.check->errors.empty())
-    return cannot_restart(replay.outcome.check->errors.front());
+  if (!replay.outcome.check->errors.empty()) {
+    const auto& issue = replay.outcome.check->errors.front();
+    return cannot_restart(issue.text, issue.localization);
+  }
   inputs.restart_line = target->line;
   inputs.restart_loaded_tool = tool;
   auto computed = restart_engine_->compute(inputs, [&] { return !maintain(); });
@@ -1779,7 +1798,10 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
           const auto observed = loaded_program();
           const auto result = program_writer_->manage(c, observed.empty() ? state.program_file : observed);
           return answer(result ? Reply{CommandOutcome::accepted, ""}
-                               : Reply{CommandOutcome::failed, result.error()});
+                               : Reply{CommandOutcome::failed,
+                                       result.error().text,
+                                       {},
+                                       result.error().localization});
         } else if constexpr (std::is_same_v<T, SetMachine>) {
           // E-stop and power-off go out first; stops for held jogs follow.
           auto result = act(request, [&](const Wanted& still) -> ActionResult {
@@ -1791,7 +1813,10 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
         } else if constexpr (std::is_same_v<T, Backup> || std::is_same_v<T, CheckRestore> ||
                              std::is_same_v<T, RestoreBackup>) {
           if (machine_data_ == nullptr)
-            return answer({CommandOutcome::rejected, "This CoffeeCNC cannot back up or restore."});
+            return answer({CommandOutcome::rejected,
+                           "This CoffeeCNC cannot back up or restore.",
+                           {},
+                           MessageKey{"messages.session.noBackup"}});
           MachineDataAnswer done;
           if constexpr (std::is_same_v<T, Backup>) {
             done = machine_data_->backup(c.directory);
@@ -1799,15 +1824,18 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
             done = machine_data_->check_restore(c.path);
           } else {
             // The machine as it is now, just before anything is staged.
-            done =
-                machine_data_->restore(c.path, c.token, request.page.value, [&]() -> std::string {
-                  const auto recheck = policy_.evaluate(request.command, port_.snapshot());
-                  return recheck.allowed ? std::string{} : recheck.reason;
+            done = machine_data_->restore(
+                c.path, c.token, request.page.value, [&]() -> LocalizedReason {
+                  auto recheck = policy_.evaluate(request.command, port_.snapshot());
+                  return recheck.allowed ? LocalizedReason{}
+                                         : LocalizedReason{std::move(recheck.reason),
+                                                           std::move(recheck.refusal)};
                 });
           }
           Stage step;
           step.reply.outcome = done.outcome;
           step.reply.reason = std::move(done.reason);
+          step.reply.localization = std::move(done.localization);
           step.produced = std::move(done.messages);
           step.quit = done.quit;
           return step;
@@ -1860,7 +1888,8 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
           // changed between this check and that open is not caught here.
           const auto file = programs_.resolve_program(c.path);
           if (!file)
-            return answer({CommandOutcome::rejected, file.error()});
+            return answer(
+                {CommandOutcome::rejected, file.error().text, {}, file.error().localization});
           return act(request, [&](const Wanted& still) -> ActionResult {
             return port_.open_program(*file, still);
           });
@@ -1870,7 +1899,8 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
                           RefusalMessage{"messages.session.cannotEdit"});
           const auto file = programs_.resolve_program(c.path);
           if (!file)
-            return answer({CommandOutcome::rejected, file.error()});
+            return answer(
+                {CommandOutcome::rejected, file.error().text, {}, file.error().localization});
           const auto loaded = programs_.resolve_program(state.program_file);
           if (!loaded || *file != *loaded)
             return refuse("Only the loaded program can be edited.",
@@ -1878,7 +1908,7 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
           return act(request, [&](const Wanted& still) -> ActionResult {
             auto written = program_writer_->replace_line(*file, c.line, c.before, c.after);
             if (!written)
-              return {ActionStatus::failed, written.error()};
+              return {ActionStatus::failed, written.error().text, written.error().localization};
             // LinuxCNC reads the new text only when the program is opened again.
             return port_.open_program(*written, still);
           });
@@ -1889,30 +1919,36 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
           if (c.stamp) {
             const auto file = programs_.resolve_program(c.path);
             if (!file)
-              return answer({CommandOutcome::rejected, file.error()});
+              return answer(
+                  {CommandOutcome::rejected, file.error().text, {}, file.error().localization});
             const auto loaded = programs_.resolve_program(state.program_file);
             if (!loaded || *file != *loaded)
               return refuse("Only the loaded program can be edited.",
                             RefusalMessage{"messages.session.onlyLoadedEditable"});
             return act(request, [&](const Wanted& still) -> ActionResult {
-              const auto check_controller = [&]() -> std::string {
+              const auto check_controller = [&]() -> LocalizedReason {
                 if (!still())
-                  return "The save was cancelled before the program was replaced.";
+                  return {"The save was cancelled before the program was replaced.",
+                          MessageKey{"messages.session.saveCancelled"}};
                 const auto now = port_.snapshot();
                 if (const auto recheck = policy_.evaluate(request.command, now); !recheck.allowed)
-                  return recheck.reason;
+                  return {recheck.reason, recheck.refusal};
                 const auto active = programs_.resolve_program(now.program_file);
                 if (!active || *active != *file)
-                  return "The loaded program changed before the save finished.";
+                  return {"The loaded program changed before the save finished.",
+                          MessageKey{"messages.session.programChangedDuringSave"}};
                 return {};
               };
               auto written = program_writer_->replace(*file, c.text, *c.stamp, check_controller);
               if (!written)
-                return {ActionStatus::failed, written.error()};
+                return {ActionStatus::failed, written.error().text, written.error().localization};
               // LinuxCNC reads the new text only when the program is opened again.
               auto reopened = port_.open_program(*written, still);
               if (reopened.status != ActionStatus::accepted)
-                return {ActionStatus::failed, "Saved on disk, but not reopened. " + reopened.reason};
+                return {
+                    ActionStatus::failed,
+                    std::format("Saved on disk, but not reopened. {}", reopened.reason),
+                    MessageKey{"messages.session.savedNotReopened", {{"detail", reopened.reason}}}};
               return reopened;
             });
           }
@@ -1928,7 +1964,8 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
           }
           auto written = program_writer_->create(c.path, c.text, c.replace);
           if (!written)
-            return answer({CommandOutcome::failed, written.error()});
+            return answer(
+                {CommandOutcome::failed, written.error().text, {}, written.error().localization});
           return answer({CommandOutcome::accepted, ""});
         } else if constexpr (std::is_same_v<T, Run>) {
           return act(request, [&](const Wanted& still) -> ActionResult {
@@ -2351,10 +2388,13 @@ auto Session::stop_all() -> ActionResult {
 auto Session::list_directory(const ListDirectory& request, Stage& step) -> Reply {
   const auto directory = programs_.list(request.path);
   if (!directory)
-    return {CommandOutcome::rejected, directory.error()};
+    return {CommandOutcome::rejected, directory.error().text, {}, directory.error().localization};
   auto message = encode_directory(*directory);
   if (!message)
-    return {CommandOutcome::rejected, "Directory cannot be sent: " + message.error()};
+    return {CommandOutcome::rejected,
+            std::format("Directory cannot be sent: {}", message.error()),
+            {},
+            MessageKey{"messages.session.directoryNotSent", {{"detail", message.error()}}}};
   step.produced.push_back(std::move(*message)); // `truncated` in it tells of a cut listing.
   return {};
 }

@@ -692,7 +692,7 @@
       "notInstalled": "{name} não está instalado: não está no caminho de pesquisa ({path}).",
       "alreadyOpen": "{name} já está aberto.",
       "notStarted": "Não foi possível iniciar {name}.",
-      "notStartedBecause": "Não foi possível iniciar {name}: {error}.",
+      "notStartedBecause": "Não foi possível iniciar {name}: {system_error}.",
       "cannotStart": "As ferramentas HAL não podem ser iniciadas aqui."
     }
   }

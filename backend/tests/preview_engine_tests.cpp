@@ -619,9 +619,12 @@ void parameters_and_saved_positions() {
   stops("G55 G1 X1", "moves in G55, whose offsets are not in the machine's parameter file");
   {
     const auto unknown = rig.preview(head + "G55 G1 X1\nM2\n");
-    require(unknown.check && std::ranges::contains(unknown.check->errors,
-                                                   std::string("The G55 work origin could not be "
-                                                               "verified.")),
+    require(unknown.check &&
+                std::ranges::contains(
+                    unknown.check->errors,
+                    ProgramCheckIssue{
+                        "The G55 work origin could not be verified.",
+                        MessageKey{"backend.previewEngine.originUnverified", {{"wcs", "G55"}}}}),
             "A work system the parameter file does not hold is an error of the program check");
   }
   stops("G92.3", "G92.3");

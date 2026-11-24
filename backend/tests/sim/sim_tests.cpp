@@ -139,6 +139,7 @@ struct Result {
   std::string reason;
   bool send_snapshots{};
   Json restart{};
+  Json refusal{};
   [[nodiscard]] auto accepted() const -> bool { return outcome == "accepted"; }
   [[nodiscard]] auto text() const -> std::string { return outcome + ":" + reason; }
 };
@@ -337,7 +338,8 @@ private:
       if (message.at("type") == "result")
         results_[{outcome.page.value, message.at("id").get<RequestId>()}] = {
             message.at("outcome").get<std::string>(), message.at("reason").get<std::string>(),
-            outcome.send_snapshots, message.value("restart", Json())};
+            outcome.send_snapshots, message.value("restart", Json()),
+            message.value("refusal", Json())};
       else if (message.at("type") == "message")
         messages_.push_back(message.at("text").get<std::string>());
     }
@@ -4143,27 +4145,32 @@ void program_preflight(Rig& rig, NmlLoads& loads) {
         std::format(R"("type":"run","preview_context":{},"display_units":"mm","confirmed":{})",
                     reviewed, confirmed));
   };
-  const auto refused = [&](const char* scenario, std::string_view blocks, std::string_view reason) {
+  const auto refused = [&](const char* scenario, std::string_view blocks, std::string_view reason,
+                           std::string_view key) {
     const auto report = load(blocks);
     const auto trace = rig.port.writes();
     const auto outcome = start(true, context);
     check(scenario,
           !report.errors.empty() && outcome.outcome == "rejected" &&
-              outcome.reason.find(reason) != std::string::npos &&
-              std::ranges::equal(rig.port.writes(), trace),
+              outcome.reason.find(reason) != std::string::npos && outcome.refusal.is_object() &&
+              outcome.refusal.at("key") == key && std::ranges::equal(rig.port.writes(), trace),
           outcome.text());
   };
-  refused("preflight_blocks_spindle_above_cap", "S1600 M3\nG0 X10\nM5\n", "spindle limit");
-  refused("preflight_blocks_missing_tool_length", "T2 M6\nG43 H2\nG0 X10\n", "T2");
-  refused("preflight_blocks_configured_travel", "G53 G0 X1010\n", "machine travel");
+  refused("preflight_blocks_spindle_above_cap", "S1600 M3\nG0 X10\nM5\n", "spindle limit",
+          "backend.previewEngine.spindleLimit");
+  refused("preflight_blocks_missing_tool_length", "T2 M6\nG43 H2\nG0 X10\n", "T2",
+          "backend.previewEngine.noVerifiedLength");
+  refused("preflight_blocks_configured_travel", "G53 G0 X1010\n", "machine travel",
+          "backend.previewEngine.exceedsTravel");
   // LinuxCNC's parameter file holds every work system: G55 is verified from it.
   const auto other_system = load("G55\nG0 X10\n");
   check("preflight_verifies_another_work_origin_from_the_parameter_file",
-        other_system.errors.empty() &&
-            std::ranges::any_of(other_system.frames, [](const ProgramFrameCheck& frame) {
-              return frame.wcs == 2 && frame.available;
-            }),
-        other_system.errors.empty() ? "" : other_system.errors.front());
+        other_system.errors.empty() && std::ranges::any_of(other_system.frames,
+                                                           [](const ProgramFrameCheck& frame) {
+                                                             return frame.wcs == 2 &&
+                                                                    frame.available;
+                                                           }),
+        other_system.errors.empty() ? "" : other_system.errors.front().text);
 
   const auto report = load("G0 X8\nG1 X10 F300\n");
   const bool expected_frame = report.frames.size() == 1 &&
@@ -6372,7 +6379,7 @@ void diagnostics_view(Rig& rig) {
           .read = [&]() -> Diagnostics {
             return {read_diagnostics(rows, lookup, wiring), launcher.states()};
           },
-          .launch = [&](HalTool tool) -> std::optional<std::string> {
+          .launch = [&](HalTool tool) -> std::optional<LocalizedReason> {
             return launcher.launch(tool);
           }},
       [&](PageToken, const std::vector<std::string>& messages) -> void {

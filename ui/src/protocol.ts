@@ -325,6 +325,9 @@ export interface ProgramCheck {
   travel: 'unknown' | 'fits' | 'outside'
   errors: string[]
   warnings: string[]
+  /** Optional per-entry catalog metadata in the order of errors and warnings. */
+  errors_localization?: (MessageKey | null)[]
+  warnings_localization?: (MessageKey | null)[]
 }
 
 /**
@@ -422,7 +425,7 @@ export interface BackupWritten {
   files: number
   bytes: number
   /** HAL files the INI names that are not in the archive: LinuxCNC's own, or outside the configuration folder. */
-  not_included: { path: string; reason: string }[]
+  not_included: { path: string; reason: string; localization?: MessageKey }[]
 }
 
 export type BackupRole = 'ini' | 'hal' | 'tool_table' | 'parameters' | 'data'

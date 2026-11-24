@@ -388,6 +388,12 @@ struct ProgramFrameCheck {
 };
 
 enum class TravelCheck : std::uint8_t { unknown, fits, outside };
+struct ProgramCheckIssue {
+  std::string text;
+  std::optional<MessageKey> localization{};
+  friend auto operator==(const ProgramCheckIssue&, const ProgramCheckIssue&) -> bool = default;
+};
+
 struct ProgramCheck {
   std::vector<ProgramToolCheck> tools;
   std::vector<ProgramFrameCheck> frames;
@@ -395,8 +401,8 @@ struct ProgramCheck {
   std::optional<ProgramRange> spindle; // rpm
   std::vector<LengthUnit> units;
   TravelCheck travel{TravelCheck::unknown};
-  std::vector<std::string> errors;
-  std::vector<std::string> warnings;
+  std::vector<ProgramCheckIssue> errors;
+  std::vector<ProgramCheckIssue> warnings;
   friend auto operator==(const ProgramCheck&, const ProgramCheck&) -> bool = default;
 };
 

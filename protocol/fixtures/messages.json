@@ -937,7 +937,37 @@
         "line": 6,
         "seconds": 2
       }
-    ]
+    ],
+    "check": {
+      "tools": [],
+      "frames": [],
+      "feed": null,
+      "spindle": null,
+      "units": [],
+      "travel": "unknown",
+      "errors": [
+        "T3 has no verified length in the tool table."
+      ],
+      "warnings": [
+        "Additional controller check is required.",
+        "Feed per revolution is excluded from the feed range."
+      ],
+      "errors_localization": [
+        {
+          "key": "backend.previewEngine.noVerifiedLength",
+          "params": {
+            "tool": "3"
+          }
+        }
+      ],
+      "warnings_localization": [
+        null,
+        {
+          "key": "backend.previewEngine.feedPerRevolution",
+          "params": {}
+        }
+      ]
+    }
   },
   {
     "type": "preview",
@@ -1061,6 +1091,16 @@
   },
   {
     "type": "result",
+    "id": 48,
+    "outcome": "failed",
+    "reason": "A program named part.ngc exists already.",
+    "localization": {
+      "key": "backend.programEdit.exists",
+      "params": { "name": "part.ngc" }
+    }
+  },
+  {
+    "type": "result",
     "id": 45,
     "outcome": "accepted",
     "reason": "",
@@ -1086,6 +1126,16 @@
         30
       ],
       "approach_feed": 300
+    }
+  },
+  {
+    "type": "result",
+    "id": 49,
+    "outcome": "rejected",
+    "reason": "Missing required field: path.",
+    "refusal": {
+      "key": "messages.request.missingField",
+      "params": { "field": "path" }
     }
   },
   {
@@ -1469,7 +1519,7 @@
     "not_included": [
       {
         "path": "LIB:basic_sim.tcl",
-        "reason": "a HAL file of LinuxCNC's own library"
+        "reason": "a HAL file of LinuxCNC's own library", "localization": {"key": "backend.machineData.libHal", "params": {}}
       }
     ]
   },
@@ -1480,6 +1530,7 @@
     "bytes": 1024,
     "not_included": []
   },
+  {"type": "result", "id": 31, "outcome": "accepted", "reason": "Nothing to restore: every file is the same.", "localization": {"key": "backend.machineData.nothing", "params": {}}},
   {
     "type": "restore_summary",
     "path": "/media/cnc/STICK/coffeecnc-G0759-20261123-140200.tar.gz",
@@ -1563,5 +1614,15 @@
       { "tool": "halmeter", "available": true, "open": true },
       { "tool": "halscope", "available": false, "open": false }
     ]
+  },
+  {
+    "type": "result",
+    "id": 50,
+    "outcome": "rejected",
+    "reason": "halscope is not installed: it is not in the search path (/usr/bin:/bin).",
+    "refusal": {
+      "key": "backend.halDiagnostics.notInstalled",
+      "params": { "name": "halscope", "path": "/usr/bin:/bin" }
+    }
   }
 ]

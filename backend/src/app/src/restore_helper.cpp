@@ -183,13 +183,12 @@ auto run_restore_helper(ToolModelFiles& files, const std::string& directory, lon
     return std::nullopt;
   };
   hooks.still_may_write = [&host]() -> std::optional<LocalizedReason> {
-    if (!host.holds_linuxcnc_lock())
-      return LocalizedReason{
-          std::format("LinuxCNC was started while the files were written ({} was removed).",
-                      linuxcnc_lock),
-          MessageKey{"backend.machineData.restoreLockLost",
-                     {{"path", std::string(linuxcnc_lock)}}}};
-    return std::nullopt;
+    if (host.holds_linuxcnc_lock())
+      return std::nullopt;
+    const std::string path{linuxcnc_lock};
+    return LocalizedReason{
+        std::format("LinuxCNC was started while the files were written ({} was removed).", path),
+        MessageKey{"backend.machineData.restoreLockLost", {{"path", path}}}};
   };
   const auto applied = apply_staged_restore(files, directory, host.now(), hooks);
   if (locked_linuxcnc)

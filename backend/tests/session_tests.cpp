@@ -598,7 +598,10 @@ void touch_probe_blocks_spindle_commands_before_dispatch() {
                            R"("type":"mdi","text":"G76 P1 Z-1 I-1 J1 K1")",
                            R"("type":"mdi","text":"G84.2 Z-1")",
                            R"("type":"mdi","text":"G84.3 Z-1")"}) {
-    rig.expect(body, "rejected", reason);
+    const auto outcome = rig.result(body);
+    require(outcome.at("outcome") == "rejected" && outcome.at("reason") == reason &&
+                outcome.at("refusal").at("key") == "messages.session.probeLoaded",
+            "The spindle interlock sends a keyed refusal alongside the original text");
     rig.acted({}, "A probe rejects spindle starts before mode change or dispatch");
   }
   rig.accepted(R"("type":"set_spindle","direction":"stopped","rpm":0)");
@@ -613,8 +616,12 @@ void touch_probe_blocks_spindle_commands_before_dispatch() {
   rig.expect(R"("type":"step")", "rejected", reason);
   rig.acted({}, "Run and Single Block both check the entire program");
   rig.files.file(rig.port.state.program_file, "O<other> call\nM2\n");
-  rig.expect(R"("type":"run")", "rejected",
-             "A touch probe is loaded. CoffeeCNC could not verify that the code leaves the spindle off.");
+  const auto unknown = rig.result(R"("type":"run")");
+  require(unknown.at("outcome") == "rejected" &&
+              unknown.at("reason") == "A touch probe is loaded. CoffeeCNC could not verify that "
+                                      "the code leaves the spindle off." &&
+              unknown.at("refusal").at("key") == "messages.session.probeCodeUnknown",
+          "An opaque block reports a different interlock key than a recognized spindle action");
   rig.acted({}, "Unverifiable subroutine calls cannot run with a probe");
   rig.files.file(rig.port.state.program_file, "G 8 4 X1 Z-1 R2 F20\nM2\n");
   rig.expect(R"("type":"run")", "rejected", reason);
@@ -646,8 +653,11 @@ void pending_probe_tool_changes() {
   Rig rig{true, Limits{3000, 1.2, 0.5, 1.2, 24000}, &models};
   auto& state = rig.port.state;
   state.tool_in_spindle = 1;
-  rig.expect(R"("type":"mdi","text":"M61 Q99 S200 M3")", "rejected",
-             "Separate M61 from tool changes and spindle commands.");
+  const auto mixed = rig.result(R"("type":"mdi","text":"M61 Q99 S200 M3")");
+  require(mixed.at("outcome") == "rejected" &&
+              mixed.at("reason") == "Separate M61 from tool changes and spindle commands." &&
+              mixed.at("refusal").at("key") == "messages.session.separateM61",
+          "The spindle interlock can distinguish a combined identity and spindle change");
   rig.acted({}, "An identity change cannot share an MDI block with spindle actuation");
   rig.accepted(R"("type":"mdi","text":"M61 Q1 G43 H1")");
   rig.acted({"set_task_mode mdi", "mdi M61 Q1 G43 H1"}, "Ordinary spindle-off identification still works");

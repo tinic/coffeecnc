@@ -376,8 +376,8 @@ auto parse_output(std::string_view text, const OutputLimits& limits) -> HelperOu
   HelperOutput output;
   std::size_t points = 0;
   std::string_view problem_kind;
-  const auto defect = [&output](std::string why) -> HelperOutput {
-    output.defect = std::move(why);
+  const auto defect = [&output](std::string why, MessageKey key) -> HelperOutput {
+    output.defect = {std::move(why), std::move(key)};
     output.end = HelperEnd::missing;
     return output;
   };
@@ -397,16 +397,21 @@ auto parse_output(std::string_view text, const OutputLimits& limits) -> HelperOu
     if (key == "seg" || key == "segf") {
       PreviewSegment segment;
       if (output.problem)
-        return defect("a segment after the record that ends the path");
+        return defect("a segment after the record that ends the path",
+                      MessageKey{"backend.previewWire.segmentAfterEnd"});
       if (!line_number(line, segment.line))
-        return defect("a segment with a line that is none of the program");
+        return defect("a segment with a line that is none of the program",
+                      MessageKey{"backend.previewWire.segmentLine"});
       const auto kind = key == "segf" ? std::string_view{"f"} : word(line);
       if (kind != "r" && kind != "f")
-        return defect("a segment of an unknown kind");
+        return defect("a segment of an unknown kind",
+                      MessageKey{"backend.previewWire.segmentKind"});
       if (!number(line, segment.tool) || segment.tool < 0 || segment.tool > OutputLimits::max_tool)
-        return defect("a segment with a tool number out of range");
+        return defect("a segment with a tool number out of range",
+                      MessageKey{"backend.previewWire.segmentTool"});
       if (key == "segf" && (!finite_number(line, segment.feed) || segment.feed < 0))
-        return defect("a segment with a feed that is not a finite, positive number");
+        return defect("a segment with a feed that is not a finite, positive number",
+                      MessageKey{"backend.previewWire.segmentFeed"});
       segment.kind = kind == "r" ? MoveKind::rapid : MoveKind::feed;
       // Every pass removes one word from `line`, or returns.
       for (;;) {
@@ -416,64 +421,80 @@ auto parse_output(std::string_view text, const OutputLimits& limits) -> HelperOu
         Vec3 point{};
         if (!vector(line, point) || !std::isfinite(point[0]) || !std::isfinite(point[1]) ||
             !std::isfinite(point[2]))
-          return defect("a segment with a coordinate that is missing or not a finite number");
+          return defect("a segment with a coordinate that is missing or not a finite number",
+                        MessageKey{"backend.previewWire.segmentCoordinate"});
         if (++points > limits.max_points)
-          return defect("more points than the preview allows");
+          return defect("more points than the preview allows",
+                        MessageKey{"backend.previewWire.tooManyPoints"});
         segment.points.push_back(point);
       }
       if (segment.points.size() < 2)
-        return defect("a segment of fewer than two points");
+        return defect("a segment of fewer than two points",
+                      MessageKey{"backend.previewWire.segmentTooShort"});
       output.segments.push_back(std::move(segment));
     } else if (key == "dwell") {
       PreviewDwell dwell;
       if (output.problem)
-        return defect("a dwell after the record that ends the path");
+        return defect("a dwell after the record that ends the path",
+                      MessageKey{"backend.previewWire.dwellAfterEnd"});
       if (!line_number(line, dwell.line) || !finite_number(line, dwell.seconds) ||
           dwell.seconds < 0)
-        return defect("a dwell with a line or duration that is not valid");
+        return defect("a dwell with a line or duration that is not valid",
+                      MessageKey{"backend.previewWire.dwellInvalid"});
       if (output.dwells.size() >= limits.max_points)
-        return defect("more dwells than the preview allows");
+        return defect("more dwells than the preview allows",
+                      MessageKey{"backend.previewWire.tooManyDwells"});
       output.dwells.push_back(dwell);
     } else if (key == "error" || key == "stop" || key == "cut") {
       PreviewError problem;
       if (output.problem)
-        return defect("a second record that ends the path");
+        return defect("a second record that ends the path",
+                      MessageKey{"backend.previewWire.duplicatePathEnd"});
       if (!line_number(line, problem.line))
-        return defect("a record with a line that is none of the program");
+        return defect("a record with a line that is none of the program",
+                      MessageKey{"backend.previewWire.recordLine"});
       problem.text = rest(line);
       output.problem = std::move(problem);
       problem_kind = key;
     } else if (key == "check") {
       if (!read_check(line, output.check))
-        return defect("a malformed program check record");
+        return defect("a malformed program check record",
+                      MessageKey{"backend.previewWire.malformedCheck"});
     } else if (key == "restart" || key == "restart_blocked" || key == "restart_refused") {
       if (output.problem || output.restart || !output.restart_blocked.empty())
-        return defect("a duplicate or misplaced restart record");
+        return defect("a duplicate or misplaced restart record",
+                      MessageKey{"backend.previewWire.misplacedRestart"});
       if (key == "restart") {
         RestartPoint point;
         if (!parse_restart(line, limits, point))
-          return defect("a malformed restart point");
+          return defect("a malformed restart point",
+                        MessageKey{"backend.previewWire.malformedRestartPoint"});
         output.restart = point;
       } else if (key == "restart_refused") {
         unsigned id = 0;
         if (!number(line, id) || !word(line).empty())
-          return defect("a malformed restart refusal");
+          return defect("a malformed restart refusal",
+                        MessageKey{"backend.previewWire.malformedRestartRefusal"});
         if (!std::in_range<std::uint8_t>(id))
-          return defect("an unknown restart refusal");
+          return defect("an unknown restart refusal",
+                        MessageKey{"backend.previewWire.unknownRestartRefusal"});
         auto reason = restart_refusal_message(static_cast<RestartRefusal>(id));
         if (reason.empty())
-          return defect("an unknown restart refusal");
+          return defect("an unknown restart refusal",
+                        MessageKey{"backend.previewWire.unknownRestartRefusal"});
         output.restart_blocked = std::move(reason.text);
         output.restart_blocked_localization = std::move(reason.localization);
       } else {
         output.restart_blocked = rest(line);
         if (output.restart_blocked.empty())
-          return defect("a restart rejection without a reason");
+          return defect("a restart rejection without a reason",
+                        MessageKey{"backend.previewWire.missingRestartReason"});
       }
     } else if (key == "end") {
       const auto how = word(line);
       if (!word(line).empty() || !text.empty())
-        return defect("text after the end of the result");
+        return defect("text after the end of the result",
+                      MessageKey{"backend.previewWire.textAfterEnd"});
       if (how == "ok" && !output.problem)
         output.end = HelperEnd::ok;
       else if (how == "error" && problem_kind == "error")
@@ -483,10 +504,11 @@ auto parse_output(std::string_view text, const OutputLimits& limits) -> HelperOu
       else if (how == "cut" && problem_kind == "cut")
         output.end = HelperEnd::cut;
       else
-        return defect("an end that does not fit the records before it");
+        return defect("an end that does not fit the records before it",
+                      MessageKey{"backend.previewWire.inconsistentEnd"});
       return output;
     } else {
-      return defect("a record of an unknown kind");
+      return defect("a record of an unknown kind", MessageKey{"backend.previewWire.unknownRecord"});
     }
   }
   return output;

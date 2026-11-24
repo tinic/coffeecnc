@@ -174,7 +174,10 @@ void hostile_results() {
   };
   const auto defect = [&](const std::string& bad, std::string_view what) -> void {
     kept_one(bad, what);
-    require(!parse_output(good + bad).defect.empty(), std::format("{}: and is a defect", what));
+    const auto reason = parse_output(good + bad).defect;
+    require(!reason.empty() && reason.localization &&
+                reason.localization->key.starts_with("backend.previewWire."),
+            std::format("{}: and carries a localized defect", what));
   };
   // The parent once never came back from this one.
   defect("seg 1 f 0 0 bad 0 1 0 0\nend ok\n", "a word that is no number");

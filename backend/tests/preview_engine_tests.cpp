@@ -1360,6 +1360,17 @@ void how_the_helper_ended() {
               o.error->text.find("without finishing") != std::string::npos &&
               o.segments.size() == 1,
           "No `end`, exit 0: failed, with what was received: " + text_of(o));
+  o = with("echo 'seg 2 f 0 0 0 0 1 0 0' >&3; echo 'unexpected' >&3; exit 0");
+  require(o.state == PreviewState::failed && o.segments.size() == 1 &&
+              o.error ==
+                  PreviewError{
+                      0,
+                      "The preview program's result is not valid (a record of an unknown kind); "
+                      "the path is shown as far as it was.",
+                      MessageKey{"backend.previewEngine.invalidResult",
+                                 {{"detail", "a record of an unknown kind"}},
+                                 {{"detail", {"backend.previewWire.unknownRecord"}}}}},
+          "An invalid record retains the path and carries its localized detail.");
   o = with("echo 'seg 2 f 0 0 0 0 1 0 0' >&3; echo 'error 2 broken' >&3; echo 'end error' >&3; "
            "exit 3");
   require(o.state == PreviewState::failed && o.error && o.error->line == 2 &&

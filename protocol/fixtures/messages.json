@@ -901,6 +901,25 @@
   },
   {
     "type": "preview",
+    "context": 4821341,
+    "state": "failed",
+    "error": {
+      "line": 0,
+      "text": "The preview program's result is not valid (a record of an unknown kind); the path is shown as far as it was.",
+      "localization": {
+        "key": "backend.previewEngine.invalidResult",
+        "params": { "detail": "a record of an unknown kind" },
+        "params_localization": {
+          "detail": { "key": "backend.previewWire.unknownRecord", "params": {} }
+        }
+      }
+    },
+    "segments": [],
+    "bounds": null,
+    "dwells": []
+  },
+  {
+    "type": "preview",
     "context": 4821337,
     "state": "pending",
     "error": null,

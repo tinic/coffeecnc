@@ -891,8 +891,10 @@ auto outcome_of(const PreviewSettings& settings, const PreviewInputs& inputs, He
         0,
         std::format("The preview program's result is not valid ({}); the path is shown as "
                     "far as it was.",
-                    output.defect),
-        MessageKey{"backend.previewEngine.invalidResult", {{"detail", output.defect}}}};
+                    output.defect.text),
+        MessageKey{"backend.previewEngine.invalidResult",
+                   {{"detail", output.defect.text}},
+                   parameter_localization("detail", output.defect.localization)}};
   else if (output.end == HelperEnd::ok && well) {
     outcome.state = PreviewState::ready;
     outcome.restart = output.restart;

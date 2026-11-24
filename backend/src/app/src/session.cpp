@@ -478,7 +478,8 @@ auto Session::submit(PageToken page, std::string_view json, Instant now,
           MessageKey{"messages.session.requestIgnored", {{"detail", error->reason}}}));
     else if (in_order(*error->id))
       outcome.messages.push_back(
-          encode_result(*error->id, CommandOutcome::rejected, error->reason));
+          encode_result(*error->id, CommandOutcome::rejected, error->reason, {}, {},
+                        error->localization));
     return outcome;
   }
   auto& request = std::get<Request>(decoded);
@@ -561,7 +562,7 @@ auto Session::submit(PageToken page, std::string_view json, Instant now,
       result(CommandOutcome::rejected, no_tool_models_reason,
              RefusalMessage{"messages.session.noToolModels"});
     else if (const auto refused = tool_models_->submit(page, request.id, std::move(*models)))
-      result(CommandOutcome::rejected, *refused);
+      result(CommandOutcome::rejected, refused->text, refused->localization);
     return outcome;
   }
 

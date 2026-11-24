@@ -91,6 +91,27 @@ void command_results() {
   require(partial.at("outcome") == "failed" && stopped.at("partial") == "The height map was stopped." &&
               stopped.at("points").at(0).at("work").at(2) == 0.01 && stopped.at("points").at(1).is_null(),
           "A partial height map fails with the points measured so far and null for the rest");
+  SetterState bore{};
+  bore.center_diameter = 16;
+  bore.measured = SetterState::Measured{
+      .id = 5,
+      .wcs = 2,
+      .axes = "XY",
+      .work = {4.0, -2.0, std::nullopt},
+      .machine = std::array{9.0, -5.0, 6.0},
+      .faces = {{ProbeDirection::x_plus, {12.0, -2.0, -6.0}, {17.0, -5.0, 6.0}}}};
+  const auto measured = Json::parse(encode_result(42, CommandOutcome::accepted, "", bore)).at("setter");
+  require(measured.at("measured") ==
+                  Json{{"measurement_id", 5},
+                       {"wcs", 2},
+                       {"axes", "XY"},
+                       {"work", {{"x", 4.0}, {"y", -2.0}}},
+                       {"machine", {9.0, -5.0, 6.0}},
+                       {"faces", Json::array({{{"direction", "x_plus"},
+                                               {"work", {12.0, -2.0, -6.0}},
+                                               {"machine", {17.0, -5.0, 6.0}}}})}} &&
+              !measured.contains("material"),
+          "A measure-only result reports the point and faces in work and machine millimetres");
   slot.feature_size[1] = std::numeric_limits<double>::quiet_NaN();
   const auto invalid = Json::parse(encode_result(42, CommandOutcome::accepted, "", slot));
   require(invalid.at("outcome") == "failed" && !invalid.contains("setter"),

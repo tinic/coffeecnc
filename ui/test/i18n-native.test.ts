@@ -4,6 +4,7 @@
 // sentence fails here until it is catalogued in parts/messages (or parts/backend).
 import { describe, expect, it } from 'vitest'
 
+import programWatch from '../../backend/src/linuxcnc/src/program_watch.cpp?raw'
 import { i18n, setLanguage } from '../src/i18n'
 import { matchMessage, translateMessage, translateResult } from '../src/i18n/messages'
 
@@ -24,6 +25,10 @@ const adapter = import.meta.glob<string>([
   '../../backend/src/linuxcnc/src/nml_panel_source.cpp',
   '../../backend/src/linuxcnc/src/preview_engine.cpp',
   '../../backend/src/app/src/operator_settings_store.cpp',
+  '../../backend/src/app/src/tool_models.cpp',
+  '../../backend/src/app/src/tool_model_store.cpp',
+  '../../backend/src/app/src/tool_model_json.hpp',
+  '../../backend/src/app/include/coffeecnc/app/tool_model_store.hpp',
 ], { query: '?raw', import: 'default', eager: true })
 /** Panel modules whose English reaches the operator as run-time text (a result reason, an import error). */
 const modules = import.meta.glob<string>(['../src/bridge.ts', '../src/step.worker.ts', '../src/step-model.ts'],
@@ -97,7 +102,7 @@ function cppLiterals(source: string): Literal[] {
       end += 1
     }
     const last = literals.at(-1)
-    const after = source.slice(end + 1, end + 400)
+    const after = source.slice(end + 1, end + 900)
     if (last !== undefined && source.slice(previousEnd, index).trim() === '') {
       last.text += text
       last.after = after
@@ -106,6 +111,27 @@ function cppLiterals(source: string): Literal[] {
     index = end + 1
   }
   return literals
+}
+
+/** The arguments after the format string, up to its call's closing parenthesis. */
+function formatArguments(after: string): { args: string[]; rest: string } | null {
+  const tokens = /"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[()[\]{},]/g
+  const args: string[] = []
+  let depth = 0
+  let start = 0
+  for (const { 0: token, index } of after.matchAll(tokens)) {
+    if (token === ',' && depth === 0) {
+      const argument = after.slice(start, index).trim()
+      if (argument !== '') args.push(argument)
+      start = index + 1
+    } else if (token === ')' && depth === 0) {
+      const argument = after.slice(start, index).trim()
+      if (argument !== '') args.push(argument)
+      return { args, rest: after.slice(index + 1) }
+    } else if (token === '(' || token === '[' || token === '{') depth++
+    else if (token === ')' || token === ']' || token === '}') depth--
+  }
+  return null
 }
 
 /** The operator sentences of one C++ file. */
@@ -173,6 +199,19 @@ describe('native and store sentences', () => {
     })
   }
 
+  it('catalogues the file reader reasons embedded in preview diagnostics', () => {
+    const comments = programWatch.slice(programWatch.indexOf('auto comment_refusal('),
+      programWatch.indexOf('auto bare_block('))
+    const names = programWatch.slice(programWatch.indexOf('auto first_forbidden_line('),
+      programWatch.indexOf('// The words of a block'))
+    const phrases = cppLiterals(comments + names).map(({ text }) => text)
+      .filter((text) => /^(?:a|an) /.test(text))
+    expect(phrases.map((text) => matchMessage(text.replaceAll('{}', 'log'))?.key)).toEqual([
+      'backend.previewEngine.stopPythonLine', 'backend.previewEngine.stopPythonComment',
+      'backend.previewEngine.stopFileWritingComment', 'backend.previewEngine.stopOwordName',
+    ])
+  })
+
   it('catalogues every sentence of store.ts', () => {
     const sentences = storeSentences(store)
     expect(sentences.length).toBeGreaterThan(50)
@@ -227,47 +266,70 @@ describe('native and store sentences', () => {
 
   it('keeps native message keys, fallback text and named arguments in sync', () => {
     const sources = { ...native, ...adapter }
-    const literals = Object.values(sources).flatMap(cppLiterals)
-    const constants = new Map<string, string>()
-    for (const literal of literals) {
-      const name = /\bconstexpr (?:auto|std::string_view) (\w+)\s*=\s*$/.exec(literal.before)?.[1]
-      if (name !== undefined) constants.set(name, literal.text)
+    const constantsByFile = new Map<string, Map<string, string>>()
+    for (const [path, source] of Object.entries(sources)) {
+      const constants = new Map<string, string>()
+      for (const literal of cppLiterals(source)) {
+        const name = /\bconstexpr (?:auto|std::string_view) (\w+)\s*=\s*$/.exec(literal.before)?.[1]
+        if (name !== undefined) constants.set(name, literal.text)
+      }
+      constantsByFile.set(path, constants)
+    }
+
+    function constant(path: string, name: string): string | undefined {
+      const local = constantsByFile.get(path)?.get(name)
+      if (local !== undefined) return local
+      const stem = path.slice(path.lastIndexOf('/') + 1).replace(/\.[^.]+$/, '')
+      // A class member can be declared in its header, as with ToolModelStore::busy_reason.
+      for (const [file, constants] of constantsByFile) {
+        if (file.endsWith(`/${stem}.hpp`) && constants.has(name)) return constants.get(name)
+      }
+      const matches = [...constantsByFile.values()].flatMap((constants) => {
+        const match = constants.get(name)
+        return match === undefined ? [] : [match]
+      })
+      return new Set(matches).size === 1 ? matches[0] : undefined
     }
 
     const value = /MessageKey\{\s*"([^"]+)"(?:,\s*\{([\s\S]*?)\}\s*\})?/g
     const argument = /\{\s*"(\w+)"\s*,/g
     const beforeKey = /^(?:\s*,\s*(?:\{\}|true|false))*\s*,\s*MessageKey\{/
-    const afterFormat = /^[^;"]*?\),[^;"]*?MessageKey\{/
+    const formattedKey = /^\s*,[^;"]*?MessageKey\{/
     const named = /\b(?:std::string\((\w+)\)|(\w+))(?:\s*,\s*\{\})*\s*,\s*(MessageKey\{)/g
 
-    function checkMatch(match: RegExpMatchArray, fallback: string): void {
+    function checkMatch(match: RegExpMatchArray, fallback: string, args: readonly (string | undefined)[]): void {
       const key = match[1] ?? ''
       const names = [...(match[2] ?? '').matchAll(argument)].map((arg) => arg[1] ?? '')
       const markers = names.map((name) => `{${name}}`)
       const params = Object.fromEntries(names.map((name, index) => [name, markers[index]]))
       expect(i18n.global.te(key, 'en'), key).toBe(true)
-      let index = 0
-      expect(i18n.global.t(key as never, params, { locale: 'en' }), key)
-        .toBe(fallback.replaceAll('{}', () => markers[index++] ?? '{}'))
-      expect(index, key).toBe(names.length)
+      let parameter = 0
+      let argumentIndex = 0
+      const formatted = fallback.replace(/\{(?::[^{}]*)?\}/g,
+        () => args[argumentIndex++] ?? markers[parameter++] ?? '{}')
+      expect(i18n.global.t(key as never, params, { locale: 'en' }), key).toBe(formatted)
+      expect(parameter, key).toBe(names.length)
     }
 
     for (const [path, source] of Object.entries(sources)) {
       const expected = [...source.matchAll(value)].map((match) => match[1])
       const checked: (string | undefined)[] = []
-      const check = (site: string, fallback: string): void => {
+      const check = (site: string, fallback: string, args: readonly (string | undefined)[] = []): void => {
         const match = [...site.matchAll(value)][0]
         if (match === undefined) return
-        checkMatch(match, fallback)
+        checkMatch(match, fallback, args)
         checked.push(match[1])
       }
       for (const literal of cppLiterals(source)) {
-        if (beforeKey.test(literal.after) ||
-            (literal.before.trimEnd().endsWith('std::format(') && afterFormat.test(literal.after)))
-          check(literal.after, literal.text)
+        if (beforeKey.test(literal.after)) check(literal.after, literal.text)
+        else if (literal.before.trimEnd().endsWith('std::format(')) {
+          const format = formatArguments(literal.after)
+          if (format !== null && formattedKey.test(format.rest))
+            check(format.rest, literal.text, format.args.map((arg) => constant(path, arg)))
+        }
       }
       for (const match of source.matchAll(named)) {
-        const fallback = constants.get(match[1] ?? match[2] ?? '')
+        const fallback = constant(path, match[1] ?? match[2] ?? '')
         if (fallback === undefined) continue
         const from = match.index + match[0].lastIndexOf(match[3] ?? '')
         check(source.slice(from), fallback)
@@ -324,6 +386,11 @@ describe('translateMessage', () => {
     // `two` is a catalog word ("deux"), but here it names a subroutine file.
     expect(translateMessage('No preview: two.ngc line 3: two.'))
       .toBe('Pas d’aperçu\u202f: two.ngc ligne 3\u202f: deux.')
+    const detail = 'a (log...) comment writes a file'
+    const expected = 'Pas d’aperçu\u202f: two.ngc ligne 3\u202f: un commentaire (log...) écrit un fichier.'
+    expect(translateMessage(`No preview: two.ngc line 3: ${detail}.`)).toBe(expected)
+    expect(translateMessage('Older fallback.', { key: 'backend.previewEngine.subroutineForbidden',
+      params: { name: 'two', line: '3', detail } })).toBe(expected)
     expect(translateMessage('the directory two cannot be made: Permission denied'))
       .toBe('impossible de créer le dossier two\u202f: Permission denied')
     expect(translateMessage("Can't open home: no such file")).not.toContain('Référencement')

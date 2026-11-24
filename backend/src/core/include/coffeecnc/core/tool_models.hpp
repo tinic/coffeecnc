@@ -2,6 +2,8 @@
 #define COFFEECNC_CORE_TOOL_MODELS_HPP
 
 #include <algorithm>
+#include <coffeecnc/core/message_key.hpp>
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -107,6 +109,7 @@ struct ToolModels {
   ToolModelAvailability availability{ToolModelAvailability::session_only};
   std::string reason;
   std::optional<ToolModelDocument> document;
+  std::optional<MessageKey> reason_localization{};
   friend auto operator==(const ToolModels&, const ToolModels&) -> bool = default;
 };
 

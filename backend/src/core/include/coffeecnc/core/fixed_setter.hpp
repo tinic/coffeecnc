@@ -50,7 +50,9 @@ enum class SetterAction : std::uint8_t {
   angle,
   apply_angle,
   // A Z height map (#247): Z top at every point of a grid over an XY rectangle. Writes nothing.
-  height_map
+  height_map,
+  // Sets the work origin of a measure-only result (FixedSetterRequest::measure_only).
+  apply_measurement
 };
 enum class ProbeDirection : std::uint8_t { z_top, x_minus, x_plus, y_minus, y_plus };
 
@@ -78,12 +80,16 @@ struct FixedSetterRequest {
   // approximate diameter; for a ridge, the approximate width; for an edge angle, how far apart
   // along the edge it probes. Millimetres.
   double gauge_width_mm{};
-  std::uint64_t edge_measurement{}; // controller-issued ID for apply_angle
   // For a height map: the rectangle's corners X, Y and X, Y in the active work system, the
   // grid step and the work Z to traverse at between the points. Millimetres.
   std::array<double, 4> grid_mm{};
   double step_mm{};
   double clearance_mm{};
+  // Controller-issued ID: of an `angle` result for apply_angle, of a measure-only result for
+  // apply_measurement.
+  std::uint64_t edge_measurement{};
+  // Probe and report, but write no offset: the result's `measured` can be applied afterwards.
+  bool measure_only{};
 };
 
 // The grid a height map probes: columns and rows of points from the first corner to the second,
@@ -201,6 +207,25 @@ struct SetterState {
     std::optional<std::string> partial{};
   };
   std::optional<HeightMap> height_map{};
+  // A point on a probed surface: the ball-centre contact moved one ball radius along the travel.
+  struct ProbedPoint {
+    ProbeDirection direction; // the probe's travel
+    std::array<double, 3> work;    // in the active work system at the time of the probe, mm
+    std::array<double, 3> machine; // mm
+  };
+  // After a measure-only probe: what it found, with nothing written.
+  struct Measured {
+    std::uint64_t id{}; // for apply_measurement; 0 when there is nothing to apply (edge angle)
+    int wcs{};
+    std::string axes; // the axes applying sets: "X", "Y", "Z" or "XY"; empty for an edge angle
+    // The point applying makes the origin (centre, corner, face or top), in the work system
+    // at the time of the probe: only its measured axes. In machine coordinates: all three, an
+    // axis not measured at the start's value, Z of an XY feature at the probing depth.
+    std::array<std::optional<double>, 3> work{};
+    std::optional<std::array<double, 3>> machine{};
+    std::vector<ProbedPoint> faces;
+  };
+  std::optional<Measured> measured{};
 };
 
 } // namespace coffeecnc

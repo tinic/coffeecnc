@@ -1228,8 +1228,18 @@ const examples = [
     "machine_id": "G0759",
     "revision": 0,
     "availability": "unavailable",
-    "reason": "Tool model settings are already in use",
+    "reason": "Tool model settings in /data/G0759 are already in use by another CoffeeCNC. Tool models are not saved.",
     "document": null
+  },
+  {
+    "type": "tool_models_reason",
+    "machine_id": "G0759",
+    "revision": 0,
+    "reason": "Tool model settings in /data/G0759 are already in use by another CoffeeCNC. Tool models are not saved.",
+    "localization": {
+      "key": "backend.toolModelStore.inUse",
+      "params": { "path": "/data/G0759" }
+    }
   },
   {
     "type": "operator_settings",
@@ -1451,7 +1461,7 @@ const examples = [
 
 // A new FromMachine message requires coverage here, even if its fields are all optional.
 const messageTypes: Record<FromMachine['type'], true> = {
-  hello: true, status: true, tool_table: true, tool_models: true, operator_settings: true, work_offsets: true, program: true,
+  hello: true, status: true, tool_table: true, tool_models: true, tool_models_reason: true, operator_settings: true, work_offsets: true, program: true,
   preview: true, message: true, result: true, directory: true, offset_history: true, alarm_log: true, backup_written: true,
   restore_summary: true, diagnostics: true,
 }

@@ -252,9 +252,10 @@ fnv() {
   printf '%016x' "$hash"
 }
 # Staged now, by page 1: a plan staged more than 2 minutes before the helper starts is refused.
-# Plan version 4 also carries the boot ID and the boot clock (/proc/uptime is CLOCK_BOOTTIME).
+# Read the same boot clock as the restore helper. Containers may virtualize /proc/uptime.
+booted=$(python3 -c 'import time; print(time.clock_gettime_ns(time.CLOCK_BOOTTIME) // 1000000)') || exit 125
 printf '{"version":4,"machine_id":"restore-data","staged":%s,"boot_id":"%s","booted":%s,"page":1,"source":"x","ini":"","files":[{"role":"tool_table","name":"tool-table/tool.tbl","from":"%s","root":"%s","relative":"tool.tbl","held":"%s"}]}\n' \
-  "$(date +%s%3N)" "$(cat /proc/sys/kernel/random/boot_id)" "$(awk '{printf "%d", $1 * 1000}' /proc/uptime)" \
+  "$(date +%s%3N)" "$(cat /proc/sys/kernel/random/boot_id)" "$booted" \
   "$data/restore/0.staged" "$work/restore-config" "$(fnv "$now")" >"$data/restore/plan.json"
 # Review #274, 6: a parent of PID 1 tells nothing about LinuxCNC: refused, the plan is left.
 run --apply-restore "$data" --after 1

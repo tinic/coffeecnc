@@ -23,6 +23,9 @@ using Json = nlohmann::json;
 class InvalidRequest : public std::runtime_error {
 public:
   using std::runtime_error::runtime_error;
+  explicit InvalidRequest(LocalizedReason reason)
+      : std::runtime_error(reason.text), localization(std::move(reason.localization)) {}
+  std::optional<MessageKey> localization{};
 };
 
 auto parse(std::string_view text) -> Json {
@@ -124,9 +127,9 @@ auto choice(const Json& object, std::string_view name,
 }
 
 // A value read by the forms the saved file shares with these commands.
-template <typename T> auto valid(std::expected<T, std::string> read) -> T {
+template <typename T, typename Error> auto valid(std::expected<T, Error> read) -> T {
   if (!read)
-    throw InvalidRequest(read.error());
+    throw InvalidRequest(std::move(read.error()));
   return std::move(*read);
 }
 
@@ -380,9 +383,10 @@ auto command(const Json& object) -> Command {
                                               {"boss", SetterAction::boss},
                                               {"angle", SetterAction::angle},
                                               {"apply_angle", SetterAction::apply_angle},
-                                              {"height_map", SetterAction::height_map}});
+                                              {"height_map", SetterAction::height_map},
+                                              {"apply_measurement", SetterAction::apply_measurement}});
     FixedSetterRequest request{action};
-    if (action == SetterAction::apply_angle) {
+    if (action == SetterAction::apply_angle || action == SetterAction::apply_measurement) {
       fields(object, {"id", "type", "action", "tool", "measurement_id"});
       request.tool = integer(object, "tool");
       request.edge_measurement = positive_id(object, "measurement_id");
@@ -390,7 +394,7 @@ auto command(const Json& object) -> Command {
     }
     if (action != SetterAction::status) {
       if (action == SetterAction::material) {
-        fields(object, {"id", "type", "action", "tool", "x", "y", "z", "direction"});
+        fields(object, {"id", "type", "action", "tool", "x", "y", "z", "direction"}, {"measure_only"});
         request.direction = choice<ProbeDirection>(object, "direction",
                                                    {{"z_top", ProbeDirection::z_top},
                                                     {"x_minus", ProbeDirection::x_minus},
@@ -401,7 +405,8 @@ auto command(const Json& object) -> Command {
         fields(object, {"id", "type", "action", "tool", "x", "y", "z", "gauge_width"});
         request.gauge_width_mm = number(object, "gauge_width");
       } else if (action == SetterAction::angle) {
-        fields(object, {"id", "type", "action", "tool", "x", "y", "z", "direction", "spacing"});
+        fields(object, {"id", "type", "action", "tool", "x", "y", "z", "direction", "spacing"},
+               {"measure_only"});
         request.direction = choice<ProbeDirection>(object, "direction",
                                                    {{"x_minus", ProbeDirection::x_minus},
                                                     {"x_plus", ProbeDirection::x_plus},
@@ -409,7 +414,7 @@ auto command(const Json& object) -> Command {
                                                     {"y_plus", ProbeDirection::y_plus}});
         request.gauge_width_mm = number(object, "spacing");
       } else if (action == SetterAction::boss) {
-        fields(object, {"id", "type", "action", "tool", "x", "y", "z", "diameter"});
+        fields(object, {"id", "type", "action", "tool", "x", "y", "z", "diameter"}, {"measure_only"});
         request.gauge_width_mm = number(object, "diameter");
       } else if (action == SetterAction::height_map) {
         fields(object, {"id", "type", "action", "tool", "x", "y", "z", "x_min", "y_min", "x_max",
@@ -420,22 +425,28 @@ auto command(const Json& object) -> Command {
         request.clearance_mm = number(object, "clearance");
       } else if (action == SetterAction::slot || action == SetterAction::ridge) {
         if (action == SetterAction::ridge) {
-          fields(object, {"id", "type", "action", "tool", "x", "y", "z", "axis", "width"});
+          fields(object, {"id", "type", "action", "tool", "x", "y", "z", "axis", "width"},
+                 {"measure_only"});
           request.gauge_width_mm = number(object, "width");
         } else {
-          fields(object, {"id", "type", "action", "tool", "x", "y", "z", "axis"});
+          fields(object, {"id", "type", "action", "tool", "x", "y", "z", "axis"}, {"measure_only"});
         }
         request.direction = choice<ProbeDirection>(
             object, "axis", {{"x", ProbeDirection::x_plus}, {"y", ProbeDirection::y_plus}});
       } else if (action == SetterAction::corner || action == SetterAction::inside_corner) {
-        fields(object, {"id", "type", "action", "tool", "x", "y", "z", "x_direction", "y_direction"});
+        fields(object, {"id", "type", "action", "tool", "x", "y", "z", "x_direction", "y_direction"},
+               {"measure_only"});
         request.direction = choice<ProbeDirection>(
             object, "x_direction", {{"x_minus", ProbeDirection::x_minus}, {"x_plus", ProbeDirection::x_plus}});
         request.y_direction = choice<ProbeDirection>(
             object, "y_direction", {{"y_minus", ProbeDirection::y_minus}, {"y_plus", ProbeDirection::y_plus}});
+      } else if (action == SetterAction::pocket || action == SetterAction::bore) {
+        fields(object, {"id", "type", "action", "tool", "x", "y", "z"}, {"measure_only"});
       } else {
         fields(object, {"id", "type", "action", "tool", "x", "y", "z"});
       }
+      if (object.contains("measure_only"))
+        request.measure_only = boolean(object, "measure_only");
       request.tool = integer(object, "tool");
       request.start = {number(object, "x"), number(object, "y"), number(object, "z")};
     } else {
@@ -481,7 +492,9 @@ auto command(const Json& object) -> Command {
     if (object.contains("holder")) {
       assignment.holder = string(object, "holder");
       if (!valid_tool_holder(assignment.holder) || !assignment.family)
-        throw InvalidRequest("Choose a supported holder for a tool model assignment.");
+        throw InvalidRequest(
+            LocalizedReason{"Choose a supported holder for a tool model assignment.",
+                            MessageKey{"backend.toolModels.chooseHolder"}});
     }
     return assignment;
   }
@@ -520,7 +533,7 @@ auto decode_request(std::string_view json) -> DecodedRequest {
     id = request_id(object);
     return Request{*id, command(object)};
   } catch (const InvalidRequest& error) {
-    return DecodeError{id, error.what()};
+    return DecodeError{id, error.what(), error.localization};
   } catch (const Json::exception&) {
     // Parser diagnostics can contain arbitrary input. Keep the operator message bounded.
     return DecodeError{id, "Invalid JSON request."};

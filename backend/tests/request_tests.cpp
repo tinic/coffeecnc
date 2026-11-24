@@ -135,6 +135,30 @@ void protocol_forms() {
               map.step_mm == 10 && map.clearance_mm == 3,
           "A height map names its rectangle, step and clearance in work millimetres");
   rejected(R"({"id":42,"type":"fixed_setter","action":"height_map","tool":99,"x":1,"y":2,"z":3,"x_min":-5,"y_min":-4,"x_max":15,"y_max":12,"step":10})", 42);
+  // A height map never writes: it takes no measure_only.
+  rejected(R"({"id":42,"type":"fixed_setter","action":"height_map","tool":99,"x":1,"y":2,"z":3,"x_min":-5,"y_min":-4,"x_max":15,"y_max":12,"step":10,"clearance":3,"measure_only":true})", 42);
+  for (const auto* action : {R"("action":"material","direction":"z_top")", R"("action":"pocket")",
+                             R"("action":"bore")", R"("action":"boss","diameter":20)",
+                             R"("action":"slot","axis":"x")",
+                             R"("action":"corner","x_direction":"x_plus","y_direction":"y_plus")"}) {
+    const auto measure = body<FixedSetterRequest>(std::format(
+        R"({{"id":42,"type":"fixed_setter",{},"tool":99,"x":1,"y":2,"z":3,"measure_only":true}})",
+        action));
+    require(measure.measure_only, std::format("{} can probe without writing an offset", action));
+  }
+  require(!body<FixedSetterRequest>(
+               R"({"id":42,"type":"fixed_setter","action":"bore","tool":99,"x":1,"y":2,"z":3})")
+               .measure_only,
+          "A probe writes its result unless measure_only is given");
+  rejected(R"({"id":42,"type":"fixed_setter","action":"ball","tool":99,"x":1,"y":2,"z":3,"gauge_width":20,"measure_only":true})", 42);
+  rejected(R"({"id":42,"type":"fixed_setter","action":"touch_off","tool":98,"x":1,"y":2,"z":3,"measure_only":true})", 42);
+  rejected(R"({"id":42,"type":"fixed_setter","action":"bore","tool":99,"x":1,"y":2,"z":3,"measure_only":1})", 42);
+  const auto apply = body<FixedSetterRequest>(
+      R"({"id":42,"type":"fixed_setter","action":"apply_measurement","tool":99,"measurement_id":7})");
+  require(apply.action == SetterAction::apply_measurement && apply.edge_measurement == 7 &&
+              apply.tool == 99,
+          "Applying a measurement names the controller's measurement ID");
+  rejected(R"({"id":42,"type":"fixed_setter","action":"apply_measurement","tool":99,"measurement_id":0})", 42);
   rejected(R"({"id":42,"type":"fixed_setter","action":"slot","tool":99,"x":1,"y":2,"z":3,"axis":"z"})", 42);
   rejected(R"({"id":42,"type":"fixed_setter","action":"ridge","tool":99,"x":1,"y":2,"z":3,"axis":"x"})", 42);
   const auto tool =
@@ -281,7 +305,19 @@ void tool_model_commands() {
   }
   const auto bad_holder = decode_request(with(assignment_wire, R"("family":"spot-drill")",
                                               R"("family":"spot-drill","holder":"unknown")"));
-  require(std::holds_alternative<DecodeError>(bad_holder), "Assignment refuses an unknown holder");
+  const auto* holder_error = std::get_if<DecodeError>(&bad_holder);
+  require(holder_error && holder_error->id == 42 &&
+              holder_error->reason == "Choose a supported holder for a tool model assignment." &&
+              holder_error->localization == MessageKey{"backend.toolModels.chooseHolder"},
+          "An invalid holder has a fallback and a catalog key");
+  const auto wrong_diameter =
+      decode_request(with(assignment_wire, R"("diameter":6.35)", R"("diameter":"6.35")"));
+  const auto* binding_error = std::get_if<DecodeError>(&wrong_diameter);
+  require(binding_error && binding_error->reason == "tool diameter must be a number." &&
+              binding_error->localization ==
+                  MessageKey{"backend.toolModels.fieldNumber",
+                             {{"object", "tool"}, {"field", "diameter"}}},
+          "A decoder failure keeps both structured field arguments");
   const auto all = body<SetToolModelAssignment>(
       with(assignment_wire, R"({"stickout":30,"tipAngle":120})",
            R"({"cuttingLength":1,"shankDiameter":2,"overallLength":3,"stickout":4,"tipAngle":5})"));

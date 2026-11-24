@@ -275,6 +275,15 @@ export type ToolModels = {
   document: null
 })
 
+/** Localization paired with a tool_models snapshot. Legacy panels ignore this message. */
+export interface ToolModelsReason {
+  type: 'tool_models_reason'
+  machine_id: string | null
+  revision: number
+  reason: string
+  localization: MessageKey
+}
+
 export interface ProgramText {
   type: 'program'
   revision: number
@@ -636,6 +645,8 @@ export interface SetterState {
   edge_rotation?: { measurement_id: number; wcs: number; rotation?: number }
   /** After a height map: every point's top, row by row from the first corner. */
   height_map?: HeightMap
+  /** After a `measure_only` probe: what it found. Nothing was written. */
+  measured?: SetterMeasured
 }
 
 /** One measured top of a height map, in the work system and in machine XYZ, mm. */
@@ -652,6 +663,28 @@ export interface HeightMap {
   rotation?: number
   points: (HeightMapPoint | null)[]
   partial?: string
+}
+
+/** A point on a probed surface: the ball-centre contact moved one ball radius along the travel. */
+export interface ProbedPoint {
+  /** The probe's travel. */
+  direction: ProbeDirection
+  /** In the active work system at the time of the probe, mm. */
+  work: Vec3
+  machine: Vec3
+}
+
+export interface SetterMeasured {
+  /** For `apply_measurement`; absent when there is nothing to apply (an edge angle). */
+  measurement_id?: number
+  wcs: number
+  /** The axes applying sets: 'X', 'Y', 'Z' or 'XY'; empty for an edge angle. */
+  axes: '' | 'X' | 'Y' | 'Z' | 'XY'
+  /** The point applying makes the origin, in the work system at the time of the probe: its measured axes only, mm. */
+  work: { x?: number; y?: number; z?: number }
+  /** The same point in machine coordinates; an axis not measured at the start, mm. */
+  machine?: Vec3
+  faces: ProbedPoint[]
 }
 
 export interface DirectoryEntry {
@@ -680,6 +713,7 @@ export type FromMachine =
   | Status
   | ToolTable
   | ToolModels
+  | ToolModelsReason
   | ProgramText
   | Preview
   | WorkOffsets
@@ -927,33 +961,35 @@ export type FixedSetter = CommandBase & { type: 'fixed_setter' } & (
   | { action: 'status' }
   | { action: 'touch_off'; tool: number; x: number; y: number; z: number }
   | { action: 'check'; tool: number; x: number; y: number; z: number }
-  | { action: 'material'; direction: ProbeDirection; tool: number; x: number; y: number; z: number }
+  | { action: 'material'; direction: ProbeDirection; tool: number; x: number; y: number; z: number; measure_only?: boolean }
   /**
    * A corner: the X face, then the Y face, probed from beside the work below its top (Z0 of the
    * active work system), then X0 and Y0 set together. Directions are the probe's travel.
    */
-  | { action: 'corner'; x_direction: 'x_minus' | 'x_plus'; y_direction: 'y_minus' | 'y_plus'; tool: number; x: number; y: number; z: number }
-  | { action: 'inside_corner'; x_direction: 'x_minus' | 'x_plus'; y_direction: 'y_minus' | 'y_plus'; tool: number; x: number; y: number; z: number }
-  | { action: 'pocket'; tool: number; x: number; y: number; z: number }
-  | { action: 'slot'; axis: ProbeAxis; tool: number; x: number; y: number; z: number }
-  | { action: 'ridge'; axis: ProbeAxis; width: number; tool: number; x: number; y: number; z: number }
+  | { action: 'corner'; x_direction: 'x_minus' | 'x_plus'; y_direction: 'y_minus' | 'y_plus'; tool: number; x: number; y: number; z: number; measure_only?: boolean }
+  | { action: 'inside_corner'; x_direction: 'x_minus' | 'x_plus'; y_direction: 'y_minus' | 'y_plus'; tool: number; x: number; y: number; z: number; measure_only?: boolean }
+  | { action: 'pocket'; tool: number; x: number; y: number; z: number; measure_only?: boolean }
+  | { action: 'slot'; axis: ProbeAxis; tool: number; x: number; y: number; z: number; measure_only?: boolean }
+  | { action: 'ridge'; axis: ProbeAxis; width: number; tool: number; x: number; y: number; z: number; measure_only?: boolean }
   /**
    * Measures the effective ball diameter: both X faces of a gauge `gauge_width` mm wide, probed
    * from beside it below its top (Z0), and writes it to the tool table.
    */
   | { action: 'ball'; gauge_width: number; tool: number; x: number; y: number; z: number }
   /** X0 Y0 at the centre of a bore; the ball starts inside it, below its top. */
-  | { action: 'bore'; tool: number; x: number; y: number; z: number }
+  | { action: 'bore'; tool: number; x: number; y: number; z: number; measure_only?: boolean }
   /** X0 Y0 at the centre of a boss of about `diameter` mm; probed from outside below Z0. */
-  | { action: 'boss'; diameter: number; tool: number; x: number; y: number; z: number }
+  | { action: 'boss'; diameter: number; tool: number; x: number; y: number; z: number; measure_only?: boolean }
   /** Measures an edge's angle: the face of `direction` at the start and `spacing` mm along it. */
-  | { action: 'angle'; direction: 'x_minus' | 'x_plus' | 'y_minus' | 'y_plus'; spacing: number; tool: number; x: number; y: number; z: number }
+  | { action: 'angle'; direction: 'x_minus' | 'x_plus' | 'y_minus' | 'y_plus'; spacing: number; tool: number; x: number; y: number; z: number; measure_only?: boolean }
   | { action: 'apply_angle'; measurement_id: number; tool: number }
   /**
    * Z top at every point of a grid over the work rectangle `x_min`..`x_max`, `y_min`..`y_max`,
    * at most `step` apart (2 to 150 points), traversing at work Z `clearance`. Writes nothing.
    */
   | { action: 'height_map'; x_min: number; y_min: number; x_max: number; y_max: number; step: number; clearance: number; tool: number; x: number; y: number; z: number }
+  /** Sets the work origin a `measure_only` probe reported, after the operator confirms it. */
+  | { action: 'apply_measurement'; measurement_id: number; tool: number }
 )
 /** Replaces one tool table row, or adds it. */
 export interface SetTool extends CommandBase {

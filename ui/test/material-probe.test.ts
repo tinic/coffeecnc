@@ -248,6 +248,16 @@ describe('height map', () => {
     await nextTick()
   }
 
+  it('sends no measure_only with a height map: it never writes', async () => {
+    const fixture = wrapper = mount(MaterialProbeControls, { props: { tool: 99 }, global })
+    await fixture.get('.measure-only').trigger('click')
+    expect(fixture.get('.measure-only').attributes('aria-pressed')).toBe('true')
+    await startMap(fixture)
+    const request = vi.mocked(send).mock.lastCall?.[0]
+    expect(request).toMatchObject({ type: 'fixed_setter', action: 'height_map' })
+    expect(request).not.toHaveProperty('measure_only')
+  })
+
   it('shows the point it probes and stops on the band', async () => {
     const fixture = wrapper = mount(MaterialProbeControls, { props: { tool: 99 }, global })
     await startMap(fixture)
@@ -350,6 +360,53 @@ describe('edge angle', () => {
     expect(send).toHaveBeenLastCalledWith({ type: 'fixed_setter', action: 'apply_angle', tool: 99, measurement_id: 8 })
     await answer({ outcome: 'accepted', reason: '', setter: { calibration: null, measurement: null, edge_angle: 2.862 } })
     expect(fixture.get('.setter-band.done p').text()).toBe('Work rotation set to +2.862°.')
+  })
+
+  it('measures only when toggled, shows the result card and sets the origin after review', async () => {
+    if (!panel.status) throw new Error('Missing machine status')
+    panel.status.offsets.wcs = 2
+    wrapper = mount(MaterialProbeControls, { props: { tool: 99 }, global })
+    const fixture = await probe('Measure only')
+    expect(fixture.get('.measure-only').attributes('aria-pressed')).toBe('true')
+    expect(fixture.get('.calibrate').attributes('disabled')).toBeDefined()
+    await probe('Bore centre')
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'fixed_setter', action: 'bore', measure_only: true, tool: 99, x: 0, y: 0, z: 0 })
+    await answer({ outcome: 'accepted', reason: '', setter: { calibration: null, measurement: null, center_diameter: 16,
+      measured: { measurement_id: 4, wcs: 2, axes: 'XY', work: { x: 4, y: -2 }, machine: [9, -5, 6], faces: [
+        { direction: 'x_plus', work: [12, -2, -6], machine: [17, -5, 6] },
+      ] } } })
+    expect(fixture.get('.setter-band.done p').text()).toBe('Measured X 4.000 Y -2.000 in G55. Nothing was set.')
+    await probe('Result')
+    const card = fixture.get('[role="dialog"]').text()
+    expect(card).toContain('Measured only: no offset was set.')
+    expect(card).toContain('X 4.000  Y -2.000 mm')
+    expect(card).toContain('X 9.000  Y -5.000  Z 6.000 mm')
+    expect(card).toContain('Diameter16.000 mm')
+    expect(card).toContain('+X')
+    await probe('Set X0 Y0…')
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(fixture.get('[role="dialog"]').text()).toContain('The point that read X 4.000  Y -2.000 becomes X0 Y0.')
+    await probe('Set X0 Y0')
+    expect(send).toHaveBeenLastCalledWith({ type: 'fixed_setter', action: 'apply_measurement', measurement_id: 4, tool: 99 })
+    await answer({ outcome: 'accepted', reason: '', setter: { calibration: null, measurement: null, material: { wcs: 2, axis: 'XY' } } })
+    expect(fixture.get('.setter-band.done p').text()).toBe('G55 X0 Y0 set at the measured point.')
+    expect(fixture.find('[role="dialog"]').exists()).toBe(false)
+  })
+
+  it('cannot set a measurement once the work system changed', async () => {
+    if (!panel.status) throw new Error('Missing machine status')
+    wrapper = mount(MaterialProbeControls, { props: { tool: 99 }, global })
+    const fixture = await probe('Measure only')
+    await probe('Z top')
+    expect(send).toHaveBeenLastCalledWith({ type: 'fixed_setter', action: 'material', direction: 'z_top', measure_only: true, tool: 99, x: 0, y: 0, z: 0 })
+    await answer({ outcome: 'accepted', reason: '', setter: { calibration: null, measurement: null,
+      measured: { measurement_id: 5, wcs: 1, axes: 'Z', work: { z: 1.25 }, machine: [0, 0, 12], faces: [] } } })
+    expect(fixture.get('.setter-band.done p').text()).toBe('Measured Z 1.250 in G54. Nothing was set.')
+    panel.status.offsets.g5x[2] += 1
+    await nextTick()
+    await probe('Result')
+    expect(fixture.get('[role="dialog"]').text()).toContain('The work system changed after this measurement.')
+    expect(findButton(fixture, 'Set Z0…')?.attributes('disabled')).toBeDefined()
   })
 
   it('withdraws the confirmation when the measured work system changes', async () => {

@@ -114,7 +114,7 @@ const banner = computed((): { text: string; tone: '' | 'warn' | 'stop' } => {
   }
   if (preview.state === 'unavailable') {
     return {
-      text: preview.error ? translateMessage(preview.error.text) : t('program.pathView.unavailable'),
+      text: preview.error ? translateMessage(preview.error.text, preview.error.localization) : t('program.pathView.unavailable'),
       tone: drawn.value === null ? '' : 'warn',
     }
   }
@@ -129,9 +129,9 @@ const banner = computed((): { text: string; tone: '' | 'warn' | 'stop' } => {
     const path = preview.segments.some((segment) => segment.points.length >= 6) ? t('program.pathView.partialPath') : t('program.pathView.noPath')
     const stopped = Number.isSafeInteger(line) && line > 0
       ? t('program.pathView.stoppedAtLine', { line, path }) : t('program.pathView.stopped', { path })
-    const detail = preview.error?.text
+    const detail = preview.error
     return {
-      text: detail ? `${stopped} · ${translateMessage(detail)}` : stopped,
+      text: detail?.text ? `${stopped} · ${translateMessage(detail.text, detail.localization)}` : stopped,
       tone: 'stop',
     }
   }

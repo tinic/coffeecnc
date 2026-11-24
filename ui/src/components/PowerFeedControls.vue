@@ -197,7 +197,6 @@ function stop(): void {
 .entry.hidden { visibility: hidden; }
 .entry .field { width: 100%; min-width: 0; padding-inline: 8px; text-align: right; }
 .entry .hint { white-space: nowrap; }
-.btn[aria-disabled="true"] { opacity: .68; }
 .coordinate { margin: 0; font-size: 20px; }
 p { margin: 0; }
 .wide { min-height: 48px; }

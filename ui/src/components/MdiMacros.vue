@@ -79,5 +79,4 @@ function run(): void {
 p { margin: 0; }
 .refusal { color: var(--stop); }
 .wide { min-height: 48px; }
-.btn[aria-disabled="true"] { opacity: .68; }
 </style>

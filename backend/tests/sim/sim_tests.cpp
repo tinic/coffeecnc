@@ -4072,8 +4072,11 @@ void restart_cuts(Rig& rig) {
 
   if (setup) {
     const auto [canned, unused] = plan("G21 G90 G17\nG0 Z20\nG81 X1 Y1 Z5 R10 F100\nG80\nM2\n", 3);
-    check("restart_canned_block", canned.reason.find("canned cycle") != std::string::npos,
-          canned.text());
+    check("restart_canned_block",
+          canned.outcome == "rejected" && canned.reason == "This line is inside a canned cycle." &&
+              canned.refusal ==
+                  Json{{"key", "backend.previewRestart.cannedCycle"}, {"params", Json::object()}},
+          canned.text() + " " + canned.refusal.dump());
     const auto missing = rig.send(R"("type":"plan_restart","line":23,"preview_context":7)");
     check("restart_preview_pending",
           missing.outcome == "rejected" && missing.reason.find("preview") != std::string::npos,

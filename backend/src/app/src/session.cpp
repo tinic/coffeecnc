@@ -1381,7 +1381,8 @@ auto Session::plan_restart(Queued& request, PlanRestart command, const Controlle
   const auto& outcome = computed.outcome;
   if (!outcome.restart || outcome.restart->line != command.line || !computed.files_changed) {
     if (!outcome.restart_blocked.empty())
-      return answer({CommandOutcome::rejected, outcome.restart_blocked});
+      return answer({CommandOutcome::rejected, outcome.restart_blocked,
+                     outcome.restart_blocked_localization});
     if (const auto& error = outcome.error)
       return answer({CommandOutcome::rejected, error->text, error->localization});
     return refuse("No verified motion is available at that line.",
@@ -1574,7 +1575,8 @@ auto Session::measure_tool_change(Queued& request, const ControllerState& state)
   const auto& trial_point = trial.outcome.restart;
   if (!trial_point || !anchored(*trial_point, old_tool->length) || !trial.files_changed) {
     if (!trial.outcome.restart_blocked.empty())
-      return answer({CommandOutcome::rejected, trial.outcome.restart_blocked});
+      return answer({CommandOutcome::rejected, trial.outcome.restart_blocked,
+                     trial.outcome.restart_blocked_localization});
     return refuse("There is no verified motion to restart after this tool change.",
                   RefusalMessage{"backend.toolChangeMeasurement.noMotionAfterChange"});
   }
@@ -1680,7 +1682,8 @@ auto Session::measure_tool_change(Queued& request, const ControllerState& state)
   auto point = computed.outcome.restart;
   if (!point || !anchored(*point, length) || !computed.files_changed) {
     if (!computed.outcome.restart_blocked.empty())
-      return cannot_restart(computed.outcome.restart_blocked);
+      return cannot_restart(computed.outcome.restart_blocked,
+                            computed.outcome.restart_blocked_localization);
     return cannot_restart("Tool measured. There is no verified restart at the next motion.",
                           MessageKey{"backend.toolChangeMeasurement.measuredNoRestart"});
   }

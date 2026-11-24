@@ -59,6 +59,61 @@ auto rest(std::string_view text) -> std::string {
   return std::string(text);
 }
 
+auto restart_refusal_message(RestartRefusal reason) -> LocalizedReason {
+  switch (reason) {
+  case RestartRefusal::none:
+    break;
+  case RestartRefusal::cutter_compensation:
+    return {"Cutter compensation is active at this line.",
+            MessageKey{"backend.previewRestart.cutterCompensation"}};
+  case RestartRefusal::canned_cycle:
+    return {"This line is inside a canned cycle.",
+            MessageKey{"backend.previewRestart.cannedCycle"}};
+  case RestartRefusal::feed_spindle_mode:
+    return {"This line requires a feed or spindle mode that cannot be restored for restart.",
+            MessageKey{"backend.previewRestart.feedSpindleMode"}};
+  case RestartRefusal::no_motion:
+    return {"Choose a line that moves the tool.", MessageKey{"backend.previewRestart.noMotion"}};
+  case RestartRefusal::move_kind:
+    return {"Choose a rapid, feed, or arc move for restart.",
+            MessageKey{"backend.previewRestart.moveKind"}};
+  case RestartRefusal::prior_motion:
+    return {"The prior motion mode cannot be restored for restart.",
+            MessageKey{"backend.previewRestart.priorMotion"}};
+  case RestartRefusal::explicit_arc:
+    return {"Choose an arc block with an explicit G2 or G3.",
+            MessageKey{"backend.previewRestart.explicitArc"}};
+  case RestartRefusal::skipped_effects:
+    return {"The skipped blocks change tool data or machine outputs.",
+            MessageKey{"backend.previewRestart.skippedEffects"}};
+  case RestartRefusal::frame_or_tool:
+    return {"This line changes the coordinate frame or tool before moving.",
+            MessageKey{"backend.previewRestart.frameOrTool"}};
+  case RestartRefusal::incomplete_state:
+    return {"The spindle or motion plane at this line is incomplete.",
+            MessageKey{"backend.previewRestart.incompleteState"}};
+  case RestartRefusal::length_inactive:
+    return {"The required tool length is not active at this line.",
+            MessageKey{"backend.previewRestart.lengthInactive"}};
+  case RestartRefusal::length_mismatch:
+    return {"The tool length at this line does not match the loaded tool table.",
+            MessageKey{"backend.previewRestart.lengthMismatch"}};
+  case RestartRefusal::subroutines:
+    return {"LinuxCNC run from line cannot safely skip blocks in a program with subroutines.",
+            MessageKey{"backend.previewRestart.subroutines"}};
+  case RestartRefusal::tool_preselection:
+    return {"A later M6 depends on a tool selected before this restart line.",
+            MessageKey{"backend.previewRestart.toolPreselection"}};
+  case RestartRefusal::rigid_tap:
+    return {"Run this tapping program from the start to establish the spindle override state.",
+            MessageKey{"backend.previewEngine.rigidTapRestart"}};
+  case RestartRefusal::not_executed:
+    return {"The selected line is not executed in this program.",
+            MessageKey{"backend.previewRestart.notExecuted"}};
+  }
+  return {};
+}
+
 auto vec(const Vec3& v) -> std::string { return std::format("{} {} {}", v[0], v[1], v[2]); }
 
 auto bounds(std::string_view& line, Bounds& result) -> bool {
@@ -311,6 +366,12 @@ auto write_check(const HelperOutput::ProgramFacts& facts) -> std::string {
   return out;
 }
 
+auto write_restart_refusal(RestartRefusal reason, bool coded) -> std::string {
+  if (coded)
+    return std::format("restart_refused {}\n", static_cast<unsigned>(reason));
+  return std::format("restart_blocked {}\n", restart_refusal_message(reason).text);
+}
+
 auto parse_output(std::string_view text, const OutputLimits& limits) -> HelperOutput {
   HelperOutput output;
   std::size_t points = 0;
@@ -385,7 +446,7 @@ auto parse_output(std::string_view text, const OutputLimits& limits) -> HelperOu
     } else if (key == "check") {
       if (!read_check(line, output.check))
         return defect("a malformed program check record");
-    } else if (key == "restart" || key == "restart_blocked") {
+    } else if (key == "restart" || key == "restart_blocked" || key == "restart_refused") {
       if (output.problem || output.restart || !output.restart_blocked.empty())
         return defect("a duplicate or misplaced restart record");
       if (key == "restart") {
@@ -393,6 +454,15 @@ auto parse_output(std::string_view text, const OutputLimits& limits) -> HelperOu
         if (!parse_restart(line, limits, point))
           return defect("a malformed restart point");
         output.restart = point;
+      } else if (key == "restart_refused") {
+        unsigned id = 0;
+        if (!number(line, id) || !word(line).empty())
+          return defect("a malformed restart refusal");
+        auto reason = restart_refusal_message(static_cast<RestartRefusal>(id));
+        if (reason.empty())
+          return defect("an unknown restart refusal");
+        output.restart_blocked = std::move(reason.text);
+        output.restart_blocked_localization = std::move(reason.localization);
       } else {
         output.restart_blocked = rest(line);
         if (output.restart_blocked.empty())

@@ -83,6 +83,24 @@ void wire_formats() {
   require(parse_output("").end == HelperEnd::missing && parse_output("").defect.empty() &&
               parse_output("end ok\n").end == HelperEnd::ok,
           "Nothing, and nothing but the end");
+  const auto coded = write_restart_refusal(RestartRefusal::canned_cycle, true);
+  const auto text = write_restart_refusal(RestartRefusal::canned_cycle, false);
+  const auto parsed_refusal = parse_output(coded + "end ok\n");
+  require(parsed_refusal.end == HelperEnd::ok && !parsed_refusal.restart &&
+              parsed_refusal.restart_blocked == "This line is inside a canned cycle." &&
+              parsed_refusal.restart_blocked_localization ==
+                  MessageKey{"backend.previewRestart.cannedCycle"},
+          "A coded restart refusal gives the frontend an English fallback and the key");
+  require(text == "restart_blocked This line is inside a canned cycle.\n",
+          "An older caller gets the original text record");
+  const auto legacy = parse_output(text + "end ok\n");
+  require(legacy.end == HelperEnd::ok && legacy.restart_blocked == parsed_refusal.restart_blocked &&
+              !legacy.restart_blocked_localization,
+          "An older helper's text remains readable");
+  require(!parse_output("restart_refused 999\nend ok\n").defect.empty() &&
+              !parse_output("restart_refused 2 extra\nend ok\n").defect.empty() &&
+              !parse_output(coded + text + "end ok\n").defect.empty(),
+          "Unknown, malformed, and duplicate restart refusals invalidate the helper result");
 }
 
 // The result is text of unknown origin: each case ends, soon, with the valid records before

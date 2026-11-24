@@ -210,7 +210,9 @@ void restart_checkpoints() {
   rig.inputs.restart_line = 3;
   outcome = rig.preview("G21 G90 G17\nG0 Z10\nG81 X1 Y1 Z-2 R3 F100\nG80\nM2\n");
   require(outcome.state == PreviewState::ready && !outcome.restart &&
-              outcome.restart_blocked.find("canned cycle") != std::string::npos,
+              outcome.restart_blocked == "This line is inside a canned cycle." &&
+              outcome.restart_blocked_localization ==
+                  MessageKey{"backend.previewRestart.cannedCycle"},
           "Canned cycles block restart: " + outcome.restart_blocked);
   outcome = rig.preview("G21 G90 G17\nT1 M6\nG0 Z10\nM2\n");
   require(outcome.state == PreviewState::ready && !outcome.restart &&
@@ -307,7 +309,10 @@ void rigid_tapping_reversal_bounds() {
           "Tapping uses the synchronized infeed and accelerated return instead of stale F.");
   rig.inputs.restart_line = 5;
   const auto restart = rig.preview(metric);
-  require(!restart.restart && restart.restart_blocked.find("spindle override") != std::string::npos,
+  require(!restart.restart &&
+              restart.restart_blocked.find("spindle override") != std::string::npos &&
+              restart.restart_blocked_localization ==
+                  MessageKey{"backend.previewEngine.rigidTapRestart"},
           "Run from line does not recreate the tapping override state.");
 }
 

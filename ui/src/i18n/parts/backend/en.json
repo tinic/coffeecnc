@@ -519,6 +519,23 @@
       "restartSynchFailed": "LinuxCNC did not save its parameters for the restart.",
       "restartParametersChanged": "The machine's saved parameters changed after the restart was reviewed. Choose the line again."
     },
+    "previewRestart": {
+      "cutterCompensation": "Cutter compensation is active at this line.",
+      "cannedCycle": "This line is inside a canned cycle.",
+      "feedSpindleMode": "This line requires a feed or spindle mode that cannot be restored for restart.",
+      "noMotion": "Choose a line that moves the tool.",
+      "moveKind": "Choose a rapid, feed, or arc move for restart.",
+      "priorMotion": "The prior motion mode cannot be restored for restart.",
+      "explicitArc": "Choose an arc block with an explicit G2 or G3.",
+      "skippedEffects": "The skipped blocks change tool data or machine outputs.",
+      "frameOrTool": "This line changes the coordinate frame or tool before moving.",
+      "incompleteState": "The spindle or motion plane at this line is incomplete.",
+      "lengthInactive": "The required tool length is not active at this line.",
+      "lengthMismatch": "The tool length at this line does not match the loaded tool table.",
+      "subroutines": "LinuxCNC run from line cannot safely skip blocks in a program with subroutines.",
+      "toolPreselection": "A later M6 depends on a tool selected before this restart line.",
+      "notExecuted": "The selected line is not executed in this program."
+    },
     "previewEngine": {
       "subroutineError": "{name}.ngc line {line}: {detail}",
       "rigidTapUnavailable": "G33.1 rigid tapping is not configured on this machine.",

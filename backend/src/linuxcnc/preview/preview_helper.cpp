@@ -96,6 +96,7 @@ using coffeecnc::HelperRequest;
 using coffeecnc::ProgramFrameCheck;
 using coffeecnc::ProgramRange;
 using coffeecnc::RestartPoint;
+using coffeecnc::RestartRefusal;
 using coffeecnc::Vec3;
 
 // Defined below for the interpreter; LinuxCNC's tooldata.hh declares it where it is installed.
@@ -936,46 +937,46 @@ auto capture_restart(InterpBase& interp, const GCodes& codes) -> RestartPoint {
 }
 
 auto restart_refusal(const RestartPoint& point, const GCodes& before, const GCodes& after,
-                     std::string_view block) -> std::string {
+                     std::string_view block) -> RestartRefusal {
   const auto canned = [](int code) { return code == 730 || code == 760 ||
                                            (code >= 810 && code <= 890); };
   if (before[4] != 400 || after[4] != 400)
-    return "Cutter compensation is active at this line.";
+    return RestartRefusal::cutter_compensation;
   if (canned(before[1]) || canned(after[1]))
-    return "This line is inside a canned cycle.";
+    return RestartRefusal::canned_cycle;
   if (before[7] != 940 || after[7] != 940 || before[13] != 970 || after[13] != 970)
-    return "This line requires a feed or spindle mode that cannot be restored for restart.";
+    return RestartRefusal::feed_spindle_mode;
   if (!canon.moved_on_restart_line)
-    return "Choose a line that moves the tool.";
+    return RestartRefusal::no_motion;
   if (after[1] != 0 && after[1] != 10 && after[1] != 20 && after[1] != 30)
-    return "Choose a rapid, feed, or arc move for restart.";
+    return RestartRefusal::move_kind;
   if (before[1] != 0 && before[1] != 10 && before[1] != 20 && before[1] != 30 && before[1] != 800)
-    return "The prior motion mode cannot be restored for restart.";
+    return RestartRefusal::prior_motion;
   if ((after[1] == 20 || after[1] == 30) &&
       coffeecnc::motion_use(block) != coffeecnc::MotionUse::sets)
-    return "Choose an arc block with an explicit G2 or G3.";
+    return RestartRefusal::explicit_arc;
   if (canon.changed_tool_table || canon.used_output)
-    return "The skipped blocks change tool data or machine outputs.";
+    return RestartRefusal::skipped_effects;
   if (point.wcs != canon.g5x_index || point.g5x != canon.g5x || point.g92 != canon.g92 ||
       point.rotation != canon.rotation || point.tool != canon.tool_in_spindle ||
       point.tool_offset != canon.tool_offset)
-    return "This line changes the coordinate frame or tool before moving.";
+    return RestartRefusal::frame_or_tool;
   if (point.plane < 17 || point.plane > 19 ||
       (point.spindle_direction != coffeecnc::SpindleDirection::stopped &&
        point.spindle_rpm <= 0))
-    return "The spindle or motion plane at this line is incomplete.";
+    return RestartRefusal::incomplete_state;
   if (point.tool == 0 && point.tool_offset == Vec3{})
-    return {};
+    return RestartRefusal::none;
   const int index = find_index(point.tool);
   if (index < 0 || point.h <= 0)
-    return "The required tool length is not active at this line.";
+    return RestartRefusal::length_inactive;
   const auto& offset = canon.tools.at(static_cast<std::size_t>(index)).offset.tran;
   const double unit = canon.request.units_per_mm;
   if (std::abs(point.tool_offset[0] - offset.x / unit) > 1e-6 ||
       std::abs(point.tool_offset[1] - offset.y / unit) > 1e-6 ||
       std::abs(point.tool_offset[2] - offset.z / unit) > 1e-6 || point.tool_offset[2] == 0)
-    return "The tool length at this line does not match the loaded tool table.";
-  return {};
+    return RestartRefusal::length_mismatch;
+  return RestartRefusal::none;
 }
 
 // The parameter of the interpreter's "Named parameter #<name> not defined" (LinuxCNC 2.9.4,
@@ -1186,7 +1187,7 @@ auto run(const HelperRequest& request) -> int {
   auto flushed = std::chrono::steady_clock::now();
   bool ended = false;
   std::optional<RestartPoint> restart;
-  std::string restart_blocked;
+  auto restart_blocked = RestartRefusal::none;
   int last_level = 0;
   // The call level the next line is read at: the interpreter's after it executed the line
   // before (a call, a return). A read error has left every subroutine already.
@@ -1364,16 +1365,18 @@ auto run(const HelperRequest& request) -> int {
     put(coffeecnc::write_check(canon.check));
   if (request.restart_line && canon.halt == Halt::none) {
     if (canon.subroutine)
-      restart_blocked = "LinuxCNC run from line cannot safely skip blocks in a program with subroutines.";
+      restart_blocked = RestartRefusal::subroutines;
     else if (canon.restart_needs_preparation)
-      restart_blocked = "A later M6 depends on a tool selected before this restart line.";
+      restart_blocked = RestartRefusal::tool_preselection;
     else if (canon.restart_has_tapping)
-      restart_blocked = "Run this tapping program from the start to establish the spindle override state.";
+      restart_blocked = RestartRefusal::rigid_tap;
     else if (!restart)
-      restart_blocked = "The selected line is not executed in this program.";
-    if (!restart_blocked.empty())
-      put(std::format("restart_blocked {}\n", restart_blocked));
-    else if (restart)
+      restart_blocked = RestartRefusal::not_executed;
+    if (restart_blocked != RestartRefusal::none) {
+      const char* codes = std::getenv(coffeecnc::preview_restart_refusals_env);
+      put(coffeecnc::write_restart_refusal(restart_blocked,
+                                           codes && std::string_view(codes) == "1"));
+    } else if (restart)
       put(coffeecnc::write_restart(*restart));
   }
   put(canon.halt == Halt::none    ? "end ok\n"

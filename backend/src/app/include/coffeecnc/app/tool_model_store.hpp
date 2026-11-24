@@ -394,9 +394,9 @@ public:
   // The snapshot for a page that has just been sent its `hello`. Several calls before the
   // writer gets to them are one snapshot, for the page of the last.
   void send_snapshot(PageToken page);
-  // Waits until the writer has opened the archive. `available` with the directory: this process
-  // holds the data directory's lock, until the store is destroyed. Otherwise why it does not.
-  [[nodiscard]] auto held_location() -> ToolModelLocation;
+  // Waits for archive startup and reports why the shared data-directory lock could not be held.
+  // No reason means the store holds the lock until destruction.
+  [[nodiscard]] auto shared_lock_failure() -> std::optional<LocalizedReason>;
   // Stops the writer as the destructor does, but the lock is held until destruction: what
   // others write in the data directory at the end of the run is still under it.
   void stop();

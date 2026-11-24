@@ -39,7 +39,12 @@ void OperatorSettingsArchive::show(OperatorSettings settings) {
 void OperatorSettingsArchive::open(ToolModelLocation location) {
   location_ = std::move(location);
   if (location_.availability != ToolModelAvailability::available) {
-    show({location_.machine_id, 0, location_.availability, location_.reason, {}});
+    show({location_.machine_id,
+          0,
+          location_.availability,
+          location_.reason,
+          {},
+          location_.localization});
     return;
   }
   show(read());
@@ -87,7 +92,8 @@ auto OperatorSettingsArchive::read_settings() const -> OperatorSettings {
   if (!content) {
     OperatorPreferences defaults;
     defaults.default_jog_velocity = std::min(600.0, limits_.max_jog_velocity);
-    return {location_.machine_id, 0, ToolModelAvailability::available, location_.reason, defaults};
+    return {location_.machine_id, 0,        ToolModelAvailability::available,
+            location_.reason,     defaults, location_.localization};
   }
   if (content->more)
     return unavailable(std::format("{} exceeds 16 KiB. The file was left alone.", file),
@@ -104,8 +110,8 @@ auto OperatorSettingsArchive::read_settings() const -> OperatorSettings {
         std::format("{} belongs to another machine. The file was left alone.", file),
         MessageKey{"backend.operatorSettingsStore.otherMachineFile", {{"file", file}}});
   // Retain the saved document if INI limits shrink. The UI clamps effective startup values.
-  return {location_.machine_id, saved->revision, ToolModelAvailability::available, location_.reason,
-          saved->document};
+  return {location_.machine_id, saved->revision, ToolModelAvailability::available,
+          location_.reason,     saved->document, location_.localization};
 }
 auto OperatorSettingsArchive::apply(const SetOperatorSettings& command) -> ToolModelReply {
   if (settings_.availability != ToolModelAvailability::available)
@@ -130,8 +136,9 @@ auto OperatorSettingsArchive::apply(const SetOperatorSettings& command) -> ToolM
   if (settings_.revision >= max_tool_model_revision)
     return {CommandOutcome::rejected, "Settings reached their last revision. Nothing was saved.",
             false, MessageKey{"backend.operatorSettingsStore.lastRevision"}};
-  OperatorSettings next{location_.machine_id, settings_.revision + 1,
-                        ToolModelAvailability::available, location_.reason, command.document};
+  OperatorSettings next{
+      location_.machine_id, settings_.revision + 1, ToolModelAvailability::available,
+      location_.reason,     command.document,       location_.localization};
   std::ranges::sort(next.document->enabled_wcs);
   const auto text =
       encode_operator_settings_file({command.machine_id, next.revision, *next.document});

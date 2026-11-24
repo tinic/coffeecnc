@@ -296,18 +296,27 @@ void bounded_files() {
 void archive_and_restart() {
   FakeDisk disk;
   disk.files[location.directory + "/tool-models.json"] = "corrupt models";
+  disk.modes[location.directory] = 0755;
   FakeToolModelFiles files{disk};
   ToolModelArchive owner{files, location};
   owner.open();
   OperatorSettingsArchive archive{files, limits};
   archive.open(owner.shared_location());
+  const MessageKey permission_warning{"backend.toolModelStore.directoryOpenToOthers",
+                                      {{"path", location.directory}, {"mode", "755"}}};
   const auto defaults = archive.settings();
   require(defaults.revision == 0 && defaults.document && defaults.document->default_jog_velocity == 600,
           "Missing file gives factory defaults without writing a file");
+  require(defaults.localization == permission_warning &&
+              defaults.reason == owner.shared_location().reason,
+          "Default settings keep the shared directory warning and its key");
   require(!disk.files.contains(file), "No file until explicit save");
   require(archive.apply(command()).outcome == CommandOutcome::accepted,
           "Save accepted after durable replacement");
   const auto saved_settings = archive.settings();
+  require(saved_settings.localization == permission_warning &&
+              saved_settings.reason == defaults.reason,
+          "The shared directory warning stays localized after saving");
   require(saved_settings.revision == 1 && saved_settings.document &&
               saved_settings.document->enabled_wcs == std::vector<int>{1, 9},
           "New revision and sorted shortcuts");
@@ -383,18 +392,27 @@ void failures() {
   archive.open(blocked.shared_location());
   require(archive.settings().availability == ToolModelAvailability::unavailable,
           "A second process cannot borrow a failed lock");
-  require(archive.apply(command()).outcome == CommandOutcome::rejected &&
-              !disk.files.contains(file),
+  const auto refused = archive.apply(command());
+  require(refused.outcome == CommandOutcome::rejected && !disk.files.contains(file),
           "Locked directory is never written");
+  const auto locked = Json::parse(archive.snapshot());
+  require(refused.localization ==
+                  MessageKey{"backend.toolModelStore.inUse", {{"path", location.directory}}} &&
+              refused.reason == blocked.shared_location().reason &&
+              locked.at("reason") == refused.reason &&
+              locked.at("localization").at("key") == "backend.toolModelStore.inUse",
+          "The lock reason and key reach both the settings snapshot and the rejected save");
   FakeDisk session_disk;
   FakeToolModelFiles session_files{session_disk};
-  ToolModelArchive session{session_files, {}};
+  ToolModelArchive session{session_files, resolve_tool_model_location({})};
   session.open();
   OperatorSettingsArchive ephemeral{session_files, limits};
   ephemeral.open(session.shared_location());
   require(ephemeral.settings().availability == ToolModelAvailability::session_only &&
+              ephemeral.settings().localization ==
+                  MessageKey{"backend.toolModelStore.noMachineId"} &&
               session_files.calls.empty(),
-          "Missing identity does no file I/O");
+          "Missing identity retains its key and does no file I/O");
 }
 void writer_delivery() {
   FakeDisk disk;

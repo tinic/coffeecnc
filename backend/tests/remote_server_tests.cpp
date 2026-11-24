@@ -14,6 +14,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <tuple>
 #include <utility>
@@ -39,10 +40,26 @@ void require(bool condition, const char* why) {
     throw std::runtime_error(why);
 }
 
+// Flush before a blocking operation so CTest can report progress even if it kills the test.
+void trace(std::string_view step, std::string_view detail = {}) {
+  using std::chrono::steady_clock;
+  static const auto start = steady_clock::now();
+  const auto elapsed =
+      std::chrono::duration_cast<std::chrono::milliseconds>(steady_clock::now() - start);
+  std::clog << "remote_server +" << elapsed.count() << " ms: " << step;
+  if (!detail.empty())
+    std::clog << ' ' << detail;
+  std::clog << '\n' << std::flush;
+}
+
 auto get(net::io_context& io, std::uint16_t port, http::verb method, const char* path,
          const std::string& host, const std::string& origin = {},
          const net::ip::address& address = net::ip::address_v4::loopback())
     -> http::response<http::string_body> {
+  // The route is enough to identify the request. Its query can contain a local file path.
+  const std::string_view target{path};
+  const auto route = target.substr(0, target.find('?'));
+  trace("Send HTTP request for", route);
   tcp::socket tcp_socket{io};
   tcp_socket.connect({address, port});
   http::request<http::empty_body> request{method, path, 11};
@@ -58,6 +75,7 @@ auto get(net::io_context& io, std::uint16_t port, http::verb method, const char*
   beast::flat_buffer buffer;
   http::response_parser<http::string_body> parser;
   parser.skip(method == http::verb::head);
+  trace("Read HTTP response for", route);
   http::read(tcp_socket, buffer, parser);
   return parser.release();
 }
@@ -67,6 +85,7 @@ using Viewer = websocket::stream<tcp::socket>;
 auto upload(net::io_context& io, std::uint16_t port, const std::string& host,
             const std::string& origin, const std::string& name, bool replace = false)
     -> http::response<http::string_body> {
+  trace("Send HTTP upload request");
   tcp::socket socket{io};
   socket.connect({net::ip::address_v4::loopback(), port});
   http::request<http::string_body> request{http::verb::post, "/program-upload", 11};
@@ -80,11 +99,13 @@ auto upload(net::io_context& io, std::uint16_t port, const std::string& host,
   http::write(socket, request);
   beast::flat_buffer buffer;
   http::response_parser<http::string_body> parser;
+  trace("Read HTTP upload response");
   http::read(socket, buffer, parser);
   return parser.release();
 }
 
 void program_uploads(const std::string& assets) {
+  trace("Start upload server");
   std::atomic<int> calls{};
   RemoteServer server{assets,
                       0,
@@ -126,19 +147,23 @@ void program_uploads(const std::string& assets) {
                         {{"key", "backend.programEdit.exists"},
                          {"params", {{"name", "Plate 2.ngc"}}}}}},
           "A writer refusal is reported to the browser");
+  trace("Destroy upload server");
 }
 
 void connect(Viewer& viewer, std::uint16_t port, const std::string& host,
              const net::ip::address& address = net::ip::address_v4::loopback()) {
+  trace("Connect WebSocket client");
   viewer.next_layer().connect({address, port});
   viewer.set_option(websocket::stream_base::decorator([&](websocket::request_type& request) -> void {
     request.set(http::field::origin, "http://" + host);
   }));
+  trace("Read WebSocket upgrade response");
   viewer.handshake(host, "/feed");
 }
 
 auto read(Viewer& viewer) -> Json {
   beast::flat_buffer buffer;
+  trace("Read WebSocket feed");
   viewer.read(buffer);
   return Json::parse(beast::buffers_to_string(buffer.data()));
 }
@@ -156,6 +181,7 @@ auto wait_for(Viewer& viewer, const char* key, int sequence) -> Json {
 
 void slow_model_download(net::io_context& io, std::uint16_t port, const std::string& host,
                          const std::string& url, std::size_t size) {
+  trace("Start slow STEP download");
   tcp::socket socket{io};
   socket.connect({net::ip::address_v4::loopback(), port});
   socket.set_option(net::socket_base::receive_buffer_size(128 * 1024));
@@ -165,6 +191,7 @@ void slow_model_download(net::io_context& io, std::uint16_t port, const std::str
   beast::flat_buffer input;
   http::response_parser<http::empty_body> header;
   header.skip(true);
+  trace("Read slow STEP headers");
   http::read_header(socket, input, header);
   require(header.get().result() == http::status::ok && header.content_length() == size,
           "The slow STEP viewer receives the full length in the header.");
@@ -173,8 +200,10 @@ void slow_model_download(net::io_context& io, std::uint16_t port, const std::str
     // Slow, steady reads take longer than one five-second write deadline.
     std::this_thread::sleep_for(900ms);
     const auto count = std::min(chunk.size(), size - received);
+    trace("Read slow STEP chunk at byte", std::to_string(received));
     received += net::read(socket, net::buffer(chunk.data(), count));
   }
+  trace("Finish slow STEP download");
 }
 
 // True if the server ends the connection within `wait`. The viewer reads all updates
@@ -195,12 +224,14 @@ auto server_closes(net::io_context& io, Viewer& viewer,
   };
   next();
   io.restart();
+  trace("Wait for WebSocket server to close");
   io.run_for(wait);
   const bool by_server = closed;
   if (!by_server) {
     boost::system::error_code ignored;
     std::ignore = viewer.next_layer().close(ignored);
     io.restart();
+    trace("Drain WebSocket read after client close");
     io.run();
   }
   return by_server;
@@ -210,18 +241,21 @@ auto server_closes(net::io_context& io, Viewer& viewer,
 // client cannot keep one of the viewer slots with traffic other than the replies to keep-alives.
 void input_frames_close(net::io_context& io, std::uint16_t port, const std::string& host) {
   {
+    trace("Check WebSocket text frame");
     Viewer text{io};
     connect(text, port, host);
     text.write(net::buffer(std::string_view{R"({"type":"set_machine","state":"on"})"}));
     require(server_closes(io, text), "A text frame closes the read-only socket.");
   }
   {
+    trace("Check WebSocket data fragment");
     Viewer fragment{io};
     connect(fragment, port, host);
     fragment.write_some(false, net::buffer(std::string_view{"{"}));
     require(server_closes(io, fragment), "A data fragment closes the read-only socket.");
   }
   {
+    trace("Check WebSocket empty fragments");
     // Empty non-final fragments never complete a message or a read, but they reset the idle
     // timeout. Without a check they hold the slot forever.
     Viewer empty{io};
@@ -231,12 +265,14 @@ void input_frames_close(net::io_context& io, std::uint16_t port, const std::stri
     require(server_closes(io, empty), "Empty fragments close the read-only socket.");
   }
   {
+    trace("Check WebSocket ping");
     Viewer ping{io};
     connect(ping, port, host);
     ping.ping({});
     require(server_closes(io, ping), "A client ping closes the read-only socket.");
   }
   {
+    trace("Check WebSocket partial frame timeout");
     // The first byte of a pong header, then nothing: the rest of a frame is due within 2 s.
     Viewer stalled{io};
     connect(stalled, port, host);
@@ -245,6 +281,7 @@ void input_frames_close(net::io_context& io, std::uint16_t port, const std::stri
     require(server_closes(io, stalled, 4s), "A partial frame that stalls closes the socket.");
   }
   {
+    trace("Check WebSocket pong keeps the viewer connected");
     // A viewer that only answers keep-alives stays connected.
     Viewer quiet{io};
     connect(quiet, port, host);
@@ -255,12 +292,14 @@ void input_frames_close(net::io_context& io, std::uint16_t port, const std::stri
 
 void test(const std::filesystem::path& root, std::string_view discovered,
           std::string_view nonlocal, std::string_view loopback_v6, std::string_view delayed) {
+  trace("Prepare fixture");
   const auto assets = root / "remote-server-assets";
   std::filesystem::create_directories(assets);
   std::ofstream(assets / "index.html") << "<title>Remote test panel</title>";
   program_uploads(assets.string());
   std::ofstream(root / "remote-server-private.txt") << "outside the panel";
   const std::array aliases{std::string{"shop.mill.example"}, std::string{"Friendly.Example."}};
+  trace("Start viewer server");
   RemoteServer server{assets.string(), 0, aliases};
   // Only the test constructs a server with port zero, to get a free TCP port.
   const auto port = server.port();
@@ -336,6 +375,7 @@ void test(const std::filesystem::path& root, std::string_view discovered,
   };
   // A DNS fixture can supply two search results, one local and one on a different machine.
   if (!discovered.empty()) {
+    trace("Check DNS search results");
     require(wait_for_host(discovered, http::status::ok, 3s),
             "A DNS search name that resolves locally is allowed.");
     require(get(io, port, http::verb::get, "/view", std::string(nonlocal) + suffix).result() ==
@@ -346,6 +386,7 @@ void test(const std::filesystem::path& root, std::string_view discovered,
     require(wait_for_host(loopback_v6, http::status::ok, 3s),
             "A DNS search name with a local IPv6 address is allowed.");
   if (!delayed.empty()) {
+    trace("Check DNS address changes");
     require(wait_for_host(delayed, http::status::forbidden, 1s),
             "The address-change fixture starts with the name unapproved.");
     // The shell binds this writable fixture to /etc/hosts inside the isolated namespace.
@@ -471,10 +512,12 @@ void test(const std::filesystem::path& root, std::string_view discovered,
   first.write(net::buffer(input));
   beast::flat_buffer no_reply;
   boost::system::error_code rejected;
+  trace("Read WebSocket close after incoming frame");
   first.read(no_reply, rejected);
   require(static_cast<bool>(rejected), "An incoming application frame closes the read-only socket.");
   input_frames_close(io, port, host);
 
+  trace("Check WebSocket update with a slow viewer");
   Viewer slow{io};
   connect(slow, port, host);
   slow.next_layer().set_option(net::socket_base::receive_buffer_size(1024));
@@ -488,11 +531,13 @@ void test(const std::filesystem::path& root, std::string_view discovered,
   const auto latest = wait_for(second, "seq", 2);
   require(std::chrono::steady_clock::now() - before < 4s && latest.at(0).at("context") == 8,
           "A fast viewer still gets a coherent update while another viewer cannot read it.");
+  trace("Check WebSocket feed for a late viewer");
   Viewer late{io};
   connect(late, port, host);
   const auto current = wait_for(late, "seq", 2);
   for (const auto& record : current)
     require(record.at("type") != "program", "A late viewer does not see a program that was closed.");
+  trace("Destroy viewer clients and server");
 }
 
 } // namespace
@@ -502,6 +547,7 @@ auto main(int argc, char** argv) -> int {
     test(argc > 1 ? std::filesystem::path{argv[1]} : std::filesystem::temp_directory_path(),
          argc > 2 ? argv[2] : "", argc > 3 ? argv[3] : "", argc > 4 ? argv[4] : "",
          argc > 5 ? argv[5] : "");
+    trace("Finish fixture teardown");
     std::cout << "remote_server: all passed\n";
     return 0;
   } catch (const std::exception& error) {

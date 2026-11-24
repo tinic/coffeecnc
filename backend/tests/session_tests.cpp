@@ -360,7 +360,7 @@ struct Rig {
     const auto outcome = send(body);
     require(outcome.messages.size() == 1, "Exactly one message for: " + std::string(body));
     auto result = Json::parse(outcome.messages.front());
-    const auto expected_fields = result.contains("refusal") ? 5U : 4U;
+    const auto expected_fields = 4U + result.count("refusal") + result.count("localization");
     require(result.at("type") == "result" && result.at("id") == id && result.size() == expected_fields,
             "The message is the result of: " + std::string(body));
     return result;
@@ -419,6 +419,12 @@ void controller_messages_wait_for_ready() {
   const auto message = rig.session.work(clock).outcome.messages;
   require(message.size() == 1 && Json::parse(message.front()).at("text") == "Motor drive reports a fault.",
           "The ready document gets the retained controller fault");
+  rig.port.published.push_back(
+      {false, "Jog stopped: probe contact", MessageKey{"backend.jogStop.probeContact"}});
+  const auto localized = rig.session.work(clock).outcome.messages;
+  require(localized.size() == 1 && Json::parse(localized.front()).at("localization").at("key") ==
+                                       "backend.jogStop.probeContact",
+          "The session preserves an operator notice key from the controller port");
 }
 
 void panel_watchdog_uses_a_monotonic_page_clock() {
@@ -908,8 +914,11 @@ void decode_errors() {
             "A request without a usable ID gets one message");
     const auto message = Json::parse(outcome.messages.front());
     require(message.at("type") == "message" && message.at("level") == "error" &&
-                message.at("time") == (epoch + 250ms).count() && message.size() == 4 &&
-                message.at("text").get<std::string>().starts_with("Panel request ignored: "),
+                message.at("time") == (epoch + 250ms).count() && message.size() == 5 &&
+                message.at("localization").at("key") == "messages.session.requestIgnored" &&
+                message.at("text") ==
+                    "Panel request ignored: " +
+                        message.at("localization").at("params").at("detail").get<std::string>(),
             "It is an operator error stamped with the wall clock");
   }
   require(rig.port.calls.empty(), "A request without an ID is not executed");
@@ -1009,7 +1018,11 @@ void outcome_mapping() {
   rig.expect(R"("type":"run")", "failed", "Program is not open.");
   rig.expect(R"("type":"run")", "timed_out", "No answer within 5 s.");
   rig.expect(R"("type":"run")", "failed", "LinuxCNC reported an error.");
-  rig.expect(R"("type":"run")", "timed_out", "LinuxCNC did not answer.");
+  const auto timeout = rig.result(R"("type":"run")");
+  require(timeout.at("outcome") == "timed_out" &&
+              timeout.at("reason") == "LinuxCNC did not answer." &&
+              timeout.at("localization").at("key") == "messages.session.linuxcncNoAnswer",
+          "The timeout fallback has a key as well as English text");
   rig.accepted(R"("type":"run")");
   rig.acted({"run", "run", "run", "run", "run", "run"}, "Each request is sent once");
 }
@@ -1580,6 +1593,9 @@ void lease_expiry() {
   require(message == Json{{"type", "message"},
                           {"level", "error"},
                           {"text", "Jog stop failed on X: LinuxCNC did not answer."},
+                          {"localization",
+                           {{"key", "messages.session.jogStopFailed"},
+                            {"params", {{"axis", "X"}, {"detail", "LinuxCNC did not answer."}}}}},
                           {"time", (epoch + 20s + 150ms).count()}},
           "As an operator error, since no request owns it");
 }
@@ -1890,6 +1906,36 @@ void stale_requests_send_nothing() {
                   ": " + found.at(0).dump());
     }
   }
+}
+
+void stop_distinguishes_queued_requests_after_mode_change() {
+  Rig rig;
+  rig.port.state.mode = TaskMode::mdi;
+  const auto clock = [] { return at(0ms); };
+  rig.port.during["set_task_mode"] = [&] {
+    static_cast<void>(rig.session.control(clock(), {true, true}));
+  };
+  const auto home = rig.session.submit(rig.page, R"({"id":2,"type":"home","axis":"x"})", clock());
+  require(results(home).empty(), "The home request is queued");
+  const auto blocked = rig.session.work(clock);
+  require(blocked.status == WorkStatus::blocked && results(blocked.outcome).empty(),
+          "The home request waits for the jog-stop level after changing to manual mode");
+  rig.acted({"set_task_mode manual"}, "The mode change was sent but homing was not");
+
+  const auto queued = rig.session.submit(rig.page, R"({"id":3,"type":"home","axis":"y"})", clock());
+  require(results(queued).empty(), "The second home request is also queued");
+  const auto stopped = results(rig.session.submit(rig.page, R"({"id":4,"type":"abort"})", clock()));
+  require(stopped.size() == 2 && stopped.at(0).at("id") == 2 && stopped.at(1).at("id") == 3,
+          "Stop immediately reports both cancelled requests");
+  require(stopped.at(0).at("outcome") == "failed" && !stopped.at(0).contains("refusal") &&
+              stopped.at(0).at("reason") == "The mode was changed, but a stop request cancelled "
+                                            "the command before it was sent." &&
+              stopped.at(0).at("localization").at("key") == "messages.session.modeChanged",
+          "The partially sent request is reported as having changed the mode");
+  require(stopped.at(1).at("outcome") == "rejected" && !stopped.at(1).contains("localization") &&
+              stopped.at(1).at("reason") == "Cancelled by a stop request before it was sent." &&
+              stopped.at(1).at("refusal").at("key") == "messages.session.cancelled",
+          "The unsent request keeps its cancellation refusal");
 }
 
 // The port is handed the question with every action, and the answer follows the request: a
@@ -2802,11 +2848,16 @@ void exactly_one_result(std::uint32_t seed) {
     const auto& result = found.front();
     const auto verdict = result.at("outcome").get<std::string>();
     const auto refusal = result.find("refusal");
-    require(result.at("id") == id && result.size() == (refusal == result.end() ? 4U : 5U),
+    require(result.at("id") == id &&
+                result.size() == 4U + result.count("refusal") + result.count("localization"),
             "The result carries the request's ID");
     if (refusal != result.end())
       require(verdict == "rejected" && refusal->at("key").is_string() && refusal->at("params").is_object(),
               "Only a rejected result can carry a refusal key and arguments");
+    if (const auto entry = result.find("localization"); entry != result.end())
+      require(verdict != "accepted" && entry->at("key").is_string() &&
+                  entry->at("params").is_object(),
+              "Only a non-accepted result can carry message localization");
     require(verdict == "accepted" || verdict == "rejected" || verdict == "failed" ||
                 verdict == "timed_out",
             "The outcome is one of the protocol's four");
@@ -3046,6 +3097,7 @@ auto main(int argc, char** argv) -> int {
     outside_changes_stop_held_jogs();
     stopped_jogs_need_a_release();
     stale_requests_send_nothing();
+    stop_distinguishes_queued_requests_after_mode_change();
     port_is_told_when_a_request_goes_stale();
     increments_are_tracked();
     home_after_increment();

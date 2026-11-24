@@ -94,7 +94,7 @@ const machineMessage = computed(() => {
   if (inFooter && (reason === pausedText || reason === t('status.machineBlock.programRunning'))) return null
   return reason
 })
-const notice = computed(() => panel.notice && translateMessage(panel.notice.text, panel.notice.refusal) === machineMessage.value ? null : panel.notice)
+const notice = computed(() => panel.notice && translateMessage(panel.notice.text, panel.notice.localization) === machineMessage.value ? null : panel.notice)
 const messageTone = computed(() => {
   if (notice.value?.level === 'error' || (live.value && status.value?.machine === 'estop')) return 'error'
   return notice.value?.level ?? (liftedAfterStop.value ? 'lift-warning' : machineMessage.value ? 'machine-message' : 'empty')
@@ -169,8 +169,8 @@ const waitingLabels = { on: 'status.statusBar.waitingOn', off: 'status.statusBar
       <span v-if="machineMessage || notice" class="message-label" aria-hidden="true">{{ messageTone === 'error' || messageTone === 'lift-warning' ? '!' : 'i' }}</span>
       <div class="message-copy" :class="{ paired: machineMessage && notice }">
         <p v-if="machineMessage" class="machine-state" role="status">{{ machineMessage }}</p>
-        <p role="alert" aria-atomic="true"><template v-if="notice?.level === 'error'"><strong v-if="notice.context">{{ translateMessage(notice.context) }} · </strong>{{ translateMessage(notice.text, notice.refusal) }}<span v-if="notice.count > 1"> (×{{ notice.count }})</span></template></p>
-        <p role="status" aria-atomic="true"><template v-if="notice?.level === 'info'">{{ translateMessage(notice.text, notice.refusal) }}</template></p>
+        <p role="alert" aria-atomic="true"><template v-if="notice?.level === 'error'"><strong v-if="notice.context">{{ translateMessage(notice.context) }} · </strong>{{ translateMessage(notice.text, notice.localization) }}<span v-if="notice.count > 1"> (×{{ notice.count }})</span></template></p>
+        <p role="status" aria-atomic="true"><template v-if="notice?.level === 'info'">{{ translateMessage(notice.text, notice.localization) }}</template></p>
       </div>
       <button class="btn message-log" type="button" @click="emit('log')">{{ t('status.statusBar.messageLog') }} · <span class="log-count mono">{{ panel.log.length }}</span></button>
       <button v-if="notice" v-tooltip="t('status.statusBar.dismissTip')" class="btn dismiss" type="button" @click="dismissNotice">{{ t('status.statusBar.dismiss') }}</button>

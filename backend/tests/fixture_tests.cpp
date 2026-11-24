@@ -295,6 +295,9 @@ auto encoded_messages() -> std::vector<Encoded> {
   messages.emplace_back(
       encode_message(MessageLevel::error, "Joint 0 on limit switch error", 1700000000123ms));
   messages.emplace_back(encode_message(MessageLevel::info, "Probe tripped", 1700000001000ms));
+  messages.emplace_back(encode_message(MessageLevel::info, "Jog stopped: probe contact",
+                                       1700000001100ms,
+                                       MessageKey{"backend.jogStop.probeContact"}));
   messages.emplace_back(encode_result(41, CommandOutcome::accepted, ""));
   messages.emplace_back(
       encode_result(42, CommandOutcome::rejected, "Home all configured axes first."));
@@ -303,6 +306,8 @@ auto encoded_messages() -> std::vector<Encoded> {
       RefusalMessage{"messages.policy.jogVelocityAxisLimit", {{"axis", "Z"}, {"limit", "750"}}}));
   messages.emplace_back(encode_result(43, CommandOutcome::failed, "LinuxCNC reported an error."));
   messages.emplace_back(encode_result(44, CommandOutcome::timed_out, "LinuxCNC did not answer."));
+  messages.emplace_back(encode_result(47, CommandOutcome::timed_out, "LinuxCNC did not answer.", {},
+                                      {}, {}, MessageKey{"messages.session.linuxcncNoAnswer"}));
   const RestartPoint restart{.line = 25,
                              .tool = 98,
                              .h = 98,

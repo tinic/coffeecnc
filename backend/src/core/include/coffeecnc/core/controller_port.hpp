@@ -31,6 +31,7 @@ struct ActionResult {
   ActionStatus status{ActionStatus::accepted};
   // In words for the operator. Empty when accepted.
   std::string reason;
+  std::optional<MessageKey> localization{};
 };
 
 // The result of an E-stop request, by the machine state the controller reports after the
@@ -44,16 +45,19 @@ struct ActionResult {
 [[nodiscard]] inline auto estop_request_result(std::optional<MachineState> reported, Link link,
                                                bool after_command) -> ActionResult {
   if (!reported || link != Link::live || !after_command)
-    return {ActionStatus::failed, "LinuxCNC's status cannot be read; E-stop was not confirmed."};
+    return {ActionStatus::failed, "LinuxCNC's status cannot be read; E-stop was not confirmed.",
+            MessageKey{"backend.controllerPort.estopStatus"}};
   switch (*reported) {
   case MachineState::estop:
     return {};
   case MachineState::off:
-    return {ActionStatus::failed, "LinuxCNC reports machine off; E-stop was not confirmed."};
+    return {ActionStatus::failed, "LinuxCNC reports machine off; E-stop was not confirmed.",
+            MessageKey{"backend.controllerPort.estopMachineOff"}};
   case MachineState::on:
     break;
   }
-  return {ActionStatus::failed, "LinuxCNC still reports machine on; E-stop was not confirmed."};
+  return {ActionStatus::failed, "LinuxCNC still reports machine on; E-stop was not confirmed.",
+          MessageKey{"backend.controllerPort.estopMachineOn"}};
 }
 
 // The tool offset in effect and the table length of the tool in the spindle, as the controller
@@ -99,6 +103,7 @@ using Wanted = std::function<bool()>;
 struct ControllerMessage {
   bool error{};
   std::string text;
+  std::optional<MessageKey> localization{};
 };
 
 // The machine as the session acts on it: one call per kind of action CommandPolicy can allow.
@@ -179,12 +184,14 @@ public:
   [[nodiscard]] virtual auto run_checked(const PreviewInputs&, const Wanted& current,
                                          const Wanted& wanted) -> ActionResult {
     if (!current())
-      return {ActionStatus::failed, "The program check changed. Review the current results."};
+      return {ActionStatus::failed, "The program check changed. Review the current results.",
+              MessageKey{"messages.session.programCheckChanged"}};
     return run(wanted);
   }
   [[nodiscard]] virtual auto run_to_breakpoint(const PreviewInputs&, std::string_view, int,
                                                const Wanted&, const Wanted&) -> ActionResult {
-    return {ActionStatus::failed, "Program breakpoints are unavailable on this controller."};
+    return {ActionStatus::failed, "Program breakpoints are unavailable on this controller.",
+            MessageKey{"backend.controllerPort.breakpointsUnavailable"}};
   }
   // Validates the approach without sending controller commands and updates its clearance.
   [[nodiscard]] virtual auto validate_restart(RestartPoint&, const PreviewInputs&) -> std::string {
@@ -193,11 +200,13 @@ public:
   // First call may stop at the normal tool-change prompt. The second follows its confirmation.
   [[nodiscard]] virtual auto start_restart(const RestartPoint&, const PreviewInputs&, bool,
                                            const Wanted&, const Wanted&) -> ActionResult {
-    return {ActionStatus::failed, "Restart from line is unavailable on this controller."};
+    return {ActionStatus::failed, "Restart from line is unavailable on this controller.",
+            MessageKey{"backend.controllerPort.restartUnavailable"}};
   }
   [[nodiscard]] virtual auto pause(const Wanted& wanted) -> ActionResult = 0;
   [[nodiscard]] virtual auto jog_paused_z(double, bool, const Wanted&) -> ActionResult {
-    return {ActionStatus::failed, "Paused Z jog is unavailable on this controller."};
+    return {ActionStatus::failed, "Paused Z jog is unavailable on this controller.",
+            MessageKey{"backend.controllerPort.pausedZUnavailable"}};
   }
   [[nodiscard]] virtual auto resume(const Wanted& wanted) -> ActionResult = 0;
   [[nodiscard]] virtual auto step(const Wanted& wanted) -> ActionResult = 0;

@@ -19,7 +19,7 @@ import { baseName, formatBytes } from '../units'
 import { vTooltip } from '../tooltip'
 import AppIcon from './AppIcon.vue'
 import ModalDialog from './ModalDialog.vue'
-import { translateMessage } from '../i18n/messages'
+import { translateResult } from '../i18n/messages'
 
 const props = defineProps<{ target: EditorTarget }>()
 const emit = defineEmits<{ close: []; newProgram: [folder: string] }>()
@@ -77,7 +77,7 @@ const removeListener = onResult((command, result) => {
     saveRequest = null
     if (result.outcome !== 'accepted') {
       saving.value = false
-      feedback.value = (): string => translateMessage(result.reason, result.refusal) || t('program.editor.notSaved')
+      feedback.value = (): string => translateResult(result) || t('program.editor.notSaved')
       return
     }
     // Over the loaded program the machine opened it again; a new file is opened now.
@@ -90,7 +90,7 @@ const removeListener = onResult((command, result) => {
     saving.value = false
     if (result.outcome === 'accepted') emit('close')
     else feedback.value = (): string => t('program.editor.savedNotOpened', {
-      reason: translateMessage(result.reason, result.refusal) || t('program.editor.refused'),
+      reason: translateResult(result) || t('program.editor.refused'),
     })
   }
 })

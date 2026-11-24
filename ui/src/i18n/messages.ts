@@ -1,6 +1,6 @@
 // Text that arrives in English from the native backend (command refusals and failures, settings
 // and storage reasons, operator messages) and from the panel's own store and browser simulator.
-// The protocol carries English fallback text and can also give command refusals a key and
+// The protocol carries English fallback text and can also give a message a key and
 // parameters. The panel translates at the place the message is shown:
 // `parts/messages/en.json` (panel store, simulator, command refusals) and `parts/backend/en.json`
 // (native storage, files, preview, LinuxCNC adapter) hold each known sentence, with `{name}`
@@ -12,7 +12,7 @@
 // by ", " (nml_port.cpp, withdraw). Every other placeholder (a path, a file or program name, a
 // tool, a G-code line, a number such as the latched probe value) is data and stays exactly as
 // it arrived, also when it is a catalog word such as "two".
-import type { RefusalMessage } from '../protocol'
+import type { CommandResult, MessageKey } from '../protocol'
 import { i18n, type Params } from './index'
 import backend from './parts/backend/en.json?raw'
 import panel from './parts/messages/en.json?raw'
@@ -79,7 +79,7 @@ function translateArgument(name: string, value: string): string {
   return nested.has(name) ? translateMessage(value) : value
 }
 
-function translateRefusal(message: RefusalMessage | undefined): string | undefined {
+function translateKey(message: MessageKey | undefined): string | undefined {
   if (!message || typeof message.key !== 'string') return
   const names = argumentsByKey.get(message.key)
   const args: unknown = message.params
@@ -94,11 +94,16 @@ function translateRefusal(message: RefusalMessage | undefined): string | undefin
 }
 
 /** `text` in the panel's language when it is a known sentence; otherwise unchanged. */
-export function translateMessage(text: string, refusal?: RefusalMessage): string {
-  const structured = translateRefusal(refusal)
+export function translateMessage(text: string, localization?: MessageKey): string {
+  const structured = translateKey(localization)
   if (structured !== undefined) return structured
   if (i18n.global.locale.value === 'en' || text === '') return text
   const match = matchMessage(text)
   // The key comes from the English catalog, so it exists in every language.
   return match === null ? text : i18n.global.t(match.key as never, match.params)
+}
+
+export function translateResult(result: CommandResult): string {
+  return translateMessage(result.reason, result.outcome === 'rejected'
+    ? result.refusal ?? result.localization : result.localization)
 }

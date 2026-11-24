@@ -29,6 +29,8 @@ CoffeeCNC is a LinuxCNC display program, like AXIS or Gmoccapy: it runs on any L
 - Numeric fields accept formulas such as `1/4in` or `7mm/2`. See [numeric entry](docs/numeric-entry.md).
 - Each card shows its own status line, for example why MDI is not available now. Machine-wide states, such as "Machine is off", show once at the top.
 
+See the app menu beside **Machine on** in [Light](ui/screenshots/simulator-machine-menu-light.png) or [Dark](ui/screenshots/simulator-machine-menu-dark.png).
+
 ### Tools
 
 ![Tools and work offsets, with tool T1 loaded](ui/screenshots/simulator-tools.png)
@@ -70,6 +72,7 @@ CoffeeCNC is a LinuxCNC display program, like AXIS or Gmoccapy: it runs on any L
 - **Run to line** pauses before a chosen line; Resume continues from there.
 - During a pause, jog **Z** up to inspect or clear chips. CoffeeCNC stops the spindle if needed, and Resume returns Z, restarts the spindle at speed, then continues.
 - Select a line in the code list and tap an underlined F or S number to change it. CoffeeCNC changes that number in the file and opens the program again.
+- Drag across line numbers to select several lines. The edit bar offers Cut, Copy, and Delete. [Light screenshot](ui/screenshots/simulator-code-selection-light.png) · [Dark screenshot](ui/screenshots/simulator-code-selection-dark.png)
 - Use **STEP** in the preview toolbar to attach or show a model in the work coordinate system.
 - Cycle start, feed hold, stop, and feed and spindle overrides are always at the bottom of the screen.
 - [Air-cut programs](samples/air/README.md) let you try all of this without material.

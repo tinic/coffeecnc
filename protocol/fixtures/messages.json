@@ -1255,6 +1255,22 @@
   },
   {
     "type": "message",
+    "level": "error",
+    "text": "The restore was not completed: /home/cnc/data/restore/0.staged is larger than 16 MiB. The files are as they were.",
+    "time": 1700000001850,
+    "localization": {
+      "key": "backend.machineData.notCompleted",
+      "params": { "detail": "/home/cnc/data/restore/0.staged is larger than 16 MiB." },
+      "params_localization": {
+        "detail": {
+          "key": "backend.machineData.tooLarge",
+          "params": { "path": "/home/cnc/data/restore/0.staged" }
+        }
+      }
+    }
+  },
+  {
+    "type": "message",
     "level": "info",
     "text": "Jog stopped: probe contact",
     "time": 1700000001100,

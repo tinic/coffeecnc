@@ -159,17 +159,27 @@ auto replace_file(ToolModelFiles& files, const std::string& target, std::string_
   return {};
 }
 
-// The content of a file; none when there is no such file.
-auto read_file(ToolModelFiles& files, const std::string& path)
-    -> std::expected<std::optional<std::string>, std::string> {
+auto cannot_read(const std::string& path, const std::string& detail) -> LocalizedReason {
+  return {std::format("{} cannot be read: {}", path, detail),
+          MessageKey{"backend.machineData.cannotRead", {{"path", path}, {"detail", detail}}}};
+}
+
+auto too_large(const std::string& path) -> LocalizedReason {
+  return {std::format("{} is larger than 16 MiB.", path),
+          MessageKey{"backend.machineData.tooLarge", {{"path", path}}}};
+}
+
+// The content of a staged file; none when there is no such file.
+auto read_staged_file(ToolModelFiles& files, const std::string& path)
+    -> std::expected<std::optional<std::string>, LocalizedReason> {
   const auto content = files.read(path, max_archive_entry_bytes);
   if (!content)
-    return std::unexpected(std::format("{} cannot be read: {}", path, content.error()));
+    return std::unexpected(cannot_read(path, content.error()));
   const auto& found = *content;
   if (!found)
     return std::optional<std::string>{};
   if (found->more)
-    return std::unexpected(std::format("{} is larger than 16 MiB.", path));
+    return std::unexpected(too_large(path));
   return std::optional<std::string>{found->bytes};
 }
 
@@ -179,12 +189,8 @@ auto read_config(ToolModelFiles& files, const std::string& root, const std::stri
   auto found = files.read_beneath(root, relative, max_archive_entry_bytes);
   if (!found)
     return std::unexpected(std::move(found.error()));
-  if (const auto& file = *found; file && file->content.more) {
-    const auto path = root + '/' + relative;
-    return std::unexpected(
-        LocalizedReason{std::format("{} is larger than 16 MiB.", path),
-                        MessageKey{"backend.machineData.tooLarge", {{"path", path}}}});
-  }
+  if (const auto& file = *found; file && file->content.more)
+    return std::unexpected(too_large(root + '/' + relative));
   return found;
 }
 
@@ -495,10 +501,7 @@ auto MachineData::check(const std::string& path) -> std::expected<Checked, Local
         MessageKey{"backend.machineData.needsData"}});
   const auto content = files_.read(path, max_archive_bytes);
   if (!content)
-    return std::unexpected(
-        LocalizedReason{std::format("{} cannot be read: {}", path, content.error()),
-                        MessageKey{"backend.machineData.cannotRead",
-                                   {{"path", path}, {"detail", content.error()}}}});
+    return std::unexpected(cannot_read(path, content.error()));
   const auto& found = *content;
   if (!found)
     return std::unexpected(
@@ -882,9 +885,9 @@ auto apply_staged_restore(ToolModelFiles& files, const std::string& data_directo
       reason = damaged;
       break;
     }
-    const auto staged = read_file(files, step.from);
+    auto staged = read_staged_file(files, step.from);
     if (!staged) {
-      reason = {staged.error()};
+      reason = std::move(staged.error());
       break;
     }
     const auto& staged_bytes = *staged;

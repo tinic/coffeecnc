@@ -534,6 +534,38 @@ void configuration_read_failure_is_localized() {
           "The file read reason survives for the next startup");
 }
 
+void staged_file_read_failures_are_localized() {
+  for (const bool oversized : {false, true}) {
+    Fixture f;
+    const std::string path = f.backup()["path"];
+    const std::string current_tools = "T1 P1 Z99 D6\n";
+    f.disk.files[tools] = current_tools;
+    f.stage(path);
+    const auto staged = f.plan().at("files").at(0).at("from").get<std::string>();
+    const std::string io_error = "it cannot be read: Input/output error";
+    if (oversized)
+      f.disk.files[staged].resize(16uz * 1024 * 1024 + 1, 'x');
+    else
+      f.files.failures["read " + staged] = 1;
+    const std::string detail = oversized ? std::format("{} is larger than 16 MiB.", staged)
+                                         : std::format("{} cannot be read: {}", staged, io_error);
+    const auto result = apply_staged_restore(f.files, data, now + 60s);
+    require(!result && result.error() == detail && f.disk.files[tools] == current_tools,
+            "A staged read failure keeps its English reason and leaves the target file untouched");
+    const auto key = oversized
+                         ? MessageParameterKey{"backend.machineData.tooLarge", {{"path", staged}}}
+                         : MessageParameterKey{"backend.machineData.cannotRead",
+                                               {{"path", staged}, {"detail", io_error}}};
+    f.open();
+    const auto notice = f.machine->take_notice();
+    require(notice && notice->error &&
+                notice->localization == MessageKey{"backend.machineData.notCompleted",
+                                                   {{"detail", detail}},
+                                                   {{"detail", key}}},
+            "The staged read failure retains its message key when the application starts");
+  }
+}
+
 void restore_and_apply() {
   Fixture f;
   const std::string path = f.backup()["path"];
@@ -1435,6 +1467,7 @@ auto main(int argc, char** argv) -> int {
     machine_id_required();
     refusal_states();
     configuration_read_failure_is_localized();
+    staged_file_read_failures_are_localized();
     restore_and_apply();
     var_decided_after_exit();
     abandoned_and_changed_targets();

@@ -444,6 +444,16 @@ auto encoded_messages() -> std::vector<EncodedMessage> {
                  {{"detail",
                    {"backend.machineData.configFolderNotSynced",
                     {{"path", "/home/cnc/mill.ini"}, {"detail", "Input/output error"}}}}}}));
+  messages.emplace_back(encode_message(
+      MessageLevel::error,
+      "The restore was not completed: /home/cnc/data/restore/0.staged is larger than 16 MiB. "
+      "The files are as they were.",
+      1700000001850ms,
+      MessageKey{
+          "backend.machineData.notCompleted",
+          {{"detail", "/home/cnc/data/restore/0.staged is larger than 16 MiB."}},
+          {{"detail",
+            {"backend.machineData.tooLarge", {{"path", "/home/cnc/data/restore/0.staged"}}}}}}));
   messages.emplace_back(encode_message(MessageLevel::info, "Jog stopped: probe contact",
                                        1700000001100ms,
                                        MessageKey{"backend.jogStop.probeContact"}));

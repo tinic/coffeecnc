@@ -375,6 +375,8 @@
       "loadCuttingTool": "检查刀长前请先装入切削刀具。",
       "measureEdgeAgain": "应用旋转前请重新测量边。",
       "frameChanged": "工件坐标框架或刀具已改变。请重新测量边。",
+      "probeFeatureAgain": "应用测量结果前，请重新探测该特征。",
+      "measuredFrameChanged": "工件坐标系或刀具已更改。请重新探测该特征。",
       "rotationCancelled": "写入工件坐标系前旋转已取消。",
       "rotationCommand": "无法生成工件旋转指令。",
       "rotationUnverified": "无法确认已应用的旋转。请检查当前工件坐标系。",

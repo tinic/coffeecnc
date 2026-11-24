@@ -1433,6 +1433,12 @@ export class SimMachine {
       refused('The fixed setter is unavailable in this simulator scene.')
       return
     }
+    // As the controller's policy: an action that writes never runs as a measurement (#247).
+    const measureOnly = (command as { measure_only?: unknown }).measure_only === true
+    if (measureOnly && ['status', 'touch_off', 'check', 'ball', 'apply_angle', 'apply_measurement'].includes(command.action)) {
+      this.emit({ type: 'result', id, ...reject('This probe action always writes its result.', 'messages.policy.probeAlwaysWrites') })
+      return
+    }
     if (command.action === 'status') {
       this.emit({ type: 'result', id, outcome: 'accepted', reason: '', setter: probe.state(this.modal) })
       return
@@ -1440,7 +1446,7 @@ export class SimMachine {
     const blocked = this.notOn('probe') ?? this.busy('probe')
     const tool = this.modal.tools.find(row => row.number === this.toolInSpindle)
     const start = this.reported()
-    const confirmed = command.action === 'apply_angle' || [command.x, command.y, command.z].every(
+    const confirmed = command.action === 'apply_angle' || command.action === 'apply_measurement' || [command.x, command.y, command.z].every(
       (value, axis) => Math.abs(value - (start[axis] ?? Infinity)) <= 0.1,
     )
     if (blocked !== null || command.tool !== tool?.number || !this.allHomed() || !this.inPosition() ||

@@ -387,6 +387,16 @@ struct NmlPort::Impl {
   int serial{};
   std::chrono::steady_clock::time_point synch_retry{};
   std::optional<int> startup_tool;
+  // The operator's modal state a probe cycle changes (distance mode, feed, M50, M52), kept from
+  // its start until the cycle restores it. A cycle that stops early drops the machine's enable:
+  // idle_maintenance restores the state once the machine is on and idle again.
+  struct ProbeModal {
+    bool incremental;
+    double feed_mm_min;
+    bool feed_override;
+    bool adaptive_feed;
+  };
+  std::optional<ProbeModal> probe_modal;
   std::optional<int> observed_tool;
   // The joint or axis and the jjogmode of the jog stop that is the last command written, until
   // task echoes it.
@@ -1030,8 +1040,74 @@ void NmlPort::synch_parameters(const Wanted& wanted) {
     impl_->synch_retry = Clock::now() + synch_retry_period;
 }
 
+void NmlPort::restore_probe_modal(const Wanted& wanted) {
+  if (!impl_->probe_modal)
+    return;
+  const auto ready = [&](const NmlStatus& status) {
+    const auto& state = status.controller;
+    return state.link == Link::live && state.machine == MachineState::on &&
+           state.mode != TaskMode::automatic && state.interp == InterpState::idle &&
+           state.in_position && !status.paused && !status.task_executing &&
+           status.queued_mdi == 0 && !state.requested_tool;
+  };
+  if (impl_->hal != nullptr) {
+    // A probe cycle in progress restores the state itself.
+    if (const auto pins = impl_->hal->view(Clock::now()); pins && pins->probe_cycle_active)
+      return;
+  }
+  const auto before = status();
+  if (!ready(before) || !wanted())
+    return;
+  const auto modal = *std::exchange(impl_->probe_modal, std::nullopt);
+  const auto not_restored = [&] {
+    impl_->messages.push_back(
+        {true,
+         "Could not restore the distance mode and feed controls after the stopped probe cycle. "
+         "Check G90 or G91 and the feed override.",
+         MessageKey{"backend.nmlPort.probeModalNotRestored"}});
+  };
+  const auto mode = before.controller.mode;
+  if (mode != TaskMode::mdi && !accepted(set_task_mode(TaskMode::mdi, wanted))) {
+    not_restored();
+    return;
+  }
+  const auto settled = [&] {
+    return until(settle_timeout, [&] {
+      impl_->collect();
+      const auto current = status();
+      return current.controller.link == Link::live && current.controller.interp == InterpState::idle &&
+             current.queued_mdi == 0 && !current.task_executing;
+    });
+  };
+  const double scale = before.controller.program_units == LengthUnit::inch ? 25.4 : 1.0;
+  std::vector<std::string> blocks{std::format("{} G80 F{:.8f}", modal.incremental ? "G91" : "G90",
+                                              modal.feed_mm_min / scale)};
+  if (modal.feed_override)
+    blocks.emplace_back("M50 P1");
+  if (modal.adaptive_feed)
+    blocks.emplace_back("M52 P1");
+  bool sent = true;
+  for (const auto& block : blocks)
+    sent = sent && accepted(mdi(block, wanted)) && settled();
+  const auto after = status();
+  const bool verified =
+      sent && std::ranges::contains(after.active_codes, modal.incremental ? "G91" : "G90") &&
+      (!modal.feed_override || after.feed_override_enabled) &&
+      (!modal.adaptive_feed || after.adaptive_feed_enabled);
+  if (mode != TaskMode::mdi && wanted() && after.controller.machine == MachineState::on)
+    static_cast<void>(set_task_mode(mode, wanted));
+  if (!verified) {
+    not_restored();
+    return;
+  }
+  impl_->messages.push_back(
+      {false, "Restored the distance mode and feed controls the stopped probe cycle changed.",
+       MessageKey{"backend.nmlPort.probeModalRestored"}});
+}
+
 void NmlPort::idle_maintenance(const Wanted& wanted) {
   synch_parameters(wanted);
+  restore_probe_modal(wanted);
   if (impl_->hal && impl_->hal->paused_spindle.load() != PausedSpindle::none)
     recover_paused_spindle(wanted);
   if (impl_->breakpoint || status().controller.breakpoint_program) {
@@ -1411,9 +1487,15 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
                             !in_travel({search_start[0], search_start[1], lift_z}))))
     return std::unexpected("The probe move is outside the configured travel.");
 
-  const bool restore_feed_override = raw->motion.traj.feed_override_enabled;
-  const bool restore_adaptive = raw->motion.traj.adaptive_feed_enabled;
-  const bool restore_incremental = std::ranges::contains(before.active_codes, "G91");
+  // What the cycle restores at its end, or idle_maintenance after a stop: the state before this
+  // cycle, or before an earlier one that stopped and is not restored yet.
+  const auto modal = impl_->probe_modal.value_or(
+      Impl::ProbeModal{std::ranges::contains(before.active_codes, "G91"), before.programmed_feed,
+                       raw->motion.traj.feed_override_enabled,
+                       raw->motion.traj.adaptive_feed_enabled});
+  const bool restore_feed_override = modal.feed_override;
+  const bool restore_adaptive = modal.adaptive_feed;
+  const bool restore_incremental = modal.incremental;
   const double program_scale = c.program_units == LengthUnit::inch ? 25.4 : 1.0;
   const double machine_scale = impl_->config.millimetres_per_unit;
   auto line_origin = move.approach ? move.start : search_start;
@@ -1580,6 +1662,8 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
     return done;
   };
 
+  // From here the cycle changes the operator's modal state: keep it for a restore.
+  impl_->probe_modal = modal;
   if (!block("M50 P0", completion_timeout) || !block("M52 P0", completion_timeout))
     return interrupt(std::format("Could not prepare the probing feed ({}).", block_failure));
   raw = live_cycle();
@@ -1801,7 +1885,7 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   }
 
   if (!block(std::format("{} G80 F{:.8f}", restore_incremental ? "G91" : "G90",
-                         before.programmed_feed / program_scale),
+                         modal.feed_mm_min / program_scale),
              completion_timeout) ||
       (restore_feed_override && !block("M50 P1", completion_timeout)) ||
       (restore_adaptive && !block("M52 P1", completion_timeout)))
@@ -1810,6 +1894,7 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   if (raw == nullptr || raw->motion.traj.feed_override_enabled != restore_feed_override ||
       raw->motion.traj.adaptive_feed_enabled != restore_adaptive)
     return interrupt("The probe completed, but LinuxCNC did not confirm its feed controls.");
+  impl_->probe_modal.reset();
   hal->finish_probe_cycle();
   // A subsequent cycle must see its own permit. Wait for the control thread to publish and
   // sample the low level before the next request can mistake the previous cycle for its own.

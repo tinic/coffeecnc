@@ -806,6 +806,49 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
   run({.name = "ridge", .origin = {std::nullopt, -2}, .size = {std::nullopt, 12}},
       {.action = SetterAction::ridge, .direction = ProbeDirection::y_plus, .gauge_width_mm = 12});
 
+  // A stop mid-cycle drops the machine's enable: the cycle has switched to G90 and turned the
+  // feed override (M50) and adaptive feed (M52) off. Once the machine is on and idle, the
+  // operator's G91 and both feed controls come back; nothing is written.
+  probe_input("sim-rot-inner", "sim-rot-hollow.nand");
+  at(2, 1);
+  mdi("M50 P1");
+  mdi("M52 P1");
+  {
+    const auto before = port.status();
+    const auto stop_at = std::chrono::steady_clock::now() + 1500ms;
+    const auto stopped = port.fixed_setter({.action = SetterAction::pocket, .tool = 99, .start = machine()},
+                                           epoch, [&] { return std::chrono::steady_clock::now() < stop_at; });
+    const auto off = port.status();
+    checked(port.set_machine_state(MachineState::off, {}));
+    checked(port.set_machine_state(MachineState::on, {}));
+    checked(port.set_task_mode(TaskMode::mdi, {}));
+    const auto on = port.status();
+    port.idle_maintenance([] { return true; });
+    const auto restored = port.status();
+    const auto codes = [](const NmlStatus& status) {
+      return std::ranges::contains(status.active_codes, "G91") ? "G91" : "G90";
+    };
+    std::cout << std::format(
+                     "fact=probe_abort rotation={} stopped={} machine_on_after_stop={} "
+                     "before={} m50_before={} m52_before={} at_machine_on={} m50_at_machine_on={} "
+                     "m52_at_machine_on={} restored={} m50_restored={} m52_restored={} "
+                     "offsets_unchanged={}",
+                     degrees, !stopped, off.controller.machine == MachineState::on, codes(before),
+                     before.feed_override_enabled, before.adaptive_feed_enabled, codes(on),
+                     on.feed_override_enabled, on.adaptive_feed_enabled, codes(restored),
+                     restored.feed_override_enabled, restored.adaptive_feed_enabled,
+                     restored.g5x == before.g5x && restored.g92 == before.g92)
+              << std::endl;
+    require(!stopped && std::ranges::contains(before.active_codes, "G91") &&
+                before.feed_override_enabled && before.adaptive_feed_enabled,
+            stopped ? "expected a stopped pocket cycle" : "the rig sets G91, M50 P1 and M52 P1");
+    require(std::ranges::contains(restored.active_codes, "G91") && restored.feed_override_enabled &&
+                restored.adaptive_feed_enabled && restored.g5x == before.g5x &&
+                restored.g92 == before.g92 && restored.rotation_xy == before.rotation_xy,
+            "a stopped probe cycle restores G91, M50 and M52 once the machine is on");
+  }
+  mdi("M52 P0");
+
   // Ball calibration stays refused in a rotated system, before any command.
   at(2, 1);
   const auto writes_before_ball = port.writes().size();

@@ -308,6 +308,8 @@
       "homeAllNotConfigured": "Das gleichzeitige Referenzieren aller Achsen ist nicht konfiguriert ([JOINT_n] HOME_SEQUENCE): Referenzieren Sie jede Achse einzeln.",
       "homeGantryAlone": "Wird {axis} allein referenziert, fährt nur einer ihrer Motoren die Referenzfahrt und verkantet die Achse: Geben Sie {joints} dieselbe negative HOME_SEQUENCE (zum Beispiel -1) oder verwenden Sie „Alle referenzieren“.",
       "mdiTooLong": "Der MDI-Satz ist für LinuxCNC zu lang.",
+      "probeModalNotRestored": "Der Abstandsmodus und die Vorschubeinstellungen konnten nach dem abgebrochenen Antastzyklus nicht wiederhergestellt werden. Prüfen Sie G90 oder G91 und den Vorschub-Override.",
+      "probeModalRestored": "Der Abstandsmodus und die Vorschubeinstellungen, die der abgebrochene Antastzyklus geändert hat, wurden wiederhergestellt.",
       "setterNotConfigured": "Der Werkzeuglängensensor ist nicht konfiguriert.",
       "probeExceedsSetter": "Die bestätigte Antastbewegung überschreitet die Grenzen des Werkzeuglängensensors.",
       "probeTooSlow": "Die Antastbewegung würde länger als drei Minuten dauern.",

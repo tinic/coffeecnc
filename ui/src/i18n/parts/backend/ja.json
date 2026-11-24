@@ -308,6 +308,8 @@
       "homeAllNotConfigured": "全軸の一括原点復帰が設定されていません（[JOINT_n] HOME_SEQUENCE）。各軸を個別に原点復帰してください。",
       "homeGantryAlone": "{axis} だけを原点復帰すると片方のモーターだけが原点復帰し、軸がねじれます。{joints} に同じ負の HOME_SEQUENCE（例：-1）を設定するか、全軸原点復帰を使ってください。",
       "mdiTooLong": "MDI ブロックが LinuxCNC には長すぎます。",
+      "probeModalNotRestored": "停止したプローブサイクルの後、距離モードと送り設定を元に戻せませんでした。G90 または G91 と送りオーバーライドを確認してください。",
+      "probeModalRestored": "停止したプローブサイクルが変更した距離モードと送り設定を元に戻しました。",
       "setterNotConfigured": "ツールセッターが設定されていません。",
       "probeExceedsSetter": "確認済みのプローブ移動がツールセッターの制限を超えています。",
       "probeTooSlow": "プローブ移動に 3 分以上かかります。",

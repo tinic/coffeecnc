@@ -39,6 +39,8 @@ struct NmlStatus {
   double velocity{};    // mm/min
   double feed_override{};
   double rapid_override{};
+  bool feed_override_enabled{}; // M50: the feed override applies
+  bool adaptive_feed_enabled{};  // M52
   std::optional<double> velocity_limit{}; // factor of the configured linear trajectory ceiling
   double spindle_rpm{}; // commanded, before override
   double spindle_override{};
@@ -386,6 +388,9 @@ private:
   [[nodiscard]] auto spindle_command(SpindleDirection direction, double rpm, const Wanted& wanted,
                                      bool during_pause) -> ActionResult;
   void recover_paused_spindle(const Wanted& wanted);
+  // From idle_maintenance: the distance mode, feed and M50/M52 state a stopped probe cycle left
+  // changed, once the machine is on and idle.
+  void restore_probe_modal(const Wanted& wanted);
   explicit NmlPort(std::unique_ptr<Impl> impl);
   std::unique_ptr<Impl> impl_;
 };

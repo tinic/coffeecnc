@@ -195,6 +195,8 @@ auto to_status(const EMC_STAT& s, const MachineConfig& config, const HalShared* 
   out.rotation_xy = task.rotation_xy;
   out.velocity = motion.traj.current_vel * mm * seconds_per_minute;
   out.feed_override = motion.traj.scale;
+  out.feed_override_enabled = motion.traj.feed_override_enabled;
+  out.adaptive_feed_enabled = motion.traj.adaptive_feed_enabled;
   out.rapid_override = motion.traj.rapid_scale;
   if (const auto maximum = config.limits.max_trajectory_velocity;
       maximum && std::isfinite(motion.traj.maxVelocity)) {

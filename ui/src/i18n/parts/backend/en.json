@@ -308,6 +308,8 @@
       "homeAllNotConfigured": "Homing all axes at once is not configured ([JOINT_n] HOME_SEQUENCE): home each axis.",
       "homeGantryAlone": "Homing {axis} alone would home one of its motors and rack it: give {joints} the same negative HOME_SEQUENCE (for example -1), or use Home all.",
       "mdiTooLong": "The MDI block is too long for LinuxCNC.",
+      "probeModalNotRestored": "Could not restore the distance mode and feed controls after the stopped probe cycle. Check G90 or G91 and the feed override.",
+      "probeModalRestored": "Restored the distance mode and feed controls the stopped probe cycle changed.",
       "setterNotConfigured": "The fixed setter is not configured.",
       "probeExceedsSetter": "The confirmed probe move exceeds the fixed setter limits.",
       "probeTooSlow": "The probe move would take more than three minutes.",

@@ -172,9 +172,13 @@ public:
       -> Replaced override {
     const auto path = root + '/' + relative;
     if (begin("replace", path))
-      return std::unexpected(ReplaceError{false, path + " cannot be replaced: No space left on device"});
+      return std::unexpected(
+          ReplaceError{false,
+                       {path + " cannot be replaced: No space left on device",
+                        MessageKey{"backend.machineData.configNotReplaced",
+                                   {{"path", path}, {"detail", "No space left on device"}}}}});
     if (auto linked = through_link(root, relative))
-      return std::unexpected(ReplaceError{false, *linked});
+      return std::unexpected(ReplaceError{false, {*linked}});
     disk.links.erase(path); // the link is replaced, not followed
     disk.files[path] = std::string(bytes);
     disk.file_modes[path] = mode;
@@ -186,9 +190,11 @@ public:
     else
       disk.groups.erase(path);
     if (begin("replace_sync", path))
-      return std::unexpected(
-          ReplaceError{true, path + " was replaced, but its folder cannot be synchronised: "
-                                    "Input/output error"});
+      return std::unexpected(ReplaceError{
+          true,
+          {path + " was replaced, but its folder cannot be synchronised: Input/output error",
+           MessageKey{"backend.machineData.configFolderNotSynced",
+                      {{"path", path}, {"detail", "Input/output error"}}}}});
     return kept;
   }
   // A folder exists when it was made or holds a file or a link.

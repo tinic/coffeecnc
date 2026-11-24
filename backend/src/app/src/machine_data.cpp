@@ -990,13 +990,12 @@ auto apply_staged_restore(ToolModelFiles& files, const std::string& data_directo
                                               : new_config_mode;
       const auto group =
           step.before ? std::optional<unsigned>{step.before->group} : std::optional<unsigned>{};
-      const auto replaced =
-          files.replace_beneath(step.root, step.relative, step.bytes, mode, group);
+      auto replaced = files.replace_beneath(step.root, step.relative, step.bytes, mode, group);
       if (!replaced) {
         // Renamed, and only its folder's fsync failed: it is the backup's now, and is put back.
         if (replaced.error().renamed)
           ++written;
-        reason = {replaced.error().reason};
+        reason = std::move(replaced.error().reason);
         break;
       }
       if (!replaced->group_kept)
@@ -1018,7 +1017,7 @@ auto apply_staged_restore(ToolModelFiles& files, const std::string& data_directo
                        files.replace_beneath(step.root, step.relative, step.before->content.bytes,
                                              step.before->mode, step.before->group);
                    !back && !back.error().renamed) {
-          not_put_back.push_back(back.error().reason);
+          not_put_back.push_back(std::move(back.error().reason.text));
         }
       }
       written = 0;

@@ -709,8 +709,16 @@ void rollback_counts_renamed_files() {
           "The renamed file is put back too");
   f.open();
   auto notice = f.machine->take_notice();
-  require(notice && notice->text.ends_with("The files are as they were."),
-          "Every file was put back: the notice says so");
+  const auto sync_detail = target(0) + " was replaced, but its folder cannot be synchronised: "
+                                       "Input/output error";
+  require(notice && notice->text.ends_with("The files are as they were.") &&
+              notice->localization ==
+                  MessageKey{"backend.machineData.notCompleted",
+                             {{"detail", sync_detail}},
+                             {{"detail",
+                               {"backend.machineData.configFolderNotSynced",
+                                {{"path", target(0)}, {"detail", "Input/output error"}}}}}},
+          "The renamed file was put back and the failed sync has a key on the next startup");
   // The second fails, and the first cannot be put back.
   f.stage(path);
   bool second_failed = false;
@@ -730,8 +738,12 @@ void rollback_counts_renamed_files() {
               notice->text.find("These files could not be put back: " + target(0)) !=
                   std::string::npos &&
               notice->text.find(copy) != std::string::npos &&
-              notice->text.find("as they were") == std::string::npos,
-          "The notice names what was not put back and the copy: " +
+              notice->text.find("as they were") == std::string::npos && notice->localization &&
+              notice->localization->key == "backend.machineData.notPutBack" &&
+              notice->localization->params_localization.at("detail") ==
+                  MessageParameterKey{"backend.machineData.configNotReplaced",
+                                      {{"path", target(1)}, {"detail", "No space left on device"}}},
+          "The notice names what was not put back, the copy, and the keyed replacement failure: " +
               (notice ? notice->text : std::string{}));
 }
 
@@ -1247,6 +1259,7 @@ void real_files(const std::filesystem::path& base) {
               (read ? std::string{} : read.error().text));
   auto replaced = files.replace_beneath(dir, "hal/custom.hal", "written\n", 0644, std::nullopt);
   require(!replaced && !replaced.error().renamed &&
+              replaced.error().reason.localization == read.error().localization &&
               read_real(outside / "custom.hal") == "outside\n" &&
               !std::filesystem::exists(outside / "custom.hal.coffeecnc-tmp"),
           "Nothing is written through a linked subfolder");
@@ -1288,7 +1301,7 @@ void real_files(const std::filesystem::path& base) {
     require(foreign.has_value() && !foreign->group_kept &&
                 read_real(configs / "machine.hal") == "net e f\n",
             "A file is written with this user's group: " +
-                (foreign ? std::string{} : foreign.error().reason));
+                (foreign ? std::string{} : foreign.error().reason.text));
     const auto own = files.replace_beneath(dir, "machine.hal", "net g h\n", 0640, ::getegid());
     require(own.has_value() && own->group_kept, "Its own group is kept");
   }

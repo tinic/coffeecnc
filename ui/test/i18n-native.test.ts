@@ -589,6 +589,20 @@ describe('translateMessage', () => {
     })).toBe("La restauration n’a pas abouti : La restauration a été préparée 181 s avant la fin de CoffeeCNC, plus de 120 s : rien n'a été écrit. Les fichiers sont tels qu’avant.")
   })
 
+  it('translates the directory sync failure after replacing a configuration file', async () => {
+    await setLanguage('fr')
+    const path = '/home/cnc/mill.ini'
+    const error = 'Input/output error'
+    const detail = `${path} was replaced, but its folder cannot be synchronised: ${error}`
+    expect(translateMessage(`The restore was not completed: ${detail} The files are as they were.`, {
+      key: 'backend.machineData.notCompleted',
+      params: { detail },
+      params_localization: {
+        detail: { key: 'backend.machineData.configFolderNotSynced', params: { path, detail: error } },
+      },
+    })).toBe('La restauration n’a pas abouti : /home/cnc/mill.ini a été remplacé, mais son dossier ne peut pas être synchronisé : Input/output error Les fichiers sont tels qu’avant.')
+  })
+
   it('translates an unreadable configuration file and keeps the OS detail', async () => {
     await setLanguage('fr')
     const path = '/home/cnc/mill.ini'

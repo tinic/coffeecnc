@@ -228,7 +228,7 @@ function pageHover(themes, sig) {
     }
     const own = parse(cs.backgroundColor)
     const r = own ? ratio(over(own, surface), surface) : 1
-    if (r < 1.1) reasons.push(`hover tone ${r.toFixed(2)}:1`)
+    if (r < 1.1) reasons.push(`hover tone ${r.toFixed(2)}:1 (${cs.backgroundColor} on ${surface.slice(0, 3).map((v) => Math.round(v * 255)).join(",")}, hover ${String(el.matches(":hover"))}, disabled ${String(el.disabled)})`)
     if (reasons.length > 0) findings.push({ sig, theme, reasons })
   }
   if (original === undefined) delete rootEl.dataset.theme

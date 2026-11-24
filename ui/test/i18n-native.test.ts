@@ -217,10 +217,12 @@ describe('native and store sentences', () => {
       programWatch.indexOf('// The words of a block'))
     const phrases = cppLiterals(comments + names).map(({ text }) => text)
       .filter((text) => /^(?:a|an) /.test(text))
-    expect(phrases.map((text) => matchMessage(text.replaceAll('{}', 'log'))?.key)).toEqual([
+    const keys = [...(comments + names).matchAll(/MessageKey\{\s*"([^"]+)"/g)].map((match) => match[1])
+    expect(keys).toEqual([
       'backend.previewEngine.stopPythonLine', 'backend.previewEngine.stopPythonComment',
       'backend.previewEngine.stopFileWritingComment', 'backend.previewEngine.stopOwordName',
     ])
+    expect(phrases.map((text) => matchMessage(text.replaceAll('{}', 'log'))?.key)).toEqual(keys)
   })
 
   it('catalogues every sentence of store.ts', () => {
@@ -276,7 +278,7 @@ describe('native and store sentences', () => {
   })
 
   it('keeps native message keys, fallback text and named arguments in sync', () => {
-    const sources = { ...native, ...adapter }
+    const sources = { ...native, ...adapter, '../../backend/src/linuxcnc/src/program_watch.cpp': programWatch }
     const constantsByFile = new Map<string, Map<string, string>>()
     for (const [path, source] of Object.entries(sources)) {
       const constants = new Map<string, string>()
@@ -477,6 +479,17 @@ describe('translateMessage', () => {
       .toBe('Référencement impossible\u202f: la machine est en arrêt d’urgence')
     expect(translateMessage("Arc move in MDI would exceed X's negative limit"))
       .toBe('Le mouvement circulaire en MDI dépasserait la limite négative de X')
+  })
+
+  it('translates a preview scan rejection with the original line and comment word', async () => {
+    await setLanguage('fr')
+    expect(translateMessage('The preview ends at line 3: a (log,...) comment writes a file.', {
+      key: 'backend.previewEngine.endsAtLine',
+      params: { line: '3', detail: 'a (log,...) comment writes a file' },
+      params_localization: {
+        detail: { key: 'backend.previewEngine.stopFileWritingComment', params: { word: 'log,' } },
+      },
+    })).toBe('L’aperçu s’arrête à la ligne 3 : un commentaire (log,...) écrit un fichier.')
   })
 
   it('translates the phrases native fills into a sentence, and keeps its data', async () => {

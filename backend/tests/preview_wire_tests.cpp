@@ -331,6 +331,7 @@ void blocks_refused_by_their_text() {
   const auto unsafe = first_forbidden_line("G1 X1\no<ok> call\no<~/x> sub\n");
   const auto last_line = first_forbidden_line("\n\n;py,x");
   require(unsafe && unsafe->line == 3 &&
+              unsafe->reason.localization == MessageKey{"backend.previewEngine.stopOwordName"} &&
               first_forbidden_line("o#1 call\n") && first_forbidden_line("(c) o<$a> endsub\n") &&
               !first_forbidden_line("o<ok> call\no100 if [1]\nG1 X1 (o</etc/x> call)\n"),
           "An O word that is not plainly a name is forbidden wherever it stands");

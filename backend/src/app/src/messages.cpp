@@ -1,5 +1,7 @@
 #include <coffeecnc/app/messages.hpp>
 
+#include "message_key_json.hpp"
+
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
@@ -527,7 +529,7 @@ auto encode_preview(const Preview& preview) -> EncodedMessage {
   if (preview.error) {
     error = {{"line", preview.error->line}, {"text", preview.error->text}};
     if (const auto& key = preview.error->localization)
-      error["localization"] = {{"key", key->key}, {"params", key->params}};
+      error["localization"] = message_key_json(*key);
   }
   Json bounds = nullptr;
   if (preview.bounds)

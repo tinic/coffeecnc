@@ -278,6 +278,17 @@ auto encoded_messages() -> std::vector<EncodedMessage> {
   messages.push_back(encode_program(
       {4, "/home/cnc/nc_files/huge.ngc", {"G21", "G0 X0"}, true, "0d41e5a3b2c79f10"}));
 
+  Preview blocked;
+  blocked.context = 4821340;
+  blocked.state = PreviewState::failed;
+  blocked.error = PreviewError{
+      3, "The preview ends at line 3: a (log,...) comment writes a file.",
+      MessageKey{
+          "backend.previewEngine.endsAtLine",
+          {{"line", "3"}, {"detail", "a (log,...) comment writes a file"}},
+          {{"detail", {"backend.previewEngine.stopFileWritingComment", {{"word", "log,"}}}}}}};
+  messages.push_back(encode_preview(blocked));
+
   const PreviewSegment approach{4, MoveKind::rapid, 3, {{0, 0, 10}, {0, 0, 2}}};
   const PreviewSegment cut{
       5, MoveKind::feed, 3, {{0, 0, 2}, {0, 0, -1.5}, {30, 0, -1.5}, {30, 20.5, -1.5}}, 450};

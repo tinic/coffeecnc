@@ -206,10 +206,12 @@ auto take_snapshot(const PreviewSettings& settings, const std::string& program,
   // plainly a name, is given to the interpreter: it acts on some of them while it reads,
   // also in lines it never executes.
   if (const auto found = first_forbidden_line(*bytes))
-    return refused(found->line,
-                   std::format("The preview ends at line {}: {}.", found->line, found->what),
-                   MessageKey{"backend.previewEngine.endsAtLine",
-                              {{"line", std::to_string(found->line)}, {"detail", found->what}}});
+    return refused(
+        found->line,
+        std::format("The preview ends at line {}: {}.", found->line, found->reason.text),
+        MessageKey{"backend.previewEngine.endsAtLine",
+                   {{"line", std::to_string(found->line)}, {"detail", found->reason.text}},
+                   parameter_localization("detail", found->reason.localization)});
   std::size_t total = bytes->size();
   manifest.program = {program, "program.ngc", std::move(*bytes)};
   std::set<std::string> seen;
@@ -257,11 +259,13 @@ auto take_snapshot(const PreviewSettings& settings, const std::string& program,
       if (const auto forbidden = first_forbidden_line(*text))
         return refused(
             0,
-            std::format("No preview: {}.ngc line {}: {}.", name, forbidden->line, forbidden->what),
+            std::format("No preview: {}.ngc line {}: {}.", name, forbidden->line,
+                        forbidden->reason.text),
             MessageKey{"backend.previewEngine.subroutineForbidden",
                        {{"name", name},
                         {"line", std::to_string(forbidden->line)},
-                        {"detail", forbidden->what}}});
+                        {"detail", forbidden->reason.text}},
+                       parameter_localization("detail", forbidden->reason.localization)});
       total += text->size();
       manifest.subroutines.push_back({std::move(found), name + ".ngc", std::move(*text)});
     }

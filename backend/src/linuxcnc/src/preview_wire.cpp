@@ -104,10 +104,10 @@ auto preview_stop_message(KnownPreviewStop reason, std::optional<int> argument) 
             MessageKey{"backend.previewEngine.stopUnknownSystem", {{"wcs", wcs}}}};
   }
   case KnownPreviewStop::machine_m_code: {
-    const int number = argument.value_or(-1);
-    if (number < 100 || number > 199)
+    const int code_number = argument.value_or(-1);
+    if (code_number < 100 || code_number > 199)
       return {};
-    const auto code = std::to_string(number);
+    const auto code = std::to_string(code_number);
     return {std::format("M{} runs a program of the machine's own: what it does is not known to "
                         "the preview",
                         code),

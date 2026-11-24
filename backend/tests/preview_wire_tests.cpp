@@ -120,6 +120,11 @@ void preview_stop_codes() {
           0,
           "moves in another work system, whose offsets are not in the machine's parameter file",
           {"backend.previewEngine.stopOtherSystem"}},
+      NumberedStop{wcs,
+                   8,
+                   1,
+                   "moves in G54, whose offsets are not in the machine's parameter file",
+                   {"backend.previewEngine.stopUnknownSystem", {{"wcs", "G54"}}}},
       NumberedStop{
           wcs, 8, 9, wcs_text, {"backend.previewEngine.stopUnknownSystem", {{"wcs", "G59.3"}}}},
       NumberedStop{
@@ -150,6 +155,7 @@ void preview_stop_codes() {
       "Older or unknown versions get text for the numbered stop, and version 2 keeps fixed codes");
   require(!parse_output("stop_known 3 8 10\nend stop\n").defect.empty() &&
               !parse_output("stop_known 3 9 99\nend stop\n").defect.empty() &&
+              !parse_output("stop_known 3 9 200\nend stop\n").defect.empty() &&
               !parse_output("stop_known 3 8\nend stop\n").defect.empty(),
           "Codes that require a number reject missing or out-of-range values");
   const std::string kept = "seg 2 r 0 0 0 0 1 2 3\n";

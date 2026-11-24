@@ -94,6 +94,7 @@
 using coffeecnc::Bounds;
 using coffeecnc::HelperRequest;
 using coffeecnc::KnownPreviewStop;
+using coffeecnc::PreviewStopArgument;
 using coffeecnc::PreviewStopSource;
 using coffeecnc::ProgramFrameCheck;
 using coffeecnc::ProgramRange;
@@ -108,6 +109,11 @@ auto tooldata_find_index_for_tool(int number) -> int;
 namespace {
 
 enum class Halt : std::uint8_t { none, error, stop, cut };
+
+struct InterpreterStop {
+  KnownPreviewStop reason;
+  PreviewStopArgument argument{};
+};
 
 struct Canon {
   HelperRequest request;
@@ -165,7 +171,7 @@ struct Canon {
   Halt halt{Halt::none};
   // Why the line being executed must not have an effect, if it must not: it read a value the
   // preview does not know. The preview ends at the line's first canonical call.
-  std::optional<std::string> pending;
+  std::optional<InterpreterStop> pending;
   // UPDATE_TAG calls while the line is executed: one at least when it was executed.
   int tags{};
 };
@@ -210,7 +216,7 @@ void halt(Halt how, const std::string& text) {
                   canon.line, coffeecnc::preview_stop_prefix(canon.stop_source), clean));
 }
 
-void halt(KnownPreviewStop reason, std::optional<int> argument = {}) {
+void halt(KnownPreviewStop reason, const PreviewStopArgument& argument = {}) {
   if (!begin_halt(Halt::stop))
     return;
   const char* codes = std::getenv(coffeecnc::preview_stop_codes_env);
@@ -222,7 +228,7 @@ void halt(KnownPreviewStop reason, std::optional<int> argument = {}) {
 // value the preview does not know (see the head of this file).
 auto gate() -> bool {
   if (const auto why = std::exchange(canon.pending, std::nullopt))
-    halt(Halt::stop, *why);
+    halt(why->reason, why->argument);
   return canon.halt == Halt::none;
 }
 
@@ -1056,38 +1062,20 @@ struct Definition {
   std::vector<std::string> opened;
 };
 
-auto unknown_reason(std::string_view what) -> std::string {
-  return std::format("reads {}, which the program does not set: its value from an earlier "
-                     "program or MDI block is not known to the preview",
-                     what);
-}
-
 // Why a line reads a value the preview does not know, if it does.
 auto unknown_read(const coffeecnc::ParameterUse& use, const ParameterTrack& parameters, int level,
-                  bool returned) -> std::optional<std::string> {
+                  bool returned) -> std::optional<InterpreterStop> {
   if (use.computed)
-    return "reads a parameter whose number is computed (#[...], ##): which one it is, and "
-           "whether the program has set it, is not known to the preview";
+    return InterpreterStop{KnownPreviewStop::computed_parameter};
   if (use.returned && !returned)
-    return "reads #<_value> or #<_value_returned> before a subroutine of the program has "
-           "returned: its value from an earlier program or MDI block is not known to the "
-           "preview";
+    return InterpreterStop{KnownPreviewStop::prior_return_value};
   if (level == 0 && !use.exists.empty())
-    return std::format("asks whether {} exists outside a subroutine: on the machine it can "
-                       "exist from an earlier program or MDI block, which the preview does not "
-                       "know",
-                       use.exists);
+    return InterpreterStop{KnownPreviewStop::parameter_exists, use.exists};
   const auto found = std::ranges::find_if(
       use.reads, [&](int number) { return !parameters.known(number, level); });
   if (found != use.reads.end())
-    return unknown_reason(std::format("#{}", *found));
+    return InterpreterStop{KnownPreviewStop::undefined_parameter, std::format("#{}", *found)};
   return {};
-}
-
-auto inherited_reason(const std::string& mode) -> std::string {
-  return std::format("moves by the motion mode {} that was active before the program, which "
-                     "the preview does not take over",
-                     mode);
 }
 
 // Nothing can be computed: an error at line 0.
@@ -1232,7 +1220,7 @@ auto run(const HelperRequest& request) -> int {
       const auto why = error_text(*interp, result);
       if (!inherited.empty() &&
           coffeecnc::motion_use(text.data()) == coffeecnc::MotionUse::inherits)
-        halt(Halt::stop, inherited_reason(inherited));
+        halt(KnownPreviewStop::inherited_motion, inherited);
       else if (const auto reason = coffeecnc::refused_block(text.data()))
         // `#<_hal[...]>` is not defined here: the reason is that it is a HAL value.
         halt(Halt::stop, *reason);
@@ -1240,16 +1228,14 @@ auto run(const HelperRequest& request) -> int {
                    unknown_read(coffeecnc::parameter_use(text.data()), parameters, line_level,
                                 returned || line_level < last_level))
         // Its error may come from a value task has otherwise (`##1`, `[1/#3000]`).
-        halt(Halt::stop, *unknown);
+        halt(unknown->reason, unknown->argument);
       else if (const auto code = coffeecnc::remapped_use(text.data(), request.remapped))
         // A remapped code the interpreter does not know without its remap (M10, G88.1): task
         // runs the remap; the preview ends here.
-        halt(Halt::stop, std::format("{} is remapped on this machine ([RS274NGC] REMAP): what it "
-                                     "does is not known to the preview",
-                                     *code));
+        halt(KnownPreviewStop::remapped_code, *code);
       else if (const auto name = undefined_parameter(why, line_level))
         // Task may have it from an earlier program or MDI block: not the program's error.
-        halt(Halt::stop, unknown_reason(*name));
+        halt(KnownPreviewStop::undefined_parameter, *name);
       else
         halt(Halt::error, why);
       break;
@@ -1278,9 +1264,7 @@ auto run(const HelperRequest& request) -> int {
       break;
     }
     if (const auto code = coffeecnc::remapped_use(text.data(), request.remapped)) {
-      halt(Halt::stop, std::format("{} is remapped on this machine ([RS274NGC] REMAP): what it "
-                                   "does is not known to the preview",
-                                   *code));
+      halt(KnownPreviewStop::remapped_code, *code);
       break;
     }
     if (const int saved = coffeecnc::saved_position_move(text.data());
@@ -1293,7 +1277,7 @@ auto run(const HelperRequest& request) -> int {
     if (!inherited.empty()) {
       const auto use = coffeecnc::motion_use(text.data());
       if (use == coffeecnc::MotionUse::inherits) {
-        halt(Halt::stop, inherited_reason(inherited));
+        halt(KnownPreviewStop::inherited_motion, inherited);
         break;
       }
       if (use == coffeecnc::MotionUse::sets)
@@ -1317,8 +1301,7 @@ auto run(const HelperRequest& request) -> int {
             !std::ranges::contains(opened, use.name))
           opened.push_back(use.name);
         else if (!std::ranges::contains(opened, use.name)) {
-          halt(Halt::stop, "an O word in a subroutine definition belongs to a block outside it: "
-                           "which lines run is not known to the preview");
+          halt(KnownPreviewStop::cross_scope_o_word);
           break;
         }
       }
@@ -1326,7 +1309,7 @@ auto run(const HelperRequest& request) -> int {
     auto unknown = unknown_read(use, parameters, level, returned);
     if (unknown && use.control && !skipped) {
       // An O word reads its values when it is read; nothing tells whether it is skipped.
-      halt(Halt::stop, *unknown);
+      halt(unknown->reason, unknown->argument);
       break;
     }
     if (!use.control)

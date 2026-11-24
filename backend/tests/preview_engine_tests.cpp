@@ -743,7 +743,13 @@ void parameters_and_saved_positions() {
           "EXISTS of a global ends the preview at its line: " + text_of(o));
   stops("o1 if [EXISTS[#<_ini[axis_x]max_limit>]]\no1 endif", "reads an INI or HAL value");
   stops("G1 X#<_ini[axis_x]max_limit>", "reads an INI or HAL value");
-  stops("G1 X#<_value>", "reads #<_value> or #<_value_returned> before a subroutine");
+  const auto prior_return =
+      stops("G1 X#<_value>", "reads #<_value> or #<_value_returned> before a subroutine");
+  require(prior_return.error && prior_return.error->localization &&
+              prior_return.error->localization->params_localization.at("detail") ==
+                  MessageParameterKey{"backend.previewEngine.stopReturnValue",
+                                      {{"name", "#<_value>"}, {"other", "#<_value_returned>"}}},
+          "The interpreter identifies the unavailable return value");
   stops("o1 if [#<_value_returned>]\no1 endif", "before a subroutine of the program has returned");
   o = rig.preview(head + "o100 sub\no100 return [7]\no100 endsub\no100 call\nG1 X#<_value>\nM2\n");
   require(o.state == PreviewState::ready && near(o.segments.back().points.back(), {7, 0, 0}),
@@ -848,7 +854,11 @@ void parameters_and_saved_positions() {
   // Remapped codes: the preview ends at the first block that uses one, also at one the
   // interpreter does not know without the remap (finding 5): a stop, not the program's error.
   rig.settings.remapped = {"m6", "g88.1", "m10"};
-  stops("T1 M6", "M6 is remapped on this machine");
+  const auto remapped_m6 = stops("T1 M6", "M6 is remapped on this machine");
+  require(remapped_m6.error && remapped_m6.error->localization &&
+              remapped_m6.error->localization->params_localization.at("detail") ==
+                  MessageParameterKey{"backend.previewEngine.stopRemapped", {{"code", "M6"}}},
+          "A remapped M-code carries its name to the panel");
   stops("M[6]", "M6 is remapped");
   for (const auto* code : {"M10 P1", "G88.1 X1 Y1 Z1"}) {
     const auto remapped = rig.preview(head + code + "\nG1 X2\nM2\n");

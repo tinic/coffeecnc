@@ -634,6 +634,7 @@
       "stopG30ToolChange": "移动到 G30 位置（[EMCIO] TOOL_CHANGE_AT_G30）的换刀，而该位置不在机床的参数文件中",
       "stopUndefinedParameter": "读取程序未设置的{name}：预览不知道其来自先前程序或 MDI 程序段的值",
       "stopRemapped": "{code} 在此机床上已重映射（[RS274NGC] REMAP）：预览不知道它的作用",
+      "stopInheritedMotion": "使用程序运行前激活的运动模式 {mode} 移动，预览不会沿用该模式",
       "stopSavedPosition": "G{code} 移动到不在机床参数文件中的位置",
       "stopTask": "读取参数 _task，它在机床上为 1，在预览中为 0：程序在两者中可能表现不同",
       "randomToolChanger": "此机床使用随机换刀装置：不计算预览。",

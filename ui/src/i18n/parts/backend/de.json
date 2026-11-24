@@ -634,6 +634,7 @@
       "stopG30ToolChange": "ein Werkzeugwechsel, der zur G30-Position fährt ([EMCIO] TOOL_CHANGE_AT_G30), die nicht in der Parameterdatei der Maschine steht",
       "stopUndefinedParameter": "liest {name}, das das Programm nicht setzt: Sein Wert aus einem früheren Programm oder MDI-Satz ist der Vorschau nicht bekannt",
       "stopRemapped": "{code} ist auf dieser Maschine umbelegt ([RS274NGC] REMAP): Was es tut, ist der Vorschau nicht bekannt",
+      "stopInheritedMotion": "fährt im vor dem Programm aktiven Bewegungsmodus {mode}, den die Vorschau nicht übernimmt",
       "stopSavedPosition": "G{code} fährt zu einer Position, die nicht in der Parameterdatei der Maschine steht",
       "stopTask": "liest den Parameter _task, der auf der Maschine 1 und in der Vorschau 0 ist: Das Programm kann sich in beiden unterschiedlich verhalten",
       "randomToolChanger": "Diese Maschine hat einen Werkzeugwechsler mit wahlfreier Platzbelegung: Es wird keine Vorschau berechnet.",

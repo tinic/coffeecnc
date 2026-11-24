@@ -187,13 +187,13 @@ public:
   SetterState setter_state{};
   auto fixed_setter_available() const -> bool override { return setter; }
   auto fixed_setter(const FixedSetterRequest& request, SetterEpoch, const Wanted&)
-      -> std::expected<SetterState, std::string> override {
+      -> std::expected<SetterState, LocalizedReason> override {
     const auto done = record("fixed_setter", request.action == SetterAction::runout ? "runout"
                                              : request.action == SetterAction::clear_runout
                                                  ? "clear_runout"
                                                  : "other");
     if (done.status != ActionStatus::accepted)
-      return std::unexpected(done.reason);
+      return std::unexpected(LocalizedReason{done.reason, done.localization});
     return setter_state;
   }
 
@@ -454,6 +454,23 @@ void runout_clear_gates() {
   require(outcome(R"("type":"fixed_setter","action":"clear_runout","tool":99)") == "accepted",
           "Clear is accepted with T3 loaded, the spindle on and a program reading");
   rig.acted({"fixed_setter clear_runout"}, "T3 loaded, the spindle on and a program reading: cleared");
+
+  constexpr auto clear = R"("type":"fixed_setter","action":"clear_runout","tool":99)";
+  rig.port.script["fixed_setter"].push_back({ActionStatus::failed,
+                                             "Could not remove the saved runout compensation.",
+                                             MessageKey{"backend.nmlPort.runoutRemoveFailed"}});
+  const auto removal = rig.result(clear);
+  require(removal.at("outcome") == "failed" &&
+              removal.at("reason") == "Could not remove the saved runout compensation." &&
+              removal.at("localization").at("key") == "backend.nmlPort.runoutRemoveFailed",
+          "A setter failure reaches the panel with the port's key and fallback");
+  rig.port.script["fixed_setter"].push_back({ActionStatus::failed, "LinuxCNC: raw error."});
+  const auto opaque = rig.result(clear);
+  require(opaque.at("outcome") == "failed" && opaque.at("reason") == "LinuxCNC: raw error." &&
+              !opaque.contains("localization"),
+          "A raw setter error remains literal");
+  rig.acted({"fixed_setter clear_runout", "fixed_setter clear_runout"},
+            "Both storage failures reached the port");
 
   rig.port.state = homed_machine();
   rig.port.state.tool_in_spindle = 99;

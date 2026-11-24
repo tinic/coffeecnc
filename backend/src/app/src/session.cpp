@@ -1626,7 +1626,8 @@ auto Session::measure_tool_change(Queued& request, const ControllerState& state)
                                         {ready.axes[0].machine, ready.axes[1].machine, ready.axes[2].machine}};
   const auto measured = port_.fixed_setter(measurement, measurement_epoch, maintain);
   if (!measured)
-    return answer({CommandOutcome::failed, measured.error()});
+    return answer(
+        {CommandOutcome::failed, measured.error().text, {}, measured.error().localization});
   const auto& recorded = measured->measurement;
   if (!recorded || recorded->calibration)
     return answer({CommandOutcome::failed,
@@ -2115,7 +2116,10 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
           };
           auto result = port_.fixed_setter(c, begun, still);
           if (!result)
-            return answer({CommandOutcome::failed, std::move(result.error())});
+            return answer({CommandOutcome::failed,
+                           std::move(result.error().text),
+                           {},
+                           std::move(result.error().localization)});
           Stage step;
           // A height map that stopped after some points fails with the points measured so far.
           if (result->origin_refusal)

@@ -1166,6 +1166,16 @@ const examples = [
     }
   },
   {
+    "type": "result",
+    "id": 52,
+    "outcome": "failed",
+    "reason": "Tool measured. The updated program check is unavailable.",
+    "localization": {
+      "key": "backend.toolChangeMeasurement.measuredCheckUnavailable",
+      "params": {}
+    }
+  },
+  {
     "type": "directory",
     "path": "/home/cnc/nc_files",
     "parent": null,

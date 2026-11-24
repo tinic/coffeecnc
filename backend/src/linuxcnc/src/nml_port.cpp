@@ -3342,20 +3342,23 @@ auto NmlPort::prepare_tool_measurement(int tool, std::uint64_t request, int line
   const auto& calibration = impl_->setter_calibration;
   if (tool <= 0 || !limits || tool == limits->reference_tool ||
       tool == config.touch_probe_tool || !length || !calibration)
-    return failed("A cutting tool in the tool table and a fixed setter are required.");
+    return failed("A cutting tool in the tool table and a fixed setter are required.",
+                  MessageKey{"backend.toolChangeMeasurement.requiresToolAndSetter"});
   const auto setter_plane = calibration->plane;
   const double setter_clearance = calibration->clearance_z;
   const bool retract_to_setter_clearance = limits->clearance_mm > 0;
   const auto* raw = impl_->stat();
   if (raw == nullptr)
-    return failed("The controller is unavailable.");
+    return failed("The controller is unavailable.",
+                  MessageKey{"backend.toolChangeMeasurement.controllerUnavailable"});
   const auto before = reading(*raw);
   const auto& state = before.controller;
   if (!safe(*raw, before) || state.mode != TaskMode::automatic || state.interp == InterpState::idle ||
       state.requested_tool != tool || state.tool_request != request || state.tool_change_line != line ||
       point.tool != tool || point.h != tool || !restart_frame(before, point, inputs) ||
       !restart_at(before, restart_machine_position(point), config.motion_tolerances.restart_position_mm))
-    return failed("The program tool change or its stationary position could not be verified.");
+    return failed("The program tool change or its stationary position could not be verified.",
+                  MessageKey{"backend.toolChangeMeasurement.verifyStationaryChange"});
   // Use the table length for the approach estimate while M6 is pending. The measured length
   // and actual position are checked again before the operator is offered a restart.
   auto nominal = point;
@@ -3402,13 +3405,16 @@ auto NmlPort::prepare_tool_measurement(int tool, std::uint64_t request, int line
       !accepted(switched))
     return switched;
   if (impl_->read_tool_table() != table)
-    return failed("The tool table changed before registering the installed tool.");
+    return failed("The tool table changed before registering the installed tool.",
+                  MessageKey{"backend.toolChangeMeasurement.tableChanged"});
   raw = impl_->stat();
   if (raw == nullptr || raw->task.mode != mode.mode || !stationary(*raw))
-    return failed("The mill changed state before registering the installed tool.");
+    return failed("The mill changed state before registering the installed tool.",
+                  MessageKey{"backend.toolChangeMeasurement.millChanged"});
   EMC_TASK_PLAN_EXECUTE register_tool;
   if (!put(register_tool.command, std::format("M61 Q{}", tool)))
-    return failed("Could not register the installed tool.");
+    return failed("Could not register the installed tool.",
+                  MessageKey{"backend.toolChangeMeasurement.registrationFailed"});
   if (auto registered = impl_->run(register_tool, from); !accepted(registered))
     return registered;
   if (impl_->loads)

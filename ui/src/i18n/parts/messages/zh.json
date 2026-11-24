@@ -79,6 +79,7 @@
       "toolTouchOffInvalid": "请装入刀具并提供有限的对刀值。",
       "fixedSetterNeeds": "对刀仪需要已确认的刀具且主轴已停止。",
       "probeValuesFinite": "探测位置和尺寸必须为有限值。",
+      "probeAlwaysWrites": "此探测操作总是写入其结果。",
       "probeNeedsAxes": "探针需要已配置的轴且没有触发的硬限位。",
       "stopBeforeToolEdit": "编辑刀具前请先停止执行并完成换刀。",
       "invalidToolRow": "刀具表行无效。",

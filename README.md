@@ -48,6 +48,7 @@ CoffeeCNC is a LinuxCNC display program, like AXIS or Gmoccapy: it runs on any L
 - **Bore centre** and **Boss centre** set X0 and Y0 at the centre and show the diameter.
 - **Edge angle** probes the front or left edge at two points and measures its angle from the current work axes. **Apply rotation** adds that angle to the active G5x rotation, so a second measurement after applying shows the turn that is left.
 - In a rotated work system, every probe cycle moves along the rotated X and Y axes and sets the origin in them. Ball calibration needs a work system without rotation.
+- **Measure only** makes every probe action above report what it finds without setting an offset. **Result** shows the measured point and each probed surface point in work and machine coordinates, with the size, diameter or angle. **Copy** copies the values. **Set X0 Y0…** (or the axis measured) shows what changes and sets it after confirmation, while the work system is unchanged.
 - **Calibrate ball** measures the effective ball diameter on a gauge of known width and saves it to the tool table.
 - Each probe mode opens a 3D guide with the jog position, cycle limits, and expected result. Play or step through the moves, then tap **Start probe** once the tool is in position. [Corner guide](ui/screenshots/probe-guide-corner-light.png) · [Edge-angle guide](ui/screenshots/probe-guide-angle-dark.png)
 - Every move between contacts runs with the probe active, so an unexpected contact stops the machine. Nothing is written unless every contact succeeds.

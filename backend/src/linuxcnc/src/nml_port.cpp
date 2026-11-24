@@ -321,6 +321,18 @@ struct NmlPort::Impl {
   };
   std::optional<EdgeMeasurement> edge_measurement;
   std::uint64_t next_edge_measurement{};
+  // A measure-only feature result, kept until it is applied or another probe action begins.
+  struct FeatureMeasurement {
+    std::uint64_t id;
+    WorkFrame frame;
+    SetterEpoch epoch;
+    std::array<double, 3> tool_offset;
+    int tool;
+    std::array<double, 3> origin; // in the frame of the work axes: u, v and machine Z
+    std::array<bool, 3> axes;
+  };
+  std::optional<FeatureMeasurement> feature_measurement;
+  std::uint64_t next_feature_measurement{};
 
   MachineConfig config;
   HalShared* hal{};
@@ -721,7 +733,10 @@ struct NmlPort::Impl {
       const std::scoped_lock lock{trace_mutex};
       if (trace.size() == NmlPort::max_trace)
         trace.erase(trace.begin());
-      trace.push_back({message.type, message.serial_number, Clock::now()});
+      trace.push_back({message.type, message.serial_number, Clock::now(),
+                       message.type == EMC_TASK_PLAN_EXECUTE_TYPE
+                           ? text_of(static_cast<const EMC_TASK_PLAN_EXECUTE&>(message).command)
+                           : std::string{}});
     }
     return {};
   }
@@ -1924,8 +1939,16 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
     return std::unexpected("The fixed setter is unavailable.");
 
   const bool apply_angle = request.action == SetterAction::apply_angle;
+  const bool apply_measurement = request.action == SetterAction::apply_measurement;
+  // The decoder and the policy refuse it too: an action that writes never runs as a measurement.
+  if (request.measure_only &&
+      (!is_material_probe(request.action) || request.action == SetterAction::ball ||
+       apply_angle || apply_measurement))
+    return std::unexpected("This probe action always writes its result.");
   if (!apply_angle && request.action != SetterAction::status)
     impl_->edge_measurement.reset();
+  if (!apply_measurement && request.action != SetterAction::status)
+    impl_->feature_measurement.reset();
   auto& calibration = impl_->setter_calibration;
   if (calibration && calibration->datum != epoch.datum)
     calibration.reset();
@@ -2077,7 +2100,8 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
     state.edge_angle_deg = measurement.degrees;
     return state;
   }
-  if (before.controller.mode != TaskMode::mdi || !at_start(before, request.start))
+  if (before.controller.mode != TaskMode::mdi ||
+      (!apply_measurement && !at_start(before, request.start)))
     return std::unexpected("Wait for idle MDI at the confirmed starting position.");
   // Before the setter is taught, any tool with a valid saved length teaches it like the
   // reference (turo: T99 can act like T98).
@@ -2113,11 +2137,11 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
     return {p[0] * cos_turn - p[1] * sin_turn, p[0] * sin_turn + p[1] * cos_turn, p[2]};
   };
   const auto start_frame = to_frame(request.start);
-  // Sets the measured axes of the active work system at `origin`, in the rotated frame, and
-  // verifies the command against the encoder lag. The probe cycle has already returned to
-  // clearance.
-  const auto set_xy_origin = [&](std::array<double, 2> origin,
-                                 std::array<bool, 2> axes = {true, true})
+  // Sets the measured axes of the active work system at `origin`, in the rotated frame (Z is
+  // machine Z), and verifies the command against the encoder lag. The probe cycle has already
+  // returned to clearance.
+  const auto set_origin = [&](const std::array<double, 3>& origin,
+                              const std::array<bool, 3>& axes = {true, true, false})
       -> std::expected<void, std::string> {
       const auto from = impl_->begin(&wanted);
       const Impl::Scope scope{*impl_};
@@ -2137,10 +2161,11 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
                                              commanded.tran.y * machine_scale,
                                              commanded.tran.z * machine_scale};
       const auto at = to_frame(machine_at);
-      std::array<double, 2> expected{at[0] - origin[0], at[1] - origin[1]};
+      std::array<double, 3> expected{at[0] - origin[0], at[1] - origin[1], at[2] - origin[2]};
       // In a rotated system one work axis moves the stored origin along both machine axes, as
       // for a single face: write both, the axis not measured at its commanded work value.
-      const auto written = rotated ? std::array{true, true} : axes;
+      const bool xy = axes[0] || axes[1];
+      const std::array written{axes[0] || (rotated && xy), axes[1] || (rotated && xy), axes[2]};
       const auto commanded_work = work_position(machine_at, after.g5x, after.g92,
                                                 after.tool_offset, after.rotation_xy);
       for (std::size_t axis = 0; axis < axes.size(); ++axis)
@@ -2151,7 +2176,7 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
       std::string code{"G10 L20 P0"};
       for (std::size_t axis = 0; axis < written.size(); ++axis)
         if (written[axis])
-          code += std::format(" {}{:.8f}", "XY"[axis], expected[axis] / scale);
+          code += std::format(" {}{:.8f}", "XYZ"[axis], expected[axis] / scale);
       if (!put(command.command, code))
         return std::unexpected<std::string>("Could not format the work origin.");
       const auto result = impl_->run(command, from);
@@ -2170,18 +2195,76 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
         // The encoder lag along the work axes.
         const auto lag = to_frame({(traj.actualPosition.tran.x - traj.position.tran.x) * machine_scale,
                                    (traj.actualPosition.tran.y - traj.position.tran.y) * machine_scale,
-                                   0});
+                                   (traj.actualPosition.tran.z - traj.position.tran.z) * machine_scale});
         for (std::size_t i = 0; i < written.size(); ++i)
           if (written[i] ? (!std::isfinite(s.work[i]) || std::abs(s.work[i] - lag[i] - expected[i]) > 0.01)
                          : !(std::abs(s.g5x[i] - frame.g5x[i]) <= 1e-6))
             return false;
         return s.wcs == before.wcs && s.g92 == before.g92 && s.rotation_xy == before.rotation_xy &&
-               s.tool_offset == before.tool_offset && std::abs(s.g5x[2] - frame.g5x[2]) <= 1e-6;
+               s.tool_offset == before.tool_offset;
       });
       if (!verified)
         return std::unexpected<std::string>("Could not verify the work origin. Check the active WCS.");
     return {};
   };
+  // A measure-only probe (#247): every probed surface point, and the result that would have been
+  // written, kept for apply_measurement instead.
+  std::vector<SetterState::ProbedPoint> probed;
+  const auto record = [&](ProbeDirection direction, const std::array<double, 3>& contact,
+                          double ball_radius) {
+    const auto surface = probe_line(direction, before.rotation_xy).advance(contact, ball_radius);
+    probed.push_back({direction,
+                      work_position(surface, before.g5x, before.g92, before.tool_offset,
+                                    before.rotation_xy),
+                      surface});
+  };
+  const auto measured = [&](SetterState state, const std::array<double, 3>& origin,
+                            const std::array<bool, 3>& axes)
+      -> std::expected<SetterState, std::string> {
+    const auto* current = impl_->stat();
+    if (current == nullptr || impl_->status.link() != Link::live || (wanted && !wanted()))
+      return std::unexpected("The machine changed before the measurement could be saved.");
+    const auto after = to_status(*current, impl_->config, impl_->hal, Link::live);
+    if (!ready(*current, after) || frame_of(after) != frame ||
+        after.controller.tool_in_spindle != tool || after.tool_offset != before.tool_offset)
+      return std::unexpected("The work frame or tool changed. Probe the feature again.");
+    const auto id = ++impl_->next_feature_measurement;
+    impl_->feature_measurement =
+        Impl::FeatureMeasurement{id, frame, epoch, before.tool_offset, tool, origin, axes};
+    // The point applying makes the origin; an axis not measured stays at the start.
+    const double depth = probed.empty() ? request.start[2] : probed.back().machine[2];
+    const auto point = to_machine({axes[0] ? origin[0] : start_frame[0],
+                                   axes[1] ? origin[1] : start_frame[1],
+                                   axes[2] ? origin[2] : depth});
+    const auto work = work_position(point, before.g5x, before.g92, before.tool_offset,
+                                    before.rotation_xy);
+    SetterState::Measured result{
+        .id = id, .wcs = frame.wcs, .axes = {}, .work = {}, .machine = point, .faces = probed};
+    for (std::size_t axis = 0; axis < axes.size(); ++axis)
+      if (axes[axis]) {
+        result.axes += "XYZ"[axis];
+        result.work[axis] = work[axis];
+      }
+    state.material.reset();
+    state.measured = std::move(result);
+    return state;
+  };
+  if (apply_measurement) {
+    const auto& saved = impl_->feature_measurement;
+    if (!saved || saved->id != request.edge_measurement)
+      return std::unexpected("Probe the feature again before applying the measurement.");
+    const auto measurement = *std::exchange(impl_->feature_measurement, std::nullopt);
+    if (measurement.epoch != epoch || measurement.frame != frame || measurement.tool != tool ||
+        measurement.tool_offset != before.tool_offset)
+      return std::unexpected("The work frame or tool changed. Probe the feature again.");
+    if (auto set = set_origin(measurement.origin, measurement.axes); !set)
+      return std::unexpected(set.error());
+    const auto& axes = measurement.axes;
+    return SetterState{calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,
+                       std::move(current_marks),
+                       SetterState::Material{frame.wcs, axes[0] ? 'X' : axes[1] ? 'Y' : 'Z',
+                                             axes[0] && axes[1]}};
+  }
   const auto encloses_start = [&](std::size_t axis, double low, double high) {
     return low < start_frame[axis] && start_frame[axis] < high;
   };
@@ -2243,6 +2326,7 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
       if (!contact)
         return std::unexpected(std::format("{}{} face: {}", line.sign > 0 ? "+" : "−",
                                            line.word(), contact.error()));
+      record(direction, contact->machine, radius);
       return to_frame(contact->machine)[line.axis] + line.sign * radius;
     };
 
@@ -2275,7 +2359,9 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
       origin[axis] = std::midpoint(*low, *high);
       state.feature_size[axis] = *high - *low;
     }
-    if (auto set = set_xy_origin(origin, axes); !set)
+    if (request.measure_only)
+      return measured(std::move(state), {origin[0], origin[1], 0}, {axes[0], axes[1], false});
+    if (auto set = set_origin({origin[0], origin[1], 0}, {axes[0], axes[1], false}); !set)
       return std::unexpected(set.error());
     return state;
   }
@@ -2304,6 +2390,8 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
                                             wanted);
       if (!found)
         return std::unexpected(found.error());
+      record(request.direction, found->machine,
+             tool_diameter(*table, tool).value_or(0) * machine_scale / 2);
       return found->machine;
     };
     const auto first = contact(request.start, std::nullopt);
@@ -2351,6 +2439,9 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
     impl_->edge_measurement = Impl::EdgeMeasurement{id, frame, epoch, before.tool_offset, rotation};
     state.edge_angle_deg = degrees;
     state.edge_rotation = SetterState::EdgeRotation{id, frame.wcs, rotation};
+    if (request.measure_only)
+      state.measured = SetterState::Measured{
+          .id = 0, .wcs = frame.wcs, .axes = {}, .work = {}, .machine = {}, .faces = probed};
     return state;
   }
   if (bore) {
@@ -2385,6 +2476,7 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
                                               wanted);
       if (!contact)
         return std::unexpected(contact.error());
+      record(direction, contact->machine, radius);
       return to_frame(contact->machine)[line.axis];
     };
     const auto x_plus = wall(ProbeDirection::x_plus, request.start, std::nullopt);
@@ -2416,11 +2508,13 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
       return std::unexpected("The probed Y faces do not enclose the confirmed bore starting point.");
     const double centre_y = (*y_plus + *y_minus) / 2;
     const double diameter = *y_plus - *y_minus + 2 * radius;
-    if (auto set = set_xy_origin({centre_x, centre_y}); !set)
-      return std::unexpected(set.error());
     SetterState state{calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,
                       std::move(current_marks), SetterState::Material{before.wcs, 'X', true}};
     state.center_diameter = diameter;
+    if (request.measure_only)
+      return measured(std::move(state), {centre_x, centre_y, 0}, {true, true, false});
+    if (auto set = set_origin({centre_x, centre_y}); !set)
+      return std::unexpected(set.error());
     return state;
   }
   if (corner || ball || boss) {
@@ -2489,6 +2583,7 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
                                               wanted);
       if (!contact)
         return std::unexpected(contact.error());
+      record(direction, contact->machine, radius);
       // The ball's centre touched: the face is one radius further along the travel.
       return to_frame(contact->machine)[line.axis] + line.sign * radius;
     };
@@ -2526,12 +2621,14 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
       if (!encloses_start(1, *front, *back))
         return std::unexpected("The probed Y faces do not enclose the confirmed boss starting point.");
       const double centre_y = (*front + *back) / 2;
-      if (auto set = set_xy_origin({centre_x, centre_y}); !set)
-        return std::unexpected(set.error());
       SetterState state{calibration ? std::optional{calibration->plane} : std::nullopt,
                         std::nullopt, std::move(current_marks),
                         SetterState::Material{before.wcs, 'X', true}};
       state.center_diameter = *back - *front;
+      if (request.measure_only)
+        return measured(std::move(state), {centre_x, centre_y, 0}, {true, true, false});
+      if (auto set = set_origin({centre_x, centre_y}); !set)
+        return std::unexpected(set.error());
       return state;
     }
     if (ball) {
@@ -2594,10 +2691,13 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
     if (!y_face)
       return std::unexpected("Y face: " + y_face.error());
 
-    if (auto set = set_xy_origin({*x_face, *y_face}); !set)
+    SetterState state{calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,
+                      std::move(current_marks), SetterState::Material{before.wcs, 'X', true}};
+    if (request.measure_only)
+      return measured(std::move(state), {*x_face, *y_face, 0}, {true, true, false});
+    if (auto set = set_origin({*x_face, *y_face}); !set)
       return std::unexpected(set.error());
-    return SetterState{calibration ? std::optional{calibration->plane} : std::nullopt, std::nullopt,
-                       std::move(current_marks), SetterState::Material{before.wcs, 'X', true}};
+    return state;
   }
   if (material) {
     const auto line = probe_line(request.direction, before.rotation_xy);
@@ -2626,6 +2726,17 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
                                             wanted);
     if (!contact)
       return std::unexpected(contact.error());
+    if (request.measure_only) {
+      record(request.direction, contact->machine, radius);
+      // The face, or the top, where applying sets the axis to zero (see `expected` below).
+      auto origin = to_frame(contact->machine);
+      origin[line.axis] += line.sign * radius;
+      std::array<bool, 3> axes{};
+      axes.at(line.axis) = true;
+      return measured(SetterState{calibration ? std::optional{calibration->plane} : std::nullopt,
+                                  std::nullopt, std::move(current_marks)},
+                      origin, axes);
+    }
 
     const auto from = impl_->begin(&wanted);
     const Impl::Scope scope{*impl_};

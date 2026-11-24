@@ -377,6 +377,8 @@
       "loadCuttingTool": "Wechseln Sie ein Schneidwerkzeug ein, bevor Sie seine Länge prüfen.",
       "measureEdgeAgain": "Messen Sie die Kante erneut, bevor Sie die Drehung anwenden.",
       "frameChanged": "Das Werkstück-Koordinatensystem oder das Werkzeug hat sich geändert. Messen Sie die Kante erneut.",
+      "probeFeatureAgain": "Tasten Sie das Merkmal erneut an, bevor Sie die Messung anwenden.",
+      "measuredFrameChanged": "Werkstückkoordinatensystem oder Werkzeug hat sich geändert. Tasten Sie das Merkmal erneut an.",
       "rotationCancelled": "Die Drehung wurde abgebrochen, bevor das Koordinatensystem geschrieben wurde.",
       "rotationCommand": "Der Befehl für die Drehung des Koordinatensystems konnte nicht erstellt werden.",
       "rotationUnverified": "Die angewendete Drehung konnte nicht geprüft werden. Prüfen Sie das aktive Koordinatensystem.",

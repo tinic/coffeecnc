@@ -252,6 +252,7 @@ public:
     long type{};  // the NML message type
     int serial{}; // the serial number task echoes once it has taken the command up
     std::chrono::steady_clock::time_point at{}; // when libnml's write returned
+    std::string mdi{}; // the block of an MDI command (EMC_TASK_PLAN_EXECUTE); empty for others
     friend auto operator==(const Written&, const Written&) -> bool = default;
   };
   // Every command this port has written, in order, the last max_trace of them: for tests and

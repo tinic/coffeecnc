@@ -282,7 +282,14 @@ auto encoded_messages() -> std::vector<Encoded> {
   preview.segments = {approach, cut};
   preview.bounds = Bounds{{0, 0, -1.5}, {30, 20.5, 2}};
   preview.dwells = {{6, 2}};
+  auto& check = preview.check.emplace();
+  check.errors = {{"T3 has no verified length in the tool table.",
+                   MessageKey{"backend.previewEngine.noVerifiedLength", {{"tool", "3"}}}}};
+  check.warnings = {{"Additional controller check is required."},
+                    {"Feed per revolution is excluded from the feed range.",
+                     MessageKey{"backend.previewEngine.feedPerRevolution"}}};
   messages.push_back(encode_preview(preview));
+  preview.check.reset();
   preview.dwells.clear();
   preview.context = 4821338;
   preview.state = PreviewState::failed;

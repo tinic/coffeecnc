@@ -549,7 +549,7 @@ export interface OperatorMessage {
 export interface MessageKey {
   key: string
   params: Record<string, string>
-  params_localization?: Record<string, Pick<MessageKey, 'key' | 'params'>>
+  params_localization?: Record<string, MessageKey>
   params_lists?: Record<string, { text: string; localization?: Pick<MessageKey, 'key' | 'params'> }[]>
 }
 

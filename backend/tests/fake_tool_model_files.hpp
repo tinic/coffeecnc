@@ -53,20 +53,22 @@ public:
   std::function<void(std::string_view)> during;
 
   auto make_directory(const std::string& path)
-      -> std::expected<Directory, std::string> override {
+      -> std::expected<Directory, LocalizedReason> override {
     if (begin("make_directory", path))
-      return std::unexpected("the directory " + path + " cannot be made: Permission denied");
+      return std::unexpected(
+          LocalizedReason{"the directory " + path + " cannot be made: Permission denied"});
     const bool created = disk.directories.insert(path).second;
     const auto mode = disk.modes.find(path);
     return Directory{created, mode == disk.modes.end() ? 0700U : mode->second};
   }
   auto lock(const std::string& directory) -> std::expected<void, LockError> override {
     if (begin("lock", directory))
-      return std::unexpected(LockError{false, "the lock file cannot be opened: Permission denied"});
+      return std::unexpected(
+          LockError{false, {"the lock file cannot be opened: Permission denied"}});
     disk.files.try_emplace(directory + "/lock", "");
     if (!disk.locked.insert(directory).second)
-      return std::unexpected(LockError{true, "the lock cannot be taken: Resource temporarily "
-                                             "unavailable"});
+      return std::unexpected(
+          LockError{true, {"the lock cannot be taken: Resource temporarily unavailable"}});
     held_ = directory;
     return {};
   }
@@ -75,9 +77,9 @@ public:
     release();
   }
   auto read(const std::string& path, std::size_t limit)
-      -> std::expected<std::optional<Content>, std::string> override {
+      -> std::expected<std::optional<Content>, LocalizedReason> override {
     if (begin("read", path))
-      return std::unexpected(std::string("it cannot be read: Input/output error"));
+      return std::unexpected(LocalizedReason{"it cannot be read: Input/output error"});
     const auto file = disk.files.find(path);
     if (file == disk.files.end())
       return std::optional<Content>{};
@@ -85,7 +87,8 @@ public:
   }
   auto open_temporary(const std::string& path) -> Done override {
     if (begin("open_temporary", path))
-      return std::unexpected(std::string("the temporary file cannot be made: Permission denied"));
+      return std::unexpected(
+          LocalizedReason{"the temporary file cannot be made: Permission denied"});
     disk.files[path].clear();
     temporary_ = path;
     return {};
@@ -95,7 +98,7 @@ public:
       // Half of it reached the disk.
       disk.files[temporary_] += bytes.substr(0, bytes.size() / 2);
       return std::unexpected(
-          std::string("the temporary file cannot be written: No space left on device"));
+          LocalizedReason{"the temporary file cannot be written: No space left on device"});
     }
     disk.files[temporary_] += bytes;
     return {};
@@ -103,28 +106,28 @@ public:
   auto sync() -> Done override {
     if (begin("sync", temporary_))
       return std::unexpected(
-          std::string("the temporary file cannot be synchronised: Input/output error"));
+          LocalizedReason{"the temporary file cannot be synchronised: Input/output error"});
     return {};
   }
   auto rename(const std::string& from, const std::string& to) -> Done override {
     if (begin("rename", from + " " + to))
-      return std::unexpected(std::string("the file cannot be replaced: Read-only file system"));
+      return std::unexpected(LocalizedReason{"the file cannot be replaced: Read-only file system"});
     auto node = disk.files.extract(from);
     disk.files.insert_or_assign(to, std::move(node.mapped()));
     return {};
   }
   auto link(const std::string& from, const std::string& to) -> Done override {
     if (begin("link", from + " " + to))
-      return std::unexpected(std::string("the file cannot be made: Read-only file system"));
+      return std::unexpected(LocalizedReason{"the file cannot be made: Read-only file system"});
     if (disk.files.contains(to) || disk.directories.contains(to))
-      return std::unexpected(std::string("the file cannot be made: File exists"));
+      return std::unexpected(LocalizedReason{"the file cannot be made: File exists"});
     disk.files[to] = disk.files[from];
     return {};
   }
   auto sync_directory(const std::string& directory) -> Done override {
     if (begin("sync_directory", directory))
       return std::unexpected(
-          std::string("the directory cannot be synchronised: Input/output error"));
+          LocalizedReason{"the directory cannot be synchronised: Input/output error"});
     return {};
   }
   void discard(const std::string& path) override {
@@ -135,7 +138,8 @@ public:
   auto append(const std::string& path, std::string_view bytes) -> Done override {
     if (begin("append", path)) {
       disk.files[path] += bytes.substr(0, bytes.size() / 2);
-      return std::unexpected(std::string("the file cannot be written: No space left on device"));
+      return std::unexpected(
+          LocalizedReason{"the file cannot be written: No space left on device"});
     }
     disk.files[path] += bytes;
     return {};
@@ -216,7 +220,7 @@ public:
     return disk.directories.contains(folder) || below(disk.files) || below(disk.links);
   }
   auto link_beneath(const std::string& root, const std::string& relative, const std::string& target)
-      -> std::expected<void, LocalizedReason> override {
+      -> Done override {
     const auto path = root + '/' + relative;
     if (begin("relink", path))
       return std::unexpected(
@@ -231,8 +235,7 @@ public:
     disk.links[path] = target;
     return {};
   }
-  auto remove_beneath(const std::string& root, const std::string& relative)
-      -> std::expected<void, LocalizedReason> override {
+  auto remove_beneath(const std::string& root, const std::string& relative) -> Done override {
     const auto path = root + '/' + relative;
     if (begin("remove", path))
       return std::unexpected(

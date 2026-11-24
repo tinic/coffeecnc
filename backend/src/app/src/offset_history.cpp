@@ -154,8 +154,10 @@ void OffsetHistoryStore::load() {
   if (!content) {
     reason_ = {
         std::format("The saved offset history cannot be read ({}). The history starts empty.",
-                    content.error()),
-        MessageKey{"backend.offsetHistory.cannotRead", {{"detail", content.error()}}}};
+                    content.error().text),
+        MessageKey{"backend.offsetHistory.cannotRead",
+                   {{"detail", content.error().text}},
+                   parameter_localization("detail", content.error().localization)}};
     load_notice_ = reason_;
     return;
   }
@@ -465,8 +467,10 @@ void OffsetHistoryStore::observe(PanelReading& reading, std::chrono::millisecond
     auto error =
         step ? LocalizedReason{}
              : LocalizedReason{
-                   std::format("The offset history could not be saved: {}", step.error()),
-                   MessageKey{"backend.offsetHistory.notSaved", {{"detail", step.error()}}}};
+                   std::format("The offset history could not be saved: {}", step.error().text),
+                   MessageKey{"backend.offsetHistory.notSaved",
+                              {{"detail", step.error().text}},
+                              parameter_localization("detail", step.error().localization)}};
     // Not written: tried again after write_period.
     if (!error.empty())
       seen_due_ = true;

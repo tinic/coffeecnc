@@ -324,7 +324,7 @@ auto LocalToolModelFiles::replace_beneath(const std::string& root, const std::st
 }
 
 auto LocalToolModelFiles::remove_beneath(const std::string& root, const std::string& relative)
-    -> std::expected<void, LocalizedReason> {
+    -> Done {
   auto parent = parent_beneath(root, relative);
   if (!parent) {
     if (parent.error().missing)
@@ -360,8 +360,7 @@ auto LocalToolModelFiles::folder_exists_beneath(const std::string& root,
 }
 
 auto LocalToolModelFiles::link_beneath(const std::string& root, const std::string& relative,
-                                       const std::string& target)
-    -> std::expected<void, LocalizedReason> {
+                                       const std::string& target) -> Done {
   auto parent = parent_beneath(root, relative);
   if (!parent)
     return std::unexpected(std::move(parent.error().reason));

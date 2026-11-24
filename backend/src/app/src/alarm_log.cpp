@@ -55,13 +55,8 @@ auto localization_of(const Json& value, std::string_view field) -> std::optional
   auto parsed = message_parameter_from_json(*metadata);
   if (!parsed)
     return std::nullopt;
-  MessageKey message{std::move(parsed->key), std::move(parsed->params)};
-  const auto keys = metadata->find("params_localization");
-  if (keys != metadata->end() && keys->is_object())
-    for (const auto& [name, key] : keys->items())
-      if (message.params.contains(name))
-        if (auto parameter = message_parameter_from_json(key))
-          message.params_localization.emplace(name, std::move(*parameter));
+  MessageKey message{std::move(parsed->key), std::move(parsed->params),
+                     std::move(parsed->params_localization)};
   const auto lists = metadata->find("params_lists");
   if (lists != metadata->end() && lists->is_object())
     for (const auto& [name, items] : lists->items())
@@ -194,14 +189,18 @@ auto AlarmLog::path(std::string_view name) const -> std::string {
 }
 
 auto AlarmLog::locked() -> bool {
-  std::optional<std::string> problem;
+  std::optional<LocalizedReason> problem;
   if (lock_) {
-    problem = lock_();
+    if (auto detail = lock_())
+      problem = LocalizedReason{std::move(*detail)};
   } else if (const auto taken = files_.lock(directory_); !taken) {
     if (taken.error().in_use)
-      problem = "it is in use by another CoffeeCNC.";
+      problem = {"it is in use by another CoffeeCNC.", MessageKey{"backend.alarmLog.inUse"}};
     else
-      problem = "its lock cannot be taken: " + taken.error().reason + ".";
+      problem = {std::format("its lock cannot be taken: {}.", taken.error().reason.text),
+                 MessageKey{"backend.alarmLog.notLocked",
+                            {{"detail", taken.error().reason.text}},
+                            parameter_localization("detail", taken.error().reason.localization)}};
   } else {
     own_lock_ = true;
   }
@@ -209,8 +208,10 @@ auto AlarmLog::locked() -> bool {
     return true;
   const std::scoped_lock lock{mutex_};
   reason_ = {
-      std::format("The alarm log in {} is kept for this run only: {}", directory_, *problem),
-      MessageKey{"backend.alarmLog.keptForRun", {{"directory", directory_}, {"detail", *problem}}}};
+      std::format("The alarm log in {} is kept for this run only: {}", directory_, problem->text),
+      MessageKey{"backend.alarmLog.keptForRun",
+                 {{"directory", directory_}, {"detail", problem->text}},
+                 parameter_localization("detail", problem->localization)}};
   directory_.clear();
   pending_.clear();
   return false;
@@ -227,9 +228,10 @@ void AlarmLog::load() {
     const auto file = path(name);
     const auto content = files_.read(file, 2 * max_file_bytes);
     if (!content) {
-      problem = {
-          std::format("The alarm log {} cannot be read: {}", file, content.error()),
-          MessageKey{"backend.alarmLog.cannotRead", {{"file", file}, {"detail", content.error()}}}};
+      problem = {std::format("The alarm log {} cannot be read: {}", file, content.error().text),
+                 MessageKey{"backend.alarmLog.cannotRead",
+                            {{"file", file}, {"detail", content.error().text}},
+                            parameter_localization("detail", content.error().localization)}};
       continue;
     }
     const auto& found = *content;
@@ -301,8 +303,10 @@ auto AlarmLog::append(const std::vector<AlarmRecord>& batch) -> bool {
       done = files_.sync_directory(directory_);
     if (!done) {
       const std::scoped_lock lock{mutex_};
-      reason_ = {std::format("The alarm log could not be rotated: {}", done.error()),
-                 MessageKey{"backend.alarmLog.notRotated", {{"detail", done.error()}}}};
+      reason_ = {std::format("The alarm log could not be rotated: {}", done.error().text),
+                 MessageKey{"backend.alarmLog.notRotated",
+                            {{"detail", done.error().text}},
+                            parameter_localization("detail", done.error().localization)}};
       return false;
     }
     file_bytes_ = 0;
@@ -318,8 +322,10 @@ auto AlarmLog::append(const std::vector<AlarmRecord>& batch) -> bool {
   if (!done) {
     // Part of it may be in the file: the next append ends that line first. It is not counted.
     needs_line_break_ = true;
-    reason_ = {std::format("The alarm log could not be saved: {}", done.error()),
-               MessageKey{"backend.alarmLog.notSaved", {{"detail", done.error()}}}};
+    reason_ = {std::format("The alarm log could not be saved: {}", done.error().text),
+               MessageKey{"backend.alarmLog.notSaved",
+                          {{"detail", done.error().text}},
+                          parameter_localization("detail", done.error().localization)}};
     return false;
   }
   file_bytes_ += text.size();

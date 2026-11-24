@@ -1,6 +1,7 @@
 #include <coffeecnc/app/operator_settings.hpp>
 #include <coffeecnc/app/tool_models.hpp>
 
+#include "message_key_json.hpp"
 #include "tool_model_json.hpp"
 #include <nlohmann/json.hpp>
 
@@ -387,7 +388,7 @@ auto encode_operator_settings(const OperatorSettings& settings) -> Encoded {
         {"reason", settings.reason},
         {"document", settings.document ? document_json(*settings.document) : Json(nullptr)}};
     if (const auto& key = settings.localization)
-      snapshot["localization"] = {{"key", key->key}, {"params", key->params}};
+      snapshot["localization"] = message_key_json(*key);
     return snapshot.dump();
   });
 }

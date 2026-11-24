@@ -360,6 +360,27 @@ describe('native and store sentences', () => {
 })
 
 describe('translateMessage', () => {
+  it('keeps nested storage explanations keyed and leaves operating-system text literal', async () => {
+    await setLanguage('fr')
+    const file = '/config/Tool models; first run.json'
+    const osError = 'The file cannot be read.'
+    const detail = {
+      key: 'backend.toolModelStore.cannotRead',
+      params: { file, detail: 'legacy read failure' },
+      params_localization: {
+        detail: { key: 'backend.toolModelStore.fileNotRead', params: { osError } },
+      },
+    }
+    const translated = translateMessage('Legacy warning', {
+      key: 'backend.toolModelStore.changedOutsideReason',
+      params: { file, detail: 'legacy storage warning' },
+      params_localization: { detail },
+    })
+    expect(translated).toContain(file)
+    expect(translated).toContain(`impossible de le lire\u202f: ${osError}`)
+    expect(translated).not.toContain('legacy')
+  })
+
   it('translates a keyed argument and falls back to its text for invalid metadata', async () => {
     await setLanguage('de')
     const fallback = 'Panel request ignored: Bad packet.'

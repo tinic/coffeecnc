@@ -151,6 +151,15 @@ void localization_survives_reload() {
   const MessageKey ignored{"messages.session.requestIgnored",
                            {{"detail", "Missing required field: id."}},
                            {{"detail", {"messages.request.missingField", {{"field", "id"}}}}}};
+  const MessageKey io{"backend.toolModelStore.fileNotRead", {{"osError", "Input/output error"}}};
+  const MessageKey read{
+      "backend.alarmLog.cannotRead",
+      {{"file", "alarm.jsonl"}, {"detail", "it cannot be read: Input/output error"}},
+      parameter_localization("detail", io)};
+  const MessageKey storage{
+      "backend.alarmLog.keptForRun",
+      {{"directory", "/var/cnc"}, {"detail", "The alarm log could not be read"}},
+      parameter_localization("detail", read)};
   const MessageKey restore{
       "backend.machineData.notPutBack",
       {{"files", "Removal failed; name from the operating system"}},
@@ -170,25 +179,26 @@ void localization_survives_reload() {
           R"({"type":"message","level":"error","text":"Keep this text","localization":{"key":"invalid","params":{"x":7}}})"},
       std::string{
           R"({"type":"message","level":"error","text":"Panel request ignored: Bad packet.","localization":{"key":"messages.session.requestIgnored","params":{"detail":"Bad packet."},"params_localization":{"detail":{"key":"messages.request.missingField","params":{"field":7}}}}})"},
+      encode_message(MessageLevel::error, "The alarm log could not be read", epoch, storage),
       encode_message(MessageLevel::error, "Restore failed", epoch, restore)};
   f.log->posted(page, messages, epoch);
   f.log->settle();
   f.open();
   const auto view = f.log->view();
-  require(view.entries.size() == 7 && view.skipped == 0, "Both older and localized records reload");
+  require(view.entries.size() == 8 && view.skipped == 0, "Both older and localized records reload");
   require(!view.entries[0].localization && view.entries[1].localization == contact &&
               view.entries[2].localization == refusal && view.entries[3].localization == ignored &&
               !view.entries[4].localization && view.entries[4].text == "Keep this text" &&
               view.entries[5].localization ==
                   MessageKey{"messages.session.requestIgnored", {{"detail", "Bad packet."}}} &&
-              view.entries[6].localization == restore,
+              view.entries[6].localization == storage && view.entries[7].localization == restore,
           "Known metadata survives reload and invalid metadata does not discard English text");
   const auto wire = Json::parse(encode_alarm_log(view)).at("entries");
   require(wire[1].at("localization").at("key") == contact.key &&
               wire[2].at("localization").at("params").at("axis") == "Z" &&
               wire[3].at("localization").at("params_localization").at("detail") ==
                   Json{{"key", "messages.request.missingField"}, {"params", {{"field", "id"}}}} &&
-              wire[6].at("localization").at("params_lists").at("files")[1].at("text") ==
+              wire[7].at("localization").at("params_lists").at("files")[1].at("text") ==
                   "name from the operating system",
           "The alarm log provides keys and arguments to the next page");
 }
@@ -562,13 +572,15 @@ void writes_only_under_the_lock() {
     log.posted(page, std::vector{encode_message(MessageLevel::error, "not saved", epoch)}, epoch);
     log.settle();
     const auto view = log.view();
-    require(!view.saved && view.reason.find("in use by another CoffeeCNC") != std::string::npos &&
-                view.localization ==
-                    MessageKey{"backend.alarmLog.keptForRun",
-                               {{"directory", directory},
-                                {"detail", "it is in use by another CoffeeCNC."}}} &&
-                view.entries.size() == 1,
-            "Without the lock the log is kept for this run only, and says why: " + view.reason);
+    require(
+        !view.saved && view.reason.find("in use by another CoffeeCNC") != std::string::npos &&
+            view.localization ==
+                MessageKey{
+                    "backend.alarmLog.keptForRun",
+                    {{"directory", directory}, {"detail", "it is in use by another CoffeeCNC."}},
+                    parameter_localization("detail", MessageKey{"backend.alarmLog.inUse"})} &&
+            view.entries.size() == 1,
+        "Without the lock the log is kept for this run only, and says why: " + view.reason);
   }
   require(writes(files) == 0 && !disk.files.contains(file),
           "Nothing is written in a directory another CoffeeCNC holds");
@@ -617,7 +629,7 @@ void real_enospc() {
 #ifdef __linux__
   LocalToolModelFiles files;
   const auto done = files.append("/dev/full", "a line\n");
-  require(!done && done.error().find("No space left on device") != std::string::npos,
+  require(!done && done.error().text.find("No space left on device") != std::string::npos,
           "An append on a full device fails with ENOSPC");
 #endif
 }

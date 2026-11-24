@@ -13,6 +13,7 @@ namespace coffeecnc {
 struct MessageParameterKey {
   std::string key;
   std::map<std::string, std::string> params{};
+  std::map<std::string, MessageParameterKey> params_localization{};
   friend auto operator==(const MessageParameterKey&, const MessageParameterKey&) -> bool = default;
 };
 
@@ -37,7 +38,7 @@ struct MessageKey {
     -> std::map<std::string, MessageParameterKey> {
   if (!key)
     return {};
-  return {{std::string(name), {key->key, key->params}}};
+  return {{std::string(name), {key->key, key->params, key->params_localization}}};
 }
 
 // A reason produced by the backend. Adapters may have only an opaque fallback string.

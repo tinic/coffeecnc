@@ -394,18 +394,18 @@ auto import_runtime_state(LocalToolModelFiles& files, const MachineConfig& confi
     const auto target = directory + '/' + record.name;
     const auto current = files.read(target, 0);
     if (!current)
-      return std::unexpected(std::format("{}: {}", target, current.error()));
+      return std::unexpected(LocalizedReason{std::format("{}: {}", target, current.error().text)});
     if (*current)
       continue;
     const auto source = (record.parent / record.name).string();
     const auto old = files.read(source, record.limit);
     if (!old)
-      return std::unexpected(std::format("{}: {}", source, old.error()));
+      return std::unexpected(LocalizedReason{std::format("{}: {}", source, old.error().text)});
     if (const auto& content = *old) {
       if (content->more)
-        return std::unexpected(std::format("{} is too large to import", source));
+        return std::unexpected(LocalizedReason{std::format("{} is too large to import", source)});
       if (const auto copied = store(target, content->bytes); !copied)
-        return std::unexpected(std::format("{}: {}", target, copied.error()));
+        return std::unexpected(LocalizedReason{std::format("{}: {}", target, copied.error().text)});
     }
   }
   if (const auto saved = files.sync_directory(directory); !saved)
@@ -493,15 +493,18 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
   if (location.availability == ToolModelAvailability::available) {
     const auto directory = location.directory + "/runtime";
     if (const auto prepared = prepare_data_directory(runtime_files, directory); !prepared) {
-      say(std::format("Cannot prepare machine runtime data in {}: {}", directory, prepared.error()));
+      say(std::format("Cannot prepare machine runtime data in {}: {}", directory,
+                      prepared.error().text));
       return 1;
     }
     if (const auto locked = runtime_files.lock(directory); !locked) {
-      say(std::format("Cannot lock machine runtime data in {}: {}", directory, locked.error().reason));
+      say(std::format("Cannot lock machine runtime data in {}: {}", directory,
+                      locked.error().reason.text));
       return 1;
     }
     if (const auto moved = import_runtime_state(runtime_files, *config, directory); !moved) {
-      say(std::format("Cannot import machine runtime data into {}: {}", directory, moved.error()));
+      say(std::format("Cannot import machine runtime data into {}: {}", directory,
+                      moved.error().text));
       return 1;
     }
     config->runtime_directory = directory;

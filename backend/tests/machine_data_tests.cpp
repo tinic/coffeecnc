@@ -840,13 +840,12 @@ void rollback_counts_renamed_files() {
                                       {{"path", target(1)}, {"detail", "No space left on device"}}},
           "The notice names what was not put back, the copy, and the keyed replacement failure: " +
               (notice ? notice->text : std::string{}));
+  const std::vector<MessageListItem> rollback_warnings{
+      {target(0) + " cannot be replaced: No space left on device",
+       MessageParameterKey{"backend.machineData.configNotReplaced",
+                           {{"path", target(0)}, {"detail", "No space left on device"}}}}};
   require(notice && notice->localization &&
-              notice->localization->params_lists.at("files") ==
-                  std::vector<MessageListItem>{
-                      {target(0) + " cannot be replaced: No space left on device",
-                       MessageParameterKey{
-                           "backend.machineData.configNotReplaced",
-                           {{"path", target(0)}, {"detail", "No space left on device"}}}}},
+              notice->localization->params_lists.at("files") == rollback_warnings,
           "The rollback warning retains its own key across the helper restart");
   for (const bool legacy : {true, false}) {
     if (legacy)

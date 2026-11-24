@@ -380,14 +380,24 @@ describe('translateMessage', () => {
     })).toBe('L’aperçu s’arrête à la ligne 3 : G92.3 restaure un décalage enregistré dans le fichier de paramètres.')
   })
 
-  it('translates a helper setup failure around the original interpreter diagnostic', async () => {
+  it('translates helper setup failures and preserves LinuxCNC diagnostics verbatim', async () => {
     await setLanguage('fr')
-    const detail = 'Native message (42).'
+    const linuxcncDetail = 'The file cannot be read.'
     const code = 'G18'
-    expect(translateMessage('the start state `G18` was refused: Native message (42).', {
+    expect(matchMessage(linuxcncDetail)).not.toBeNull()
+    expect(translateMessage(linuxcncDetail)).not.toBe(linuxcncDetail)
+    expect(translateMessage(`the interpreter did not start: ${linuxcncDetail}`, {
+      key: 'backend.previewEngine.helperInterpreterStart',
+      params: { linuxcncDetail },
+    })).toBe(`l’interpréteur n’a pas démarré : ${linuxcncDetail}`)
+    expect(translateMessage(`the start state \`${code}\` was refused: ${linuxcncDetail}`, {
       key: 'backend.previewEngine.helperStartState',
-      params: { code, detail },
-    })).toBe('l’état initial `G18` a été refusé : Native message (42).')
+      params: { code, linuxcncDetail },
+    })).toBe(`l’état initial \`${code}\` a été refusé : ${linuxcncDetail}`)
+    expect(translateMessage(`the program cannot be opened: ${linuxcncDetail}`, {
+      key: 'backend.previewEngine.helperOpenProgram',
+      params: { linuxcncDetail },
+    })).toBe(`le programme ne peut pas être ouvert : ${linuxcncDetail}`)
   })
 
   it('translates a coded helper error with its subroutine location', async () => {

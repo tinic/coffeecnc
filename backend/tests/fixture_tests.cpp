@@ -383,7 +383,7 @@ auto encoded_messages() -> std::vector<EncodedMessage> {
   setup_error.error =
       PreviewError{0, "the start state `G18` was refused: Native message (42).",
                    MessageKey{"backend.previewEngine.helperStartState",
-                              {{"code", "G18"}, {"detail", "Native message (42)."}}}};
+                              {{"code", "G18"}, {"linuxcncDetail", "Native message (42)."}}}};
   messages.push_back(encode_preview(setup_error));
 
   const PreviewSegment approach{4, MoveKind::rapid, 3, {{0, 0, 10}, {0, 0, 2}}};

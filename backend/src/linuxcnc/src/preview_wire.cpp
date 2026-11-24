@@ -316,18 +316,19 @@ auto preview_setup_message(PreviewSetupError reason, const PreviewSetupArguments
     return {std::format("{} cannot be read for the preview", detail),
             MessageKey{"backend.previewEngine.helperReadSource", {{"file", detail}}}};
   case PreviewSetupError::interpreter_start:
-    return {std::format("the interpreter did not start: {}", detail),
-            MessageKey{"backend.previewEngine.helperInterpreterStart", {{"detail", detail}}}};
+    return {
+        std::format("the interpreter did not start: {}", detail),
+        MessageKey{"backend.previewEngine.helperInterpreterStart", {{"linuxcncDetail", detail}}}};
   case PreviewSetupError::active_work_system:
     return {"the parameter file does not select the active work system",
             MessageKey{"backend.previewEngine.helperActiveWorkSystem"}};
   case PreviewSetupError::start_state:
-    return {
-        std::format("the start state `{}` was refused: {}", code, detail),
-        MessageKey{"backend.previewEngine.helperStartState", {{"code", code}, {"detail", detail}}}};
+    return {std::format("the start state `{}` was refused: {}", code, detail),
+            MessageKey{"backend.previewEngine.helperStartState",
+                       {{"code", code}, {"linuxcncDetail", detail}}}};
   case PreviewSetupError::open_program:
     return {std::format("the program cannot be opened: {}", detail),
-            MessageKey{"backend.previewEngine.helperOpenProgram", {{"detail", detail}}}};
+            MessageKey{"backend.previewEngine.helperOpenProgram", {{"linuxcncDetail", detail}}}};
   }
   return {};
 }

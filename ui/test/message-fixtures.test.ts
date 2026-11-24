@@ -1046,7 +1046,7 @@ const examples = [
       "text": "the start state `G18` was refused: Native message (42).",
       "localization": {
         "key": "backend.previewEngine.helperStartState",
-        "params": { "code": "G18", "detail": "Native message (42)." }
+        "params": { "code": "G18", "linuxcncDetail": "Native message (42)." }
       }
     },
     "segments": [],

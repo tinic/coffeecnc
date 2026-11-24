@@ -294,7 +294,8 @@ void helper_setup_error_codes() {
            4,
            {.detail = "Native diagnostics"},
            "the interpreter did not start: Native diagnostics",
-           {"backend.previewEngine.helperInterpreterStart", {{"detail", "Native diagnostics"}}}},
+           {"backend.previewEngine.helperInterpreterStart",
+            {{"linuxcncDetail", "Native diagnostics"}}}},
       Case{PreviewSetupError::active_work_system,
            5,
            {},
@@ -305,12 +306,12 @@ void helper_setup_error_codes() {
            {.detail = "  Native \"diagnostics\"\r\nwith spaces  ", .code = "G18"},
            "the start state `G18` was refused:   Native \"diagnostics\"  with spaces  ",
            {"backend.previewEngine.helperStartState",
-            {{"code", "G18"}, {"detail", "  Native \"diagnostics\"  with spaces  "}}}},
+            {{"code", "G18"}, {"linuxcncDetail", "  Native \"diagnostics\"  with spaces  "}}}},
       Case{PreviewSetupError::open_program,
            7,
            {},
            "the program cannot be opened: ",
-           {"backend.previewEngine.helperOpenProgram", {{"detail", ""}}}},
+           {"backend.previewEngine.helperOpenProgram", {{"linuxcncDetail", ""}}}},
   };
   for (const auto& test : cases) {
     const auto wire = write_preview_setup_error(test.reason, true, test.arguments);
@@ -326,19 +327,38 @@ void helper_setup_error_codes() {
       write_preview_setup_error(PreviewSetupError::read_source, true, {.detail = "Étage A.ngc"}) ==
           "setup_known 0 3 12 Étage A.ngc 0 \n",
       "A filename's length is its byte count");
+  const std::string largest(4096, 'x');
+  const auto largest_record =
+      write_preview_setup_error(PreviewSetupError::open_program, true, {.detail = largest});
+  const auto largest_parsed = parse_output(largest_record + "end error\n");
+  require(largest_record == std::format("setup_known 0 7 4096 {} 0 \n", largest) &&
+              largest_parsed.problem ==
+                  PreviewError{0, std::format("the program cannot be opened: {}", largest),
+                               MessageKey{"backend.previewEngine.helperOpenProgram",
+                                          {{"linuxcncDetail", largest}}}},
+          "A 4096-byte detail round-trips in a coded record");
   const std::string oversized(4097, 'x');
-  require(write_preview_setup_error(PreviewSetupError::open_program, true, {.detail = oversized})
-              .starts_with("error 0 "),
-          "Oversized external text is sent in the legacy form");
-  for (const auto malformed :
-       {"setup_known 1 1 0  0 \n", "setup_known 0 8 0  0 \n", "setup_known 0 1 1 x 0 \n",
-        "setup_known 0 3 10 part\n", "setup_known 0 3 4097 x 0 \n", "setup_known 0 3 1 x0 \n",
-        "setup_known 0 7 0  1 x\n", "setup_known 0 7 0  0 extra\n"}) {
-    const auto parsed = parse_output(malformed);
+  require(write_preview_setup_error(PreviewSetupError::open_program, true, {.detail = oversized}) ==
+              std::format("error 0 the program cannot be opened: {}\n", oversized),
+          "A 4097-byte detail is sent in the legacy form");
+  require(write_preview_setup_error(PreviewSetupError::start_state, true,
+                                    {.detail = "Native text", .code = oversized}) ==
+              std::format("error 0 the start state `{}` was refused: Native text\n", oversized),
+          "A 4097-byte code is sent in the legacy form");
+  const auto require_invalid = [](std::string_view record) {
+    const auto parsed = parse_output(record);
     require(!parsed.problem &&
                 parsed.defect.localization == MessageKey{"backend.previewWire.invalidProblemCode"},
             "An invalid setup diagnostic is rejected");
+  };
+  for (const auto malformed :
+       {"setup_known 1 1 0  0 \n", "setup_known 0 8 0  0 \n", "setup_known 0 1 1 x 0 \n",
+        "setup_known 0 2 1 x 0 \n", "setup_known 0 5 1 x 0 \n", "setup_known 0 3 1xx 0 \n",
+        "setup_known 0 3 3 x\ry 0 \n", "setup_known 0 3 10 part\n", "setup_known 0 3 4097 x 0 \n",
+        "setup_known 0 3 1 x0 \n", "setup_known 0 7 0  1 x\n", "setup_known 0 7 0  0 extra\n"}) {
+    require_invalid(malformed);
   }
+  require_invalid(std::format("setup_known 0 3 4097 {} 0 \n", oversized));
 }
 
 void helper_problem_code_ids() {

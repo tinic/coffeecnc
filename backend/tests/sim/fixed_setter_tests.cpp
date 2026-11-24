@@ -2076,10 +2076,10 @@ void arc_scenarios(NmlPort& port, double scale, double degrees, const auto& mdi,
     // Exercise three primary contacts in mm and four in inch. Put a small obstacle exactly
     // 1 mm ahead of the nominal contact on each ray, one ray at a time.
     const bool three = scale == 1;
-    const std::array primary{0.0, 120.0, 240.0};
-    const double extra = three ? 60.0 : 45.0;
+    const std::array primary{0.0, 90.0, 180.0};
+    const double extra = three ? 270.0 : 45.0;
     const auto headings =
-        three ? std::vector{0.0, 120.0, 240.0, extra} : std::vector{0.0, 90.0, 180.0, 270.0, extra};
+        three ? std::vector{0.0, 90.0, 180.0, extra} : std::vector{0.0, 90.0, 180.0, 270.0, extra};
     for (const bool inside : {true, false}) {
       const auto action = inside ? (three ? SetterAction::bore_arc : SetterAction::bore)
                                  : (three ? SetterAction::boss_arc : SetterAction::boss);
@@ -2095,9 +2095,12 @@ void arc_scenarios(NmlPort& port, double scale, double degrees, const auto& mdi,
       probe_input(inside ? "sim-arc-wall" : "sim-arc-boss");
       at(3.6, -1.7); // a sound circle still fits from off centre
       const auto clear = port.fixed_setter(request(true), epoch, {});
-      if (!clear || !clear->measured)
-        throw std::runtime_error(clear ? "the sound circle did not yield a measurement"
-                                       : clear.error());
+      if (!clear)
+        throw std::runtime_error(clear.error());
+      if (!clear->measured)
+        throw std::runtime_error(clear->origin_refusal
+                                     ? clear->origin_refusal->text
+                                     : "the sound circle did not yield a measurement");
       require(clear->measured->faces.size() == headings.size() && clear->center_diameter &&
                   std::abs(*clear->center_diameter - (inside ? 16 : 12)) < 0.03,
               "the sound circle measures all contacts and its diameter");

@@ -2,6 +2,8 @@
 
 #include "tool_model_json.hpp"
 
+#include <coffeecnc/core/command_policy.hpp>
+
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
@@ -49,40 +51,60 @@ auto index(ToolFamily family) -> std::size_t { return static_cast<std::size_t>(f
 
 class Invalid : public std::runtime_error {
 public:
-  using std::runtime_error::runtime_error;
+  Invalid(const std::string& reason, std::optional<MessageKey> localization)
+      : std::runtime_error(reason), localization_(std::move(localization)) {}
+  [[nodiscard]] auto localization() const -> const std::optional<MessageKey>& {
+    return localization_;
+  }
+
+private:
+  std::optional<MessageKey> localization_;
 };
 
 // The members of an object that has exactly these.
 void exact(const Json& value, std::string_view what, std::initializer_list<std::string_view> names,
            std::initializer_list<std::string_view> optional = {}) {
   if (!value.is_object())
-    throw Invalid(std::format("{} must be an object.", what));
+    throw Invalid(std::format("{} must be an object.", what),
+                  MessageKey{"backend.toolModels.mustBeObject", {{"object", std::string(what)}}});
   const auto* const missing = std::ranges::find_if(
       names, [&](std::string_view name) -> bool { return !value.contains(name); });
   if (missing != names.end())
-    throw Invalid(std::format("{} lacks the field {}.", what, *missing));
+    throw Invalid(std::format("{} lacks the field {}.", what, *missing),
+                  MessageKey{"backend.toolModels.lacksField",
+                             {{"object", std::string(what)}, {"field", std::string(*missing)}}});
   const auto present = std::ranges::count_if(optional, [&](auto name) { return value.contains(name); });
   const auto expected = names.size() + static_cast<std::size_t>(present);
   if (value.size() != expected)
-    throw Invalid(std::format("{} has an unknown field.", what));
+    throw Invalid(std::format("{} has an unknown field.", what),
+                  MessageKey{"backend.toolModels.unknownField", {{"object", std::string(what)}}});
 }
 
 auto real(const Json& object, std::string_view what, std::string_view name) -> double {
   const auto& value = object.at(name);
   if (!value.is_number())
-    throw Invalid(std::format("{} {} must be a number.", what, name));
+    throw Invalid(std::format("{} {} must be a number.", what, name),
+                  MessageKey{"backend.toolModels.fieldNumber",
+                             {{"object", std::string(what)}, {"field", std::string(name)}}});
   const auto number = value.get<double>();
   if (!std::isfinite(number))
-    throw Invalid(std::format("{} {} must be a finite number.", what, name));
+    throw Invalid(std::format("{} {} must be a finite number.", what, name),
+                  MessageKey{"backend.toolModels.fieldFinite",
+                             {{"object", std::string(what)}, {"field", std::string(name)}}});
   return number;
 }
 
 auto whole(const Json& value, std::string_view what, double low, double high) -> double {
   if (!value.is_number())
-    throw Invalid(std::format("{} must be a number.", what));
+    throw Invalid(std::format("{} must be a number.", what),
+                  MessageKey{"backend.toolModels.mustBeNumber", {{"object", std::string(what)}}});
   const auto number = value.get<double>();
   if (!std::isfinite(number) || std::trunc(number) != number || number < low || number > high)
-    throw Invalid(std::format("{} must be an integer from {:.0f} to {:.0f}.", what, low, high));
+    throw Invalid(std::format("{} must be an integer from {:.0f} to {:.0f}.", what, low, high),
+                  MessageKey{"backend.toolModels.mustBeInteger",
+                             {{"object", std::string(what)},
+                              {"low", std::format("{:.0f}", low)},
+                              {"high", std::format("{:.0f}", high)}}});
   return number;
 }
 
@@ -104,7 +126,7 @@ auto read_dimensions(const Json& value, std::string_view what, ToolFamily family
 
 auto read_defaults(const Json& value) -> ToolDefaults {
   if (!value.is_object())
-    throw Invalid("defaults must be an object.");
+    throw Invalid("defaults must be an object.", MessageKey{"backend.toolModels.defaultsObject"});
   auto defaults = factory_tool_defaults();
   std::size_t seen = 0;
   for (const auto family : tool_families) {
@@ -113,18 +135,21 @@ auto read_defaults(const Json& value) -> ToolDefaults {
     if (family == ToolFamily::touch_probe && !value.contains(name))
       continue;
     if (!value.contains(name))
-      throw Invalid(std::format("defaults lacks the family {}.", name));
+      throw Invalid(
+          std::format("defaults lacks the family {}.", name),
+          MessageKey{"backend.toolModels.defaultsLacksFamily", {{"family", std::string(name)}}});
     defaults.at(index(family)) = read_dimensions(value.at(name), name, family);
     ++seen;
   }
   if (value.size() != seen)
-    throw Invalid("defaults has an unknown family.");
+    throw Invalid("defaults has an unknown family.",
+                  MessageKey{"backend.toolModels.defaultsUnknownFamily"});
   return defaults;
 }
 
 auto read_overrides(const Json& value) -> ToolOverrides {
   if (!value.is_object())
-    throw Invalid("overrides must be an object.");
+    throw Invalid("overrides must be an object.", MessageKey{"backend.toolModels.overridesObject"});
   ToolOverrides overrides;
   std::size_t known = 0;
   for (const auto& [name, member] :
@@ -140,7 +165,8 @@ auto read_overrides(const Json& value) -> ToolOverrides {
     ++known;
   }
   if (value.size() != known)
-    throw Invalid("overrides has an unknown field.");
+    throw Invalid("overrides has an unknown field.",
+                  MessageKey{"backend.toolModels.overridesUnknownField"});
   return overrides;
 }
 
@@ -150,7 +176,7 @@ auto read_binding(const Json& value) -> ToolBinding {
   constexpr double high = std::numeric_limits<int>::max();
   const auto& comment = value.at("comment");
   if (!comment.is_string())
-    throw Invalid("tool comment must be a string.");
+    throw Invalid("tool comment must be a string.", MessageKey{"backend.toolModels.commentString"});
   return {static_cast<int>(whole(value.at("number"), "tool number", low, high)),
           static_cast<int>(whole(value.at("pocket"), "tool pocket", low, high)),
           real(value, "tool", "diameter"), comment.get<std::string>()};
@@ -160,7 +186,8 @@ auto read_family(const Json& value) -> ToolFamily {
   if (value.is_string())
     if (const auto found = tool_family(value.get<std::string>()))
       return *found;
-  throw Invalid("family must be a supported tool family.");
+  throw Invalid("family must be a supported tool family.",
+                MessageKey{"backend.toolModels.familySupported"});
 }
 
 auto read_revision(const Json& value, std::string_view what) -> std::uint64_t {
@@ -168,14 +195,15 @@ auto read_revision(const Json& value, std::string_view what) -> std::uint64_t {
       whole(value, what, 0, static_cast<double>(max_tool_model_revision)));
 }
 
-template <typename Read> auto checked(Read&& read) -> std::expected<
-    std::invoke_result_t<Read>, std::string> {
+template <typename Read>
+auto checked(Read&& read) -> std::expected<std::invoke_result_t<Read>, LocalizedReason> {
   try {
     return std::forward<Read>(read)();
   } catch (const Invalid& error) {
-    return std::unexpected(std::string(error.what()));
+    return std::unexpected(LocalizedReason{error.what(), error.localization()});
   } catch (const Json::exception&) {
-    return std::unexpected(std::string("Invalid JSON."));
+    return std::unexpected(
+        LocalizedReason{"Invalid JSON.", MessageKey{"backend.toolModels.invalidJson"}});
   }
 }
 
@@ -185,15 +213,16 @@ public:
   auto real(double value, std::string_view field) -> Json {
     if (!std::isfinite(value)) {
       if (error_.empty())
-        error_ = std::format("{} is not a finite number.", field);
+        error_ = {std::format("{} is not a finite number.", field),
+                  MessageKey{"backend.toolModels.notFinite", {{"field", std::string(field)}}}};
       return 0;
     }
     return value;
   }
-  [[nodiscard]] auto error() const -> const std::string& { return error_; }
+  [[nodiscard]] auto error() const -> const LocalizedReason& { return error_; }
 
 private:
-  std::string error_;
+  LocalizedReason error_;
 };
 
 auto dimensions_json(Numbers& numbers, const ToolDimensions& d, ToolFamily family) -> Json {
@@ -245,17 +274,20 @@ auto document_json(Numbers& numbers, const ToolModelDocument& document) -> Json 
           {"assignments", std::move(assignments)}};
 }
 
-auto finish(const Numbers& numbers, const Json& value) -> Encoded {
+auto finish(const Numbers& numbers, const Json& value)
+    -> std::expected<std::string, LocalizedReason> {
   if (!numbers.error().empty())
     return std::unexpected(numbers.error());
   try {
     // Strict: a comment whose bytes were replaced would be another tool's identity.
     auto text = value.dump();
     if (text.size() > max_tool_model_bytes)
-      return std::unexpected(std::string(too_large_reason));
+      return std::unexpected(
+          LocalizedReason{too_large_reason, MessageKey{"backend.toolModels.tooLarge"}});
     return text;
   } catch (const Json::exception&) {
-    return std::unexpected(std::string("A tool comment is not UTF-8."));
+    return std::unexpected(LocalizedReason{"A tool comment is not UTF-8.",
+                                           MessageKey{"backend.toolModels.commentNotUtf8"}});
   }
 }
 
@@ -264,19 +296,19 @@ auto parse_file(std::string_view text) -> Json {
   const auto callback = [&object_keys](int depth, Json::parse_event_t event, Json& value) -> bool {
     using Event = Json::parse_event_t;
     if ((event == Event::object_start || event == Event::array_start) && depth >= max_file_depth)
-      throw Invalid("It is nested too deeply.");
+      throw Invalid("It is nested too deeply.", MessageKey{"backend.toolModels.nestedTooDeeply"});
     if (event == Event::object_start)
       object_keys.emplace_back();
     else if (event == Event::object_end)
       object_keys.pop_back();
     else if (event == Event::key && !object_keys.back().insert(value.get<std::string>()).second)
-      throw Invalid("It has a duplicate key.");
+      throw Invalid("It has a duplicate key.", MessageKey{"backend.toolModels.duplicateKey"});
     return true;
   };
   try {
     return Json::parse(text.begin(), text.end(), callback);
   } catch (const Json::exception&) {
-    throw Invalid("It is not valid JSON.");
+    throw Invalid("It is not valid JSON.", MessageKey{"backend.toolModels.notValidJson"});
   }
 }
 
@@ -306,116 +338,140 @@ auto factory_tool_defaults() -> ToolDefaults {
             .stylus_length = 20}}};  // touch probe
 }
 
-auto tool_dimension_error(ToolFamily family, const ToolDimensions& d) -> std::string {
+auto tool_dimension_error(ToolFamily family, const ToolDimensions& d) -> LocalizedReason {
   if (family == ToolFamily::touch_probe) {
     return std::ranges::all_of(std::array{d.diameter, d.shank_diameter, d.body_diameter,
-                                        d.body_length, d.stylus_length}, length_ok)
-               ? "" : length_range_reason;
+                                          d.body_length, d.stylus_length},
+                               length_ok)
+               ? LocalizedReason{}
+               : LocalizedReason{length_range_reason, MessageKey{"backend.toolModels.lengthRange"}};
   }
   if (!std::ranges::all_of(std::array{d.diameter, d.cutting_length, d.shank_diameter,
                                       d.overall_length, d.stickout},
                            length_ok))
-    return length_range_reason;
+    return {length_range_reason, MessageKey{"backend.toolModels.lengthRange"}};
   if (!angle_ok(d.tip_angle))
-    return angle_range_reason;
+    return {angle_range_reason, MessageKey{"backend.toolModels.angleRange"}};
   if (d.cutting_length > d.stickout || d.stickout > d.overall_length ||
       d.cutting_length >= d.overall_length)
-    return "Cutting length must fit within stick-out, and stick-out within overall length. "
-           "Leave some shank above the cutting section.";
+    return {"Cutting length must fit within stick-out, and stick-out within overall length. "
+            "Leave some shank above the cutting section.",
+            MessageKey{"backend.toolModels.cuttingLengthFit"}};
   if (family == ToolFamily::ball_mill && d.cutting_length < d.diameter / 2)
-    return "Cutting length must include the full ball radius.";
+    return {"Cutting length must include the full ball radius.",
+            MessageKey{"backend.toolModels.ballRadius"}};
   // The height of the cone, written as the panel computes it.
   constexpr double degrees_per_turn = 360;
   if (pointed(family) &&
       d.diameter / 2 / std::tan(d.tip_angle * std::numbers::pi / degrees_per_turn) >
           d.cutting_length)
-    return "The pointed tip does not fit within the cutting length at this diameter and angle.";
+    return {"The pointed tip does not fit within the cutting length at this diameter and angle.",
+            MessageKey{"backend.toolModels.pointedTip"}};
   return {};
 }
 
-auto tool_defaults_error(const ToolDefaults& defaults) -> std::string {
+auto tool_defaults_error(const ToolDefaults& defaults) -> LocalizedReason {
   for (const auto family : tool_families)
     if (auto error = tool_dimension_error(family, defaults.at(index(family))); !error.empty())
-      return std::format("{}: {}", family_names.at(index(family)), error);
+      return {std::format("{}: {}", family_names.at(index(family)), error.text),
+              MessageKey{"backend.toolModels.familyProblem",
+                         {{"family", std::string(family_names.at(index(family)))},
+                          {"detail", error.text}}}};
   return {};
 }
 
-auto tool_overrides_error(const ToolOverrides& o, ToolFamily family) -> std::string {
+auto tool_overrides_error(const ToolOverrides& o, ToolFamily family) -> LocalizedReason {
   if (family == ToolFamily::touch_probe && (o.cutting_length || o.overall_length || o.stickout || o.tip_angle))
-    return "Cutter dimensions cannot be assigned to a touch probe.";
+    return {"Cutter dimensions cannot be assigned to a touch probe.",
+            MessageKey{"backend.toolModels.cutterOnProbe"}};
   if (family != ToolFamily::touch_probe && (o.body_diameter || o.body_length || o.stylus_length))
-    return "Probe dimensions require the Touch probe family.";
+    return {"Probe dimensions require the Touch probe family.",
+            MessageKey{"backend.toolModels.probeFamily"}};
   for (const auto& length : {o.cutting_length, o.shank_diameter, o.overall_length, o.stickout,
                              o.body_diameter, o.body_length, o.stylus_length})
     if (length && !length_ok(*length))
-      return length_range_reason;
+      return {length_range_reason, MessageKey{"backend.toolModels.lengthRange"}};
   if (o.tip_angle && !angle_ok(*o.tip_angle))
-    return angle_range_reason;
+    return {angle_range_reason, MessageKey{"backend.toolModels.angleRange"}};
   return {};
 }
 
-auto tool_binding_error(const ToolBinding& tool) -> std::string {
+auto tool_binding_error(const ToolBinding& tool) -> LocalizedReason {
   if (tool.number <= 0)
-    return "The tool number must be above zero.";
+    return {"The tool number must be above zero.",
+            MessageKey{"backend.toolModels.toolNumberPositive"}};
   if (tool.pocket < 0)
-    return "The tool pocket must not be below zero.";
+    return {"The tool pocket must not be below zero.",
+            MessageKey{"backend.toolModels.pocketNotNegative"}};
   if (!std::isfinite(tool.diameter) || tool.diameter < 0)
-    return "The tool diameter must be a finite number, not below zero.";
+    return {"The tool diameter must be a finite number, not below zero.",
+            MessageKey{"backend.toolModels.diameterFinite"}};
   if (tool.comment.size() > max_tool_comment_bytes)
-    return "The tool description is longer than 255 bytes.";
+    return {"The tool description is longer than 255 bytes.",
+            MessageKey{"backend.toolModels.descriptionTooLong"}};
   if (tool.comment.find_first_of(std::string_view{"\0\r\n", 3}) != std::string::npos)
-    return "The tool description contains a NUL or a line break.";
+    return {"The tool description contains a NUL or a line break.",
+            MessageKey{"backend.toolModels.descriptionCharacters"}};
   return {};
 }
 
-auto tool_document_error(const ToolModelDocument& document) -> std::string {
+auto tool_document_error(const ToolModelDocument& document) -> LocalizedReason {
   if (auto error = tool_defaults_error(document.defaults); !error.empty())
     return error;
   if (document.assignments.size() > max_tool_model_assignments)
-    return "There are more than 1001 tool model assignments.";
+    return {"There are more than 1001 tool model assignments.",
+            MessageKey{"backend.toolModels.tooManyAssignments"}};
   std::set<int> numbers;
   for (const auto& assignment : document.assignments) {
     auto error = tool_binding_error(assignment.tool);
     if (error.empty())
       error = tool_overrides_error(assignment.overrides, assignment.family);
     if (error.empty() && !valid_tool_holder(assignment.holder))
-      error = "Unknown tool holder.";
+      error = {"Unknown tool holder.", MessageKey{"backend.toolModels.unknownHolder"}};
     if (error.empty() && !numbers.insert(assignment.tool.number).second)
-      error = "It is assigned more than once.";
+      error = {"It is assigned more than once.", MessageKey{"backend.toolModels.assignedTwice"}};
     if (!error.empty())
-      return std::format("Tool {}: {}", assignment.tool.number, error);
+      return {
+          std::format("Tool {}: {}", assignment.tool.number, error.text),
+          MessageKey{"backend.toolModels.toolProblem",
+                     {{"tool", std::to_string(assignment.tool.number)}, {"detail", error.text}}}};
   }
   return {};
 }
 
-auto tool_model_command_error(const ToolModelCommand& command) -> std::string {
+auto tool_model_command_error(const ToolModelCommand& command) -> LocalizedReason {
   return std::visit(
-      [](const auto& c) -> std::string {
+      [](const auto& c) -> LocalizedReason {
         if constexpr (std::is_same_v<std::decay_t<decltype(c)>, SetToolModelDefaults>) {
           return tool_defaults_error(c.defaults);
         } else {
           if (auto error = tool_binding_error(c.tool); !error.empty())
             return error;
           if (!c.family && !c.overrides.empty())
-            return "Overrides must be empty when the assignment is removed.";
+            return {"Overrides must be empty when the assignment is removed.",
+                    MessageKey{"backend.toolModels.overridesEmpty"}};
           if (!valid_tool_holder(c.holder) || (!c.family && !c.holder.empty()))
-            return "Choose a supported holder for a tool model assignment.";
+            return {"Choose a supported holder for a tool model assignment.",
+                    MessageKey{"backend.toolModels.chooseHolder"}};
           return tool_overrides_error(c.overrides, c.family.value_or(ToolFamily::generic));
         }
       },
       command);
 }
 
-auto encode_tool_models(const ToolModels& models) -> Encoded {
+auto encode_tool_models(const ToolModels& models) -> std::expected<std::string, LocalizedReason> {
   const bool available = models.availability == ToolModelAvailability::available;
   if (available && (!models.machine_id || !models.document))
-    return std::unexpected(std::string("An available tool model snapshot needs a machine ID "
-                                       "and a document."));
+    return std::unexpected(LocalizedReason{"An available tool model snapshot needs a machine ID "
+                                           "and a document.",
+                                           MessageKey{"backend.toolModels.snapshotNeedsDocument"}});
   if (!available && (models.document || models.revision != 0))
-    return std::unexpected(std::string("A tool model snapshot that is not available has no "
-                                       "document and revision 0."));
+    return std::unexpected(LocalizedReason{"A tool model snapshot that is not available has no "
+                                           "document and revision 0.",
+                                           MessageKey{"backend.toolModels.unavailableSnapshot"}});
   if (models.revision > max_tool_model_revision)
-    return std::unexpected(std::string("revision is above 2^53 - 1."));
+    return std::unexpected(LocalizedReason{"revision is above 2^53 - 1.",
+                                           MessageKey{"backend.toolModels.revisionTooHigh"}});
   Numbers numbers;
   // The reason may quote a path or the system's words, which need not be UTF-8: replaced here,
   // so that the strict dump below judges the comments alone.
@@ -427,64 +483,88 @@ auto encode_tool_models(const ToolModels& models) -> Encoded {
   Json document = nullptr;
   if (models.document)
     document = document_json(numbers, *models.document);
-  return finish(numbers,
-                {{"type", "tool_models"},
-                 {"machine_id", std::move(machine)},
-                 {"revision", models.revision},
-                 {"availability", available ? "available"
-                                  : models.availability == ToolModelAvailability::session_only
-                                      ? "session_only"
-                                      : "unavailable"},
-                 {"reason", reason},
-                 {"document", std::move(document)}});
+  Json message{{"type", "tool_models"},
+               {"machine_id", std::move(machine)},
+               {"revision", models.revision},
+               {"availability", available ? "available"
+                                : models.availability == ToolModelAvailability::session_only
+                                    ? "session_only"
+                                    : "unavailable"},
+               {"reason", reason},
+               {"document", std::move(document)}};
+  return finish(numbers, message);
 }
 
-auto encode_tool_model_file(const ToolModelFile& file) -> Encoded {
+auto encode_tool_models_reason(const ToolModels& models) -> std::optional<std::string> {
+  if (!models.reason_localization || models.reason.empty())
+    return {};
+  const auto& [key, params] = *models.reason_localization;
+  const Json message{{"type", "tool_models_reason"},
+                     {"machine_id", models.machine_id ? Json(*models.machine_id) : Json(nullptr)},
+                     {"revision", models.revision},
+                     {"reason", models.reason},
+                     {"localization", {{"key", key}, {"params", params}}}};
+  return message.dump(-1, ' ', false, Json::error_handler_t::replace);
+}
+
+auto encode_tool_model_file(const ToolModelFile& file)
+    -> std::expected<std::string, LocalizedReason> {
   if (file.revision > max_tool_model_revision)
-    return std::unexpected(std::string("revision is above 2^53 - 1."));
+    return std::unexpected(LocalizedReason{"revision is above 2^53 - 1.",
+                                           MessageKey{"backend.toolModels.revisionTooHigh"}});
   Numbers numbers;
   return finish(numbers, {{"machine_id", file.machine_id},
                           {"revision", file.revision},
                           {"document", document_json(numbers, file.document)}});
 }
 
-auto decode_tool_model_file(std::string_view text) -> std::expected<ToolModelFile, std::string> {
+auto decode_tool_model_file(std::string_view text)
+    -> std::expected<ToolModelFile, LocalizedReason> {
   if (text.size() > max_tool_model_bytes)
-    return std::unexpected(std::string("It is larger than 1 MiB."));
+    return std::unexpected(
+        LocalizedReason{"It is larger than 1 MiB.", MessageKey{"backend.toolModels.fileTooLarge"}});
   return checked([&]() -> ToolModelFile {
     const auto file = parse_file(text);
     // The version first: a later one may have fields this one does not know.
     if (!file.is_object() || !file.contains("document") || !file.at("document").is_object() ||
         !file.at("document").contains("version"))
-      throw Invalid("It is not a tool model document.");
+      throw Invalid("It is not a tool model document.",
+                    MessageKey{"backend.toolModels.notDocument"});
     const auto& document = file.at("document");
     constexpr double max_version = 9007199254740991;
     const auto version = whole(document.at("version"), "version", 1, max_version);
     if (version != tool_model_version)
-      throw Invalid(std::format("Its version {:.0f} is not supported by this CoffeeCNC.", version));
+      throw Invalid(std::format("Its version {:.0f} is not supported by this CoffeeCNC.", version),
+                    MessageKey{"backend.toolModels.versionNotSupported",
+                               {{"version", std::format("{:.0f}", version)}}});
     exact(file, "The file", {"machine_id", "revision", "document"});
     exact(document, "document", {"version", "defaults", "assignments"});
     ToolModelFile result;
     if (!file.at("machine_id").is_string() ||
         !valid_machine_id(file.at("machine_id").get<std::string>()))
-      throw Invalid("Its machine_id is not a valid machine ID.");
+      throw Invalid("Its machine_id is not a valid machine ID.",
+                    MessageKey{"backend.toolModels.invalidMachineId"});
     result.machine_id = file.at("machine_id").get<std::string>();
     // Revision 0 is the state without a file; a saved one counts from 1.
     result.revision = read_revision(file.at("revision"), "revision");
     if (result.revision == 0)
-      throw Invalid("revision must be an integer from 1 to 9007199254740991.");
+      throw Invalid("revision must be an integer from 1 to 9007199254740991.",
+                    MessageKey{"backend.toolModels.revisionRange"});
     result.document.defaults = read_defaults(document.at("defaults"));
     const auto& assignments = document.at("assignments");
     if (!assignments.is_array())
-      throw Invalid("assignments must be an array.");
+      throw Invalid("assignments must be an array.",
+                    MessageKey{"backend.toolModels.assignmentsArray"});
     if (assignments.size() > max_tool_model_assignments)
-      throw Invalid("There are more than 1001 tool model assignments.");
+      throw Invalid("There are more than 1001 tool model assignments.",
+                    MessageKey{"backend.toolModels.tooManyAssignments"});
     for (const auto& entry : assignments) {
       exact(entry, "An assignment", {"tool", "family", "overrides"}, {"holder"});
       std::string holder;
       if (entry.contains("holder")) {
         if (!entry.at("holder").is_string())
-          throw Invalid("A tool holder must be a string.");
+          throw Invalid("A tool holder must be a string.",
+                        MessageKey{"backend.toolModels.holderString"});
         holder = entry.at("holder").get<std::string>();
       }
       result.document.assignments.push_back(
@@ -492,7 +572,7 @@ auto decode_tool_model_file(std::string_view text) -> std::expected<ToolModelFil
            read_overrides(entry.at("overrides")), std::move(holder)});
     }
     if (const auto error = tool_document_error(result.document); !error.empty())
-      throw Invalid(error);
+      throw Invalid(error.text, error.localization);
     std::ranges::sort(result.document.assignments, {},
                       [](const ToolModelAssignment& a) -> int { return a.tool.number; });
     return result;
@@ -501,19 +581,19 @@ auto decode_tool_model_file(std::string_view text) -> std::expected<ToolModelFil
 
 namespace tool_model_json {
 
-auto defaults(const Json& value) -> std::expected<ToolDefaults, std::string> {
+auto defaults(const Json& value) -> std::expected<ToolDefaults, LocalizedReason> {
   return checked([&]() -> ToolDefaults { return read_defaults(value); });
 }
-auto overrides(const Json& value) -> std::expected<ToolOverrides, std::string> {
+auto overrides(const Json& value) -> std::expected<ToolOverrides, LocalizedReason> {
   return checked([&]() -> ToolOverrides { return read_overrides(value); });
 }
-auto binding(const Json& value) -> std::expected<ToolBinding, std::string> {
+auto binding(const Json& value) -> std::expected<ToolBinding, LocalizedReason> {
   return checked([&]() -> ToolBinding { return read_binding(value); });
 }
-auto family(const Json& value) -> std::expected<ToolFamily, std::string> {
+auto family(const Json& value) -> std::expected<ToolFamily, LocalizedReason> {
   return checked([&]() -> ToolFamily { return read_family(value); });
 }
-auto revision(const Json& value) -> std::expected<std::uint64_t, std::string> {
+auto revision(const Json& value) -> std::expected<std::uint64_t, LocalizedReason> {
   return checked([&]() -> std::uint64_t { return read_revision(value, "base_revision"); });
 }
 

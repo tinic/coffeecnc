@@ -1261,8 +1261,18 @@
     "machine_id": "G0759",
     "revision": 0,
     "availability": "unavailable",
-    "reason": "Tool model settings are already in use",
+    "reason": "Tool model settings in /data/G0759 are already in use by another CoffeeCNC. Tool models are not saved.",
     "document": null
+  },
+  {
+    "type": "tool_models_reason",
+    "machine_id": "G0759",
+    "revision": 0,
+    "reason": "Tool model settings in /data/G0759 are already in use by another CoffeeCNC. Tool models are not saved.",
+    "localization": {
+      "key": "backend.toolModelStore.inUse",
+      "params": { "path": "/data/G0759" }
+    }
   },
   {
     "type": "operator_settings",

@@ -183,9 +183,7 @@ const waitingLabels = { on: 'status.statusBar.waitingOn', off: 'status.statusBar
 .em-brand { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
 .brand-logo { display: block; flex: none; width: 161px; height: 36px; }
 .em-nav { display: flex; padding: 3px; gap: 3px; border-radius: 10px; background: var(--bg-sunken); }
-.em-nav button { min-width: 94px; min-height: var(--touch); padding: 0 19px; border: 0; border-radius: var(--control-radius); font-weight: 600; color: var(--text-dim); cursor: pointer; transition: background-color var(--press-fade) ease-out; }
-.em-nav button:hover { background: var(--control-hover); }
-.em-nav button:active { background: var(--control-active); transition-duration: 0s; }
+.em-nav button { min-width: 94px; padding: 0 19px; font-weight: 600; color: var(--text-dim); }
 .machine { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
 .connection { display: flex; align-items: center; gap: 8px; font-size: var(--type-sm); color: var(--text-dim); }
 .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--go); flex: none; }

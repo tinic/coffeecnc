@@ -16,17 +16,17 @@ namespace coffeecnc::tool_model_json {
 
 // Seven cutter families plus the probe. Legacy documents supply only cutter families.
 [[nodiscard]] auto defaults(const nlohmann::json& value)
-    -> std::expected<ToolDefaults, std::string>;
+    -> std::expected<ToolDefaults, LocalizedReason>;
 // Overrides by family, without diameter. Family-specific validation follows decoding.
 [[nodiscard]] auto overrides(const nlohmann::json& value)
-    -> std::expected<ToolOverrides, std::string>;
+    -> std::expected<ToolOverrides, LocalizedReason>;
 // number and pocket as integers of 32 bits, diameter, comment.
 [[nodiscard]] auto binding(const nlohmann::json& value)
-    -> std::expected<ToolBinding, std::string>;
-[[nodiscard]] auto family(const nlohmann::json& value) -> std::expected<ToolFamily, std::string>;
+    -> std::expected<ToolBinding, LocalizedReason>;
+[[nodiscard]] auto family(const nlohmann::json& value) -> std::expected<ToolFamily, LocalizedReason>;
 // An integer from 0 to 2^53 - 1.
 [[nodiscard]] auto revision(const nlohmann::json& value)
-    -> std::expected<std::uint64_t, std::string>;
+    -> std::expected<std::uint64_t, LocalizedReason>;
 
 } // namespace coffeecnc::tool_model_json
 

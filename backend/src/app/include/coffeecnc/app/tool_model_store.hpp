@@ -41,6 +41,7 @@ struct ToolModelLocation {
   ToolModelAvailability availability{ToolModelAvailability::session_only};
   std::string reason;
   std::string directory; // <data root>/<machine_id>, absolute; empty unless available
+  std::optional<MessageKey> localization{};
   friend auto operator==(const ToolModelLocation&, const ToolModelLocation&) -> bool = default;
 };
 
@@ -291,7 +292,7 @@ private:
   [[nodiscard]] auto read() const -> ToolModels;
   [[nodiscard]] auto prepare() -> std::expected<void, std::string>;
   void show(ToolModels models);
-  [[nodiscard]] auto unavailable(std::string reason) const -> ToolModels;
+  [[nodiscard]] auto unavailable(LocalizedReason reason) const -> ToolModels;
   [[nodiscard]] auto path(std::string_view name) const -> std::string;
 
   ToolModelFiles& files_;
@@ -299,7 +300,7 @@ private:
   ToolModels models_;
   std::string snapshot_;
   // Said with every available snapshot: the machine directory is open to other users.
-  std::string note_;
+  LocalizedReason note_;
   bool locked_{};
 };
 
@@ -367,7 +368,7 @@ public:
   auto operator=(const ToolModelStore&) -> ToolModelStore& = delete;
 
   [[nodiscard]] auto submit(PageToken page, RequestId id, ToolModelCommand command)
-      -> std::optional<std::string> override;
+      -> std::optional<LocalizedReason> override;
   [[nodiscard]] auto submit_operator_settings(PageToken page, RequestId id,
                                               SetOperatorSettings&& command)
       -> std::optional<std::string> override;

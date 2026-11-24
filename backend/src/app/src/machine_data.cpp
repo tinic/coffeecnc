@@ -191,8 +191,8 @@ struct Source {
 };
 
 auto manifest_json(const std::optional<std::string>& machine_id, std::int64_t created,
-                   const std::vector<Source>& sources,
-                   const std::vector<std::pair<std::string, std::string>>& left_out) -> Json {
+                   const std::vector<Source>& sources, const std::vector<BackupOmission>& left_out)
+    -> Json {
   auto files = Json::array();
   std::ranges::transform(sources, std::back_inserter(files), [](const Source& source) -> Json {
     return {{"role", source.role},
@@ -201,8 +201,10 @@ auto manifest_json(const std::optional<std::string>& machine_id, std::int64_t cr
             {"symlink", source.symlink}};
   });
   auto not_included = Json::array();
-  for (const auto& [path, reason] : left_out)
-    not_included.push_back({{"path", path}, {"reason", reason}});
+  std::ranges::transform(left_out, std::back_inserter(not_included),
+                         [](const BackupOmission& item) -> Json {
+                           return {{"path", item.path}, {"reason", item.reason}};
+                         });
   return {{"format", format_name},
           {"version", manifest_version},
           {"machine_id", machine_id ? Json(*machine_id) : Json(nullptr)},
@@ -292,9 +294,10 @@ void MachineData::report_last_restore(const Pause& pause) {
   }
   if (!locked) {
     if (exists(plan_file) || exists(applying_file) || exists(result_file))
-      notice_ = {MessageLevel::error,
+      notice_ = {true,
                  "The data folder is in use: what came of the last restore is shown at the next "
-                 "start."};
+                 "start.",
+                 MessageKey{"backend.machineData.busy"}};
     return;
   }
   const auto record = [&](const std::string& path) -> Json {
@@ -314,38 +317,50 @@ void MachineData::report_last_restore(const Pause& pause) {
     const auto kept = strings(result.value("not_put_back", Json::array()));
     const auto groups = strings(result.value("group_not_kept", Json::array()));
     if (result.value("ok", false) && written == 0)
-      notice_ = {MessageLevel::info,
-                 "The backup was restored: every file already held what the backup holds."};
+      notice_ = {false, "The backup was restored: every file already held what the backup holds.",
+                 MessageKey{"backend.machineData.alreadyRestored"}};
     else if (result.value("ok", false) && !groups.empty())
-      notice_ = {MessageLevel::info,
-                 std::format("The backup was restored: {} files were written. The files from "
-                             "before the restore are in {}. These files did not keep their "
-                             "group, which this user is not in: {}.",
-                             written, copy, joined(groups))};
+      notice_ = {
+          false,
+          std::format("The backup was restored: {} files were written. The files from "
+                      "before the restore are in {}. These files did not keep their "
+                      "group, which this user is not in: {}.",
+                      written, copy, joined(groups)),
+          MessageKey{
+              "backend.machineData.restoredGroups",
+              {{"count", std::to_string(written)}, {"path", copy}, {"files", joined(groups)}}}};
     else if (result.value("ok", false))
-      notice_ = {MessageLevel::info,
+      notice_ = {false,
                  std::format("The backup was restored: {} files were written. The files from "
                              "before the restore are in {}.",
-                             written, copy)};
+                             written, copy),
+                 MessageKey{"backend.machineData.restored",
+                            {{"count", std::to_string(written)}, {"path", copy}}}};
     else if (kept.empty())
       notice_ = {
-          MessageLevel::error,
-          std::format("The restore was not completed: {} The files are as they were.", reason)};
+          true,
+          std::format("The restore was not completed: {} The files are as they were.", reason),
+          MessageKey{"backend.machineData.notCompleted", {{"detail", reason}}}};
     else
-      notice_ = {MessageLevel::error,
+      notice_ = {true,
                  std::format("The restore was not completed: {} These files could not be put "
                              "back: {}. The files from before the restore are in {}.",
-                             reason, joined(kept), copy)};
+                             reason, joined(kept), copy),
+                 MessageKey{"backend.machineData.notPutBack",
+                            {{"detail", reason}, {"files", joined(kept)}, {"path", copy}}}};
   } else if (applying.is_object()) {
-    notice_ = {MessageLevel::error,
+    const auto pre_restore = applying.value("pre_restore", std::string{});
+    notice_ = {true,
                std::format("A restore was interrupted while it wrote the files: some files may "
                            "be the backup's and others not. The files from before the restore "
                            "are in {}: restore that backup to go back.",
-                           applying.value("pre_restore", std::string{}))};
+                           pre_restore),
+               MessageKey{"backend.machineData.interrupted", {{"path", pre_restore}}}};
   } else if (!plan.is_null()) {
-    notice_ = {MessageLevel::error,
+    notice_ = {true,
                "A restore was prepared but not written: LinuxCNC did not stop in time, or the "
-               "restore could not start. Nothing was changed; restore the backup again."};
+               "restore could not start. Nothing was changed; restore the backup again.",
+               MessageKey{"backend.machineData.leftPlan"}};
   }
   if (plan.is_object() && plan.contains("files") && plan["files"].is_array())
     for (const auto& file : plan["files"])
@@ -360,19 +375,27 @@ void MachineData::report_last_restore(const Pause& pause) {
   files_.unlock();
 }
 
-auto MachineData::take_notice() -> std::optional<std::pair<MessageLevel, std::string>> {
+auto MachineData::take_notice() -> std::optional<ControllerMessage> {
   const std::scoped_lock lock{mutex_};
   return std::exchange(notice_, std::nullopt);
 }
 
 auto MachineData::backup(const std::string& directory) -> MachineDataAnswer {
-  const auto refuse = [](std::string reason) -> MachineDataAnswer {
-    return {CommandOutcome::rejected, std::move(reason), {}, false};
-  };
   if (!directory.starts_with('/'))
-    return refuse("Choose a folder for the backup.");
+    return {CommandOutcome::rejected,
+            "Choose a folder for the backup.",
+            {},
+            false,
+            MessageKey{"messages.policy.backupFolder"}};
+  const auto failed = [](const std::string& detail) -> MachineDataAnswer {
+    return {CommandOutcome::failed,
+            std::format("The backup was not written: {}", detail),
+            {},
+            false,
+            MessageKey{"backend.machineData.notWritten", {{"detail", detail}}}};
+  };
   std::vector<Source> sources;
-  std::vector<std::pair<std::string, std::string>> left_out;
+  std::vector<BackupOmission> left_out;
   const auto beside = [](std::string role, std::string name, const std::string& path) -> Source {
     return {std::move(role), std::move(name), parent(path), base_name(path), false};
   };
@@ -380,12 +403,14 @@ auto MachineData::backup(const std::string& directory) -> MachineDataAnswer {
   std::set<std::string> taken{paths_.ini_file};
   for (const auto& written : paths_.hal_files) {
     if (written.starts_with("LIB:")) {
-      left_out.emplace_back(written, "a HAL file of LinuxCNC's own library");
+      left_out.emplace_back(written, "a HAL file of LinuxCNC's own library",
+                            MessageKey{"backend.machineData.libHal"});
       continue;
     }
     const auto relative = hal_relative(written, paths_.config_directory);
     if (!relative) {
-      left_out.emplace_back(written, "not a file in the configuration folder");
+      left_out.emplace_back(written, "not a file in the configuration folder",
+                            MessageKey{"backend.machineData.outsideConfig"});
       continue;
     }
     const auto path = paths_.config_directory + '/' + *relative;
@@ -412,12 +437,13 @@ auto MachineData::backup(const std::string& directory) -> MachineDataAnswer {
   for (auto source : sources) {
     const auto content = read_config(files_, source.root, source.relative);
     if (!content)
-      return {CommandOutcome::failed, "The backup was not written: " + content.error(), {}, false};
+      return failed(content.error());
     const auto& found = *content;
     if (!found) {
       // A data file that was never written, or a HAL file LinuxCNC finds elsewhere.
       if (source.role == "hal" || source.role == "ini")
-        left_out.emplace_back(source.path(), "not found in the configuration folder");
+        left_out.emplace_back(source.path(), "not found in the configuration folder",
+                              MessageKey{"backend.machineData.notFound"});
       continue;
     }
     entries.push_back(
@@ -432,33 +458,41 @@ auto MachineData::backup(const std::string& directory) -> MachineDataAnswer {
                      std::chrono::floor<std::chrono::seconds>(now).count()};
   const auto archive = write_archive(entries);
   if (!archive)
-    return {CommandOutcome::failed, "The backup was not written: " + archive.error(), {}, false};
+    return failed(archive.error().text);
   const auto name =
       std::format("coffeecnc-{}-{}.tar.gz",
                   paths_.machine_id.empty() ? "machine" : paths_.machine_id, stamp(now));
   const auto target = (directory == "/" ? std::string{} : directory) + '/' + name;
   if (auto written = replace_file(files_, target, *archive); !written)
-    return {CommandOutcome::failed, "The backup was not written: " + written.error(), {}, false};
+    return failed(written.error());
   return {CommandOutcome::accepted,
           "",
           {encode_backup_written({target, included.size(), archive->size(), left_out})},
           false};
 }
 
-auto MachineData::check(const std::string& path) -> std::expected<Checked, std::string> {
+auto MachineData::check(const std::string& path) -> std::expected<Checked, LocalizedReason> {
   if (!path.starts_with('/'))
-    return std::unexpected(std::string("Choose a backup file."));
+    return std::unexpected(
+        LocalizedReason{"Choose a backup file.", MessageKey{"messages.policy.backupFile"}});
   if (paths_.data_directory.empty())
-    return std::unexpected(std::string(
-        "A restore needs the machine's data folder: set [COFFEECNC] MACHINE_ID in the INI file."));
+    return std::unexpected(LocalizedReason{
+        "A restore needs the machine's data folder: set [COFFEECNC] MACHINE_ID in the INI file.",
+        MessageKey{"backend.machineData.needsData"}});
   const auto content = files_.read(path, max_archive_bytes);
   if (!content)
-    return std::unexpected(std::format("{} cannot be read: {}", path, content.error()));
+    return std::unexpected(
+        LocalizedReason{std::format("{} cannot be read: {}", path, content.error()),
+                        MessageKey{"backend.machineData.cannotRead",
+                                   {{"path", path}, {"detail", content.error()}}}});
   const auto& found = *content;
   if (!found)
-    return std::unexpected(std::format("{} does not exist.", path));
+    return std::unexpected(
+        LocalizedReason{std::format("{} does not exist.", path),
+                        MessageKey{"backend.machineData.missing", {{"path", path}}}});
   if (found->more)
-    return std::unexpected(std::string("The archive is larger than 64 MiB."));
+    return std::unexpected(LocalizedReason{"The archive is larger than 64 MiB.",
+                                           MessageKey{"backend.machineData.archiveTooLarge"}});
   const auto& bytes = found->bytes;
   const auto entries = read_archive(bytes);
   if (!entries)
@@ -466,13 +500,15 @@ auto MachineData::check(const std::string& path) -> std::expected<Checked, std::
   const auto manifest_entry =
       std::ranges::find(*entries, backup_manifest_name, &ArchiveEntry::name);
   if (manifest_entry == entries->end())
-    return std::unexpected(std::string("This is not a CoffeeCNC backup: it has no manifest."));
+    return std::unexpected(LocalizedReason{"This is not a CoffeeCNC backup: it has no manifest.",
+                                           MessageKey{"backend.machineData.noManifest"}});
   const auto manifest = Json::parse(manifest_entry->bytes, nullptr, false);
   if (!manifest.is_object() || manifest.value("format", std::string{}) != format_name ||
       !manifest.contains("version") || manifest["version"] != manifest_version ||
       !manifest.contains("files") || !manifest["files"].is_array())
     return std::unexpected(
-        std::string("This backup was written by another version of CoffeeCNC, or is damaged."));
+        LocalizedReason{"This backup was written by another version of CoffeeCNC, or is damaged.",
+                        MessageKey{"backend.machineData.otherVersion"}});
   Checked checked;
   if (const auto id = manifest.find("machine_id"); id != manifest.end() && id->is_string())
     checked.machine_id = id->get<std::string>();
@@ -482,19 +518,25 @@ auto MachineData::check(const std::string& path) -> std::expected<Checked, std::
   // A restore overwrites this machine's INI and HAL files: a backup that does not say whose it
   // is could be another machine's.
   if (!paths_.machine_id.empty() && !checked.machine_id)
-    return std::unexpected(std::format(
-        "This backup does not name its machine; this machine is {}. It is not restored.",
-        paths_.machine_id));
+    return std::unexpected(LocalizedReason{
+        std::format(
+            "This backup does not name its machine; this machine is {}. It is not restored.",
+            paths_.machine_id),
+        MessageKey{"backend.machineData.noMachine", {{"machine", paths_.machine_id}}}});
   if (checked.machine_id && !paths_.machine_id.empty() && *checked.machine_id != paths_.machine_id)
-    return std::unexpected(std::format("This backup is of machine {}; this machine is {}.",
-                                       *checked.machine_id, paths_.machine_id));
+    return std::unexpected(LocalizedReason{
+        std::format("This backup is of machine {}; this machine is {}.", *checked.machine_id,
+                    paths_.machine_id),
+        MessageKey{"backend.machineData.otherMachine",
+                   {{"backup", *checked.machine_id}, {"machine", paths_.machine_id}}}});
   // The role of each name, from the manifest.
   std::vector<std::pair<std::string, std::string>> listed;
   for (const auto& file : manifest["files"]) {
     if (!file.is_object() || !file.contains("role") || !file["role"].is_string() ||
         !file.contains("name") || !file["name"].is_string())
       return std::unexpected(
-          std::string("This backup was written by another version of CoffeeCNC, or is damaged."));
+          LocalizedReason{"This backup was written by another version of CoffeeCNC, or is damaged.",
+                          MessageKey{"backend.machineData.otherVersion"}});
     listed.emplace_back(file["role"].get<std::string>(), file["name"].get<std::string>());
   }
   // The HAL files a restore may write: those this machine's INI file names, and those the
@@ -515,16 +557,22 @@ auto MachineData::check(const std::string& path) -> std::expected<Checked, std::
   bool ini = false;
   for (const auto& entry : *entries) {
     if (!names.insert(entry.name).second)
-      return std::unexpected(std::format("{} is in the archive twice.", entry.name));
+      return std::unexpected(
+          LocalizedReason{std::format("{} is in the archive twice.", entry.name),
+                          MessageKey{"backend.machineData.twice", {{"name", entry.name}}}});
     if (entry.name == backup_manifest_name)
       continue;
     const auto role =
         std::ranges::find(listed, entry.name, &std::pair<std::string, std::string>::second);
     if (role == listed.end())
-      return std::unexpected(std::format("{} is not in the backup's manifest.", entry.name));
-    const auto refused = [&]() -> std::unexpected<std::string> {
-      return std::unexpected(std::format(
-          "{} is not a name this backup may restore: the archive is refused.", entry.name));
+      return std::unexpected(
+          LocalizedReason{std::format("{} is not in the backup's manifest.", entry.name),
+                          MessageKey{"backend.machineData.notListed", {{"name", entry.name}}}});
+    const auto refused = [&]() -> std::unexpected<LocalizedReason> {
+      return std::unexpected(LocalizedReason{
+          std::format("{} is not a name this backup may restore: the archive is refused.",
+                      entry.name),
+          MessageKey{"backend.machineData.badName", {{"name", entry.name}}}});
     };
     Planned planned;
     const auto& kind = role->first;
@@ -548,8 +596,10 @@ auto MachineData::check(const std::string& path) -> std::expected<Checked, std::
         const bool script = relative.ends_with(".hal") || relative.ends_with(".tcl");
         if (!hal_names.contains(relative) || !script ||
             own_files.contains(paths_.config_directory + '/' + relative))
-          return std::unexpected(std::format(
-              "{} is not a HAL file the INI file names: the archive is refused.", entry.name));
+          return std::unexpected(LocalizedReason{
+              std::format("{} is not a HAL file the INI file names: the archive is refused.",
+                          entry.name),
+              MessageKey{"backend.machineData.halNotNamed", {{"name", entry.name}}}});
         planned.root = paths_.config_directory;
         planned.relative = relative;
       }
@@ -559,10 +609,15 @@ auto MachineData::check(const std::string& path) -> std::expected<Checked, std::
           after(head).size() > max_relative_bytes)
         return refused();
       const auto& target = kind == "tool_table" ? paths_.tool_table : paths_.parameter_file;
-      if (target.empty())
-        return std::unexpected(std::format(
-            "This configuration has no {}: {} cannot be restored.",
-            kind == "tool_table" ? "[EMCIO] TOOL_TABLE" : "[RS274NGC] PARAMETER_FILE", entry.name));
+      if (target.empty()) {
+        const auto* setting =
+            kind == "tool_table" ? "[EMCIO] TOOL_TABLE" : "[RS274NGC] PARAMETER_FILE";
+        return std::unexpected(
+            LocalizedReason{std::format("This configuration has no {}: {} cannot be restored.",
+                                        setting, entry.name),
+                            MessageKey{"backend.machineData.notConfigured",
+                                       {{"key", setting}, {"name", entry.name}}}});
+      }
       beside(target);
     } else if (kind == "data") {
       const auto name = entry.name.starts_with("data/") ? after("data/") : std::string{};
@@ -576,24 +631,34 @@ auto MachineData::check(const std::string& path) -> std::expected<Checked, std::
       return refused();
     }
     if (!targets.insert(planned.target()).second)
-      return std::unexpected(std::format("Two files of the backup go to {}.", planned.target()));
+      return std::unexpected(LocalizedReason{
+          std::format("Two files of the backup go to {}.", planned.target()),
+          MessageKey{"backend.machineData.sameTarget", {{"path", planned.target()}}}});
     const auto now = read_config(files_, planned.root, planned.relative);
     if (!now)
-      return std::unexpected(std::format("{} cannot be restored: {}. The archive is refused.",
-                                         entry.name, now.error()));
+      return std::unexpected(
+          LocalizedReason{std::format("{} cannot be restored: {}. The archive is refused.",
+                                      entry.name, now.error()),
+                          MessageKey{"backend.machineData.unreachable",
+                                     {{"name", entry.name}, {"detail", now.error()}}}});
     const auto& current = *now;
     // A restore makes no folder (but the data folder): a target in a folder that is not there
     // cannot be written once LinuxCNC has stopped.
     if (!current && kind != "data") {
       const auto folder = files_.folder_exists_beneath(planned.root, planned.relative);
       if (!folder)
-        return std::unexpected(std::format("{} cannot be restored: {}. The archive is refused.",
-                                           entry.name, folder.error()));
-      if (!*folder)
         return std::unexpected(
+            LocalizedReason{std::format("{} cannot be restored: {}. The archive is refused.",
+                                        entry.name, folder.error()),
+                            MessageKey{"backend.machineData.unreachable",
+                                       {{"name", entry.name}, {"detail", folder.error()}}}});
+      if (!*folder)
+        return std::unexpected(LocalizedReason{
             std::format("{} cannot be restored: the folder of {} does not exist. The archive is "
                         "refused.",
-                        entry.name, planned.target()));
+                        entry.name, planned.target()),
+            MessageKey{"backend.machineData.noFolder",
+                       {{"name", entry.name}, {"path", planned.target()}}}});
     }
     planned.role = kind;
     planned.name = entry.name;
@@ -608,7 +673,8 @@ auto MachineData::check(const std::string& path) -> std::expected<Checked, std::
     checked.files.push_back(std::move(planned));
   }
   if (!ini)
-    return std::unexpected(std::string("This backup has no INI file."));
+    return std::unexpected(
+        LocalizedReason{"This backup has no INI file.", MessageKey{"backend.machineData.noIni"}});
   checked.token = std::format("{:016x}", fnv(bytes, fnv(path + '\0')));
   return checked;
 }
@@ -616,7 +682,8 @@ auto MachineData::check(const std::string& path) -> std::expected<Checked, std::
 auto MachineData::check_restore(const std::string& path) -> MachineDataAnswer {
   const auto checked = check(path);
   if (!checked)
-    return {CommandOutcome::rejected, checked.error(), {}, false};
+    return {
+        CommandOutcome::rejected, checked.error().text, {}, false, checked.error().localization};
   RestoreSummary summary{path, checked->token, checked->machine_id, checked->created, {}};
   for (const auto& file : checked->files)
     summary.files.push_back(
@@ -625,15 +692,16 @@ auto MachineData::check_restore(const std::string& path) -> MachineDataAnswer {
 }
 
 auto MachineData::restore(const std::string& path, const std::string& token, std::uint64_t page,
-                          const std::function<std::string()>& recheck) -> MachineDataAnswer {
-  const auto refuse = [](std::string reason) -> MachineDataAnswer {
-    return {CommandOutcome::rejected, std::move(reason), {}, false};
+                          const std::function<LocalizedReason()>& recheck) -> MachineDataAnswer {
+  const auto refuse = [](const LocalizedReason& reason) -> MachineDataAnswer {
+    return {CommandOutcome::rejected, reason.text, {}, false, reason.localization};
   };
   const auto checked = check(path);
   if (!checked)
     return refuse(checked.error());
   if (checked->token != token)
-    return refuse("The backup file changed after it was checked. Check it again.");
+    return refuse({"The backup file changed after it was checked. Check it again.",
+                   MessageKey{"backend.machineData.changedSince"}});
   if (const auto reason = recheck(); !reason.empty())
     return refuse(reason);
   // After the recheck: a page that begins meanwhile abandons under this lock, once this staging
@@ -644,10 +712,18 @@ auto MachineData::restore(const std::string& path, const std::string& token, std
     if (file.change != "same")
       changes.push_back(&file);
   if (changes.empty())
-    return {CommandOutcome::accepted, "Nothing to restore: every file is the same.", {}, false};
+    return {CommandOutcome::accepted,
+            "Nothing to restore: every file is the same.",
+            {},
+            false,
+            MessageKey{"backend.machineData.nothing"}};
   const auto staging = paths_.data_directory + '/' + std::string(restore_directory_name);
   const auto failed = [](const std::string& reason) -> MachineDataAnswer {
-    return {CommandOutcome::failed, "The restore was not prepared: " + reason, {}, false};
+    return {CommandOutcome::failed,
+            std::format("The restore was not prepared: {}", reason),
+            {},
+            false,
+            MessageKey{"backend.machineData.notPrepared", {{"detail", reason}}}};
   };
   // The data folder too, where nothing was saved in it yet: each missing folder 0700.
   if (const auto made = prepare_data_directory(files_, paths_.data_directory); !made)
@@ -857,7 +933,7 @@ auto apply_staged_restore(ToolModelFiles& files, const std::string& data_directo
     copy_path = std::format("{}/pre-restore-{}.tar.gz", data_directory, stamp(now));
     const auto archive = write_archive(entries);
     const auto saved = archive ? replace_file(files, copy_path, *archive)
-                               : ToolModelFiles::Done{std::unexpected(archive.error())};
+                               : ToolModelFiles::Done{std::unexpected(archive.error().text)};
     if (!saved)
       reason = "the files before the restore could not be saved: " + saved.error();
   }

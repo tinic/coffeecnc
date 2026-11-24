@@ -177,7 +177,7 @@ public:
       -> ActionResult = 0;
   // From the first line of the loaded program.
   [[nodiscard]] virtual auto run(const Wanted& wanted) -> ActionResult = 0;
-  [[nodiscard]] virtual auto validate_program_inputs(const PreviewInputs&) -> std::string {
+  [[nodiscard]] virtual auto validate_program_inputs(const PreviewInputs&) -> LocalizedReason {
     return {};
   }
   // Starts only the checked file, even if task has an older descriptor for the same path.

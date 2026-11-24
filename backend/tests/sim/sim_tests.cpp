@@ -4218,6 +4218,32 @@ void program_preflight(Rig& rig, NmlLoads& loads) {
   check("preflight_runs_the_checked_replacement_file",
         old.check.has_value() && ready && replaced.accepted() && reached_new, replaced.text());
 
+  rig.direct([&]() -> void {
+    const auto writes = rig.port.writes();
+    auto changed = inputs;
+    changed.start.active_codes.clear();
+    const auto modes = rig.port.run_checked(changed, always(), always());
+    check("preflight_changed_modes_return_a_key",
+          modes.status == ActionStatus::failed &&
+              modes.reason == "The interpreter modes changed. Review a fresh program check." &&
+              modes.localization == MessageKey{"backend.nmlPort.modesChanged"},
+          modes.reason);
+
+    const auto outdated = rig.port.run_checked(inputs, [] { return false; }, always());
+    check("preflight_stale_data_returns_a_key",
+          outdated.status == ActionStatus::failed &&
+              outdated.localization == MessageKey{"messages.session.programOrToolsChanged"},
+          outdated.reason);
+
+    const auto plain =
+        rig.port.run_to_breakpoint(inputs, "o100 sub\no100 endsub\nM30\n", 1, always(), always());
+    check("preflight_breakpoint_subroutine_returns_a_key",
+          plain.status == ActionStatus::failed &&
+              plain.localization == MessageKey{"backend.nmlPort.breakpointPlainProgram"} &&
+              std::ranges::equal(rig.port.writes(), writes),
+          plain.reason);
+  });
+
   rig.stop();
   const auto marker = std::filesystem::path(rig.config.directory) / "coffeecnc-air-cut.txt";
   std::ofstream{marker} << "25\n";

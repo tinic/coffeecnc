@@ -1348,7 +1348,7 @@ auto Session::check_program_start(const Queued& request, const Run& command,
                              MessageKey{"messages.session.programCheckChanged"}};
   auto reason = port_.validate_program_inputs(*check.source.inputs);
   if (!reason.empty())
-    return ProgramCheckIssue{std::move(reason)};
+    return ProgramCheckIssue{std::move(reason.text), std::move(reason.localization)};
   return std::nullopt;
 }
 

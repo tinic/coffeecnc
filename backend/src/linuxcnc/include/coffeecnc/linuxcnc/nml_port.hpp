@@ -320,7 +320,8 @@ public:
   [[nodiscard]] auto open_program(std::string_view path, const Wanted& wanted)
       -> ActionResult override;
   [[nodiscard]] auto run(const Wanted& wanted) -> ActionResult override;
-  [[nodiscard]] auto validate_program_inputs(const PreviewInputs& inputs) -> std::string override;
+  [[nodiscard]] auto validate_program_inputs(const PreviewInputs& inputs)
+      -> LocalizedReason override;
   [[nodiscard]] auto run_checked(const PreviewInputs& inputs, const Wanted& current,
                                  const Wanted& wanted) -> ActionResult override;
   [[nodiscard]] auto run_to_breakpoint(const PreviewInputs& inputs, std::string_view program,

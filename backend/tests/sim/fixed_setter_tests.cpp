@@ -1096,6 +1096,8 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
             "a stopped probe cycle restores G91, M50 and M52 once the machine is on");
   }
   mdi("M52 P0");
+  // Back to the solid part: outside the bore its wall input trips during the moves below.
+  probe_input("sim-rot-outer", "sim-rot-solid.and");
 
   // Ball calibration stays refused in a rotated system, before any command.
   at(2, 1);

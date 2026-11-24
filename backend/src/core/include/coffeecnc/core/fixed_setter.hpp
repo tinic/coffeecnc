@@ -9,6 +9,7 @@
 #include <limits>
 #include <numbers>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -253,6 +254,17 @@ inline auto circle_through(const std::array<std::array<double, 2>, 3>& points)
     return std::nullopt;
   return Circle{{points[0][0] + ux, points[0][1] + uy}, radius};
 }
+struct CircleFit {
+  Circle circle;
+  double max_residual_mm;
+};
+constexpr double circle_check_limit_mm = 0.02;
+
+// Orthogonal least squares on four or five ball-centre contacts. Reject a singular fit or a
+// fit that does not converge. The residual is the largest radial miss, in millimetres.
+[[nodiscard]] auto fit_probe_circle(std::span<const std::array<double, 2>> points)
+    -> std::optional<CircleFit>;
+
 // The arc the points cover seen from `centre`, degrees.
 inline auto measured_span(const std::array<std::array<double, 2>, 3>& points,
                           std::array<double, 2> centre) -> double {

@@ -318,6 +318,37 @@ void height_map_grid() {
   require(!std::isfinite(height_map_point_seconds(slow)), "no latch feed: no bound");
 }
 
+void circle_verification() {
+  const auto check = []<std::size_t Size>(const std::array<double, Size>& angles) {
+    std::array<std::array<double, 2>, Size> points{};
+    for (std::size_t i = 0; i < angles.size(); ++i) {
+      const double angle = angles.at(i) * std::numbers::pi / 180;
+      points.at(i) = {250 + 7 * std::cos(angle), -180 + 7 * std::sin(angle)};
+    }
+    const auto fit = fit_probe_circle(points);
+    require(fit && std::abs(fit->circle.radius - 7) < 1e-8 &&
+                std::hypot(fit->circle.centre[0] - 250, fit->circle.centre[1] + 180) < 1e-8 &&
+                fit->max_residual_mm < 1e-8,
+            "verified contacts on a circle return its centre and diameter");
+    for (std::size_t i = 0; i < angles.size(); ++i) {
+      const double angle = angles.at(i) * std::numbers::pi / 180;
+      for (const double sign : {-1.0, 1.0}) {
+        auto early = points;
+        early.at(i)[0] += sign * std::cos(angle);
+        early.at(i)[1] += sign * std::sin(angle);
+        const auto result = fit_probe_circle(early);
+        require(result && result->max_residual_mm > circle_check_limit_mm,
+                "the fitted circle rejects a 1 mm early trip at each bore and boss contact");
+      }
+    }
+  };
+  check(std::array{0.0, 120.0, 240.0, 60.0});
+  check(std::array{0.0, 90.0, 180.0, 270.0, 45.0});
+  const std::array line{std::array{0.0, 0.0}, std::array{1.0, 1.0}, std::array{2.0, 2.0},
+                        std::array{3.0, 3.0}};
+  require(!fit_probe_circle(line), "collinear verification contacts are rejected");
+}
+
 // Three-point bore and boss geometry (#247): the circle, the arc it covers, the spread checks.
 void arc_geometry() {
   const auto on_circle = [](double degrees) {
@@ -975,6 +1006,7 @@ auto main() -> int {
     edge_rotation_wraps();
     probe_modal_restore();
     arc_geometry();
+    circle_verification();
     work_origin_gates();
     rotation_and_shift_gates();
     paused_z_gates();

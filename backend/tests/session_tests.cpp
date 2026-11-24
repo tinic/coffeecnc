@@ -178,8 +178,8 @@ public:
     return record("remove_tool", std::to_string(number));
   }
   // Read by a restore of the loaded tool's length; not an action, so not recorded.
-  std::expected<ToolLengthInEffect, std::string> length_in_effect{ToolLengthInEffect{}};
-  auto tool_length_in_effect() -> std::expected<ToolLengthInEffect, std::string> override {
+  std::expected<ToolLengthInEffect, LocalizedReason> length_in_effect{ToolLengthInEffect{}};
+  auto tool_length_in_effect() -> std::expected<ToolLengthInEffect, LocalizedReason> override {
     return length_in_effect;
   }
 
@@ -505,10 +505,11 @@ public:
   };
   std::vector<Submitted> submitted;
   std::vector<SetOperatorSettings> operator_submitted;
+  std::optional<LocalizedReason> settings_refusal;
   auto submit_operator_settings(PageToken, RequestId, SetOperatorSettings&& command)
-      -> std::optional<std::string> override {
+      -> std::optional<LocalizedReason> override {
     operator_submitted.push_back(std::move(command));
-    return refusal;
+    return settings_refusal;
   }
   std::vector<std::uint64_t> ended;
   // Not empty: the next commands are refused with it.
@@ -650,6 +651,18 @@ void operator_settings_go_to_storage() {
       at(0ms));
   require(outcome.messages.empty() && models.operator_submitted.size() == 1,
           "Operator preferences go directly to storage");
+  models.settings_refusal =
+      LocalizedReason{"Default jog speed exceeds the configured machine limit.",
+                      MessageKey{"backend.operatorSettings.jogSpeedLimit"}};
+  const auto denied = results(driver.handle(
+      page,
+      R"({"id":3,"type":"set_operator_settings","machine_id":"mill-1","base_revision":0,"document":)"
+      R"({"version":1,"startup_units":"inch","enabled_wcs":[1,9],"default_spindle_rpm":1800,"default_jog_velocity":1001}})",
+      at(0ms)));
+  require(denied.size() == 1 && denied.front().at("outcome") == "rejected" &&
+              denied.front().at("reason") == models.settings_refusal->text &&
+              denied.front().at("refusal").at("key") == "backend.operatorSettings.jogSpeedLimit",
+          "An immediate settings validation failure carries its English fallback and refusal key");
   require(port.calls.empty() && port.snapshots == 0,
           "Saving preferences issues no controller commands or reads");
 }
@@ -2721,8 +2734,15 @@ void tool_length_restore() {
   in_effect(90);
   rig.accepted(restore);
   rig.acted({"mdi G10 L1 P3 Z48.2"}, "A G43.2 sum stays: G10 L1 only");
-  rig.port.length_in_effect = std::unexpected(std::string("Cannot read tool table tool.tbl."));
-  rig.expect(restore, "rejected", "Cannot read tool table tool.tbl.");
+  rig.port.length_in_effect = std::unexpected(
+      LocalizedReason{"Cannot read tool table tool.tbl.",
+                      MessageKey{"backend.nmlPort.cannotReadToolTable", {{"file", "tool.tbl"}}}});
+  const auto unreadable = rig.result(restore);
+  require(unreadable.at("outcome") == "rejected" &&
+              unreadable.at("reason") == "Cannot read tool table tool.tbl." &&
+              unreadable.at("localization") == Json{{"key", "backend.nmlPort.cannotReadToolTable"},
+                                                    {"params", {{"file", "tool.tbl"}}}},
+          "An unreadable tool table reports its path and a translation key");
   rig.acted({}, "An unreadable offset in effect sends nothing");
   rig.port.state.tool_in_spindle = 2;
   rig.accepted(restore);

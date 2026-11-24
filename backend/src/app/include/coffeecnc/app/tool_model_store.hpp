@@ -371,7 +371,7 @@ public:
       -> std::optional<LocalizedReason> override;
   [[nodiscard]] auto submit_operator_settings(PageToken page, RequestId id,
                                               SetOperatorSettings&& command)
-      -> std::optional<std::string> override;
+      -> std::optional<LocalizedReason> override;
   void page_ended(PageToken page) override;
   [[nodiscard]] auto touch_probe_loaded(int tool_number) -> std::optional<bool> override;
   // The machine's own touch probe tool ([COFFEECNC] TOUCH_PROBE_TOOL): always a probe.

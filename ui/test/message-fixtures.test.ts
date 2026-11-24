@@ -1039,8 +1039,14 @@ const examples = [
   {
     "type": "message",
     "level": "info",
-    "text": "Probe tripped",
-    "time": 1700000001000
+    "text": "T1 restored in the spindle.",
+    "time": 1700000001000,
+    "localization": {
+      "key": "backend.nmlPort.restored",
+      "params": {
+        "tool": "1"
+      }
+    }
   },
   {
     "type": "message",
@@ -1063,6 +1069,16 @@ const examples = [
     "id": 42,
     "outcome": "rejected",
     "reason": "Home all configured axes first."
+  },
+  {
+    "type": "result",
+    "id": 51,
+    "outcome": "rejected",
+    "reason": "The interpreter modes changed. Review a fresh program check.",
+    "refusal": {
+      "key": "backend.nmlPort.modesChanged",
+      "params": {}
+    }
   },
   {
     "type": "result",
@@ -1147,6 +1163,16 @@ const examples = [
     "refusal": {
       "key": "messages.request.missingField",
       "params": { "field": "path" }
+    }
+  },
+  {
+    "type": "result",
+    "id": 52,
+    "outcome": "failed",
+    "reason": "Tool measured. The updated program check is unavailable.",
+    "localization": {
+      "key": "backend.toolChangeMeasurement.measuredCheckUnavailable",
+      "params": {}
     }
   },
   {
@@ -1361,6 +1387,16 @@ const examples = [
       "params": {
         "file": "/home/cnc/operator-settings.json"
       }
+    }
+  },
+  {
+    "type": "result",
+    "id": 53,
+    "outcome": "rejected",
+    "reason": "Default jog speed exceeds the configured machine limit.",
+    "refusal": {
+      "key": "backend.operatorSettings.jogSpeedLimit",
+      "params": {}
     }
   },
   {

@@ -587,22 +587,26 @@ auto ToolModelStore::submit(PageToken page, RequestId id, ToolModelCommand comma
 
 auto ToolModelStore::submit_operator_settings(PageToken page, RequestId id,
                                               SetOperatorSettings&& command)
-    -> std::optional<std::string> {
+    -> std::optional<LocalizedReason> {
   if (!operator_settings_)
-    return "Operator settings storage is not part of this session.";
+    return LocalizedReason{"Operator settings storage is not part of this session.",
+                           MessageKey{"messages.session.noOperatorSettings"}};
   if (location_.availability != ToolModelAvailability::available)
-    return location_.reason;
+    return LocalizedReason{location_.reason, location_.localization};
   if (command.machine_id != location_.machine_id)
-    return "This settings change belongs to another machine.";
+    return LocalizedReason{"This settings change belongs to another machine.",
+                           MessageKey{"backend.operatorSettingsStore.otherMachineChange"}};
   if (auto error = operator_settings_command_error(command, operator_settings_->limits());
       !error.empty())
     return error;
   {
     const std::scoped_lock lock{mutex_};
     if (pending_.size() >= max_pending)
-      return "Too many settings changes are waiting.";
+      return LocalizedReason{"Too many settings changes are waiting.",
+                             MessageKey{"backend.toolModelStore.tooManySettingsChanges"}};
     if (page.value <= ended_through_)
-      return "This settings page has ended.";
+      return LocalizedReason{"This settings page has ended.",
+                             MessageKey{"backend.toolModelStore.settingsPageEnded"}};
     pending_.push_back({page, id, std::move(command)});
   }
   wake_.notify_all();

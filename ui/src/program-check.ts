@@ -1,4 +1,5 @@
 import { t } from './i18n'
+import { translateMessage } from './i18n/messages'
 import type { LengthUnit, Preview, ProgramCheck, Status } from './protocol'
 
 export function currentProgramPreview(preview: Preview | null, status: Status | null): Preview | null {
@@ -21,7 +22,8 @@ export function describeProgramCheck(preview: Preview | null, display: LengthUni
   const check = preview.check
   if (!check) {
     return { tools: [], frames: [], feed: null, spindle: null, units: [], travel: 'unknown',
-      errors: [], warnings: [preview.error?.text ?? t('program.check.failed')] }
+      errors: [], warnings: [preview.error ? translateMessage(preview.error.text, preview.error.localization)
+        : t('program.check.failed')] }
   }
   if (!check.units.some((unit) => unit !== display)) return check
   const warnings = [...check.warnings, display === 'mm' ? t('program.check.unitsDifferMm') : t('program.check.unitsDifferInch')]

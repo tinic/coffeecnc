@@ -291,10 +291,19 @@ auto encoded_messages() -> std::vector<Encoded> {
   preview.bounds.reset();
   messages.push_back(encode_preview(preview));
   messages.push_back(encode_preview({}));
+  Preview unavailable;
+  unavailable.context = 4821339;
+  unavailable.error =
+      PreviewError{0, "Cutter compensation (G41) is active: no preview.",
+                   MessageKey{"backend.previewEngine.cutterCompensation", {{"code", "G41"}}}};
+  messages.push_back(encode_preview(unavailable));
 
   messages.emplace_back(
       encode_message(MessageLevel::error, "Joint 0 on limit switch error", 1700000000123ms));
   messages.emplace_back(encode_message(MessageLevel::info, "Probe tripped", 1700000001000ms));
+  messages.emplace_back(encode_message(MessageLevel::info, "Jog stopped: probe contact",
+                                       1700000001100ms,
+                                       MessageKey{"backend.jogStop.probeContact"}));
   messages.emplace_back(encode_result(41, CommandOutcome::accepted, ""));
   messages.emplace_back(
       encode_result(42, CommandOutcome::rejected, "Home all configured axes first."));
@@ -303,6 +312,8 @@ auto encoded_messages() -> std::vector<Encoded> {
       RefusalMessage{"messages.policy.jogVelocityAxisLimit", {{"axis", "Z"}, {"limit", "750"}}}));
   messages.emplace_back(encode_result(43, CommandOutcome::failed, "LinuxCNC reported an error."));
   messages.emplace_back(encode_result(44, CommandOutcome::timed_out, "LinuxCNC did not answer."));
+  messages.emplace_back(encode_result(47, CommandOutcome::timed_out, "LinuxCNC did not answer.", {},
+                                      {}, {}, MessageKey{"messages.session.linuxcncNoAnswer"}));
   const RestartPoint restart{.line = 25,
                              .tool = 98,
                              .h = 98,
@@ -354,7 +365,13 @@ auto encoded_messages() -> std::vector<Encoded> {
   messages.push_back(encode_operator_settings(
       {{}, 0, ToolModelAvailability::session_only, "No machine identity configured", {}}));
   messages.push_back(encode_operator_settings(
-      {"G0759", 0, ToolModelAvailability::unavailable, "Operator settings file is corrupt", {}}));
+      {"G0759",
+       0,
+       ToolModelAvailability::unavailable,
+       "/home/cnc/operator-settings.json exceeds 16 KiB. The file was left alone.",
+       {},
+       MessageKey{"backend.operatorSettingsStore.fileTooLarge",
+                  {{"file", "/home/cnc/operator-settings.json"}}}}));
 
   OffsetHistory history{4, true, "", {}};
   const auto change = [](HistoryField field, std::optional<double> before,

@@ -312,6 +312,7 @@ private:
     CommandOutcome outcome{CommandOutcome::accepted};
     std::string reason;
     std::optional<RefusalMessage> refusal{};
+    std::optional<MessageKey> localization{};
   };
   struct HeldJog {
     int direction{};
@@ -479,7 +480,7 @@ private:
   std::optional<std::chrono::milliseconds> panel_recovered_at_;
   std::optional<RequestId> last_id_;
   // Failed stops that are not the result of a request; sent as operator messages.
-  std::vector<std::string> problems_;
+  std::vector<ControllerMessage> problems_;
   mutable std::mutex mutex_;
   std::condition_variable work_ready_;
   JogLease leases_;

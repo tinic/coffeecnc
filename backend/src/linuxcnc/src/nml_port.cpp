@@ -174,8 +174,8 @@ constexpr auto error_companion_time = std::chrono::milliseconds{20};
 constexpr auto fresh_pins_time = std::chrono::milliseconds{30};
 constexpr double seconds_per_minute = 60;
 
-auto failed(std::string_view reason) -> ActionResult {
-  return {ActionStatus::failed, std::string(reason)};
+auto failed(std::string_view reason, std::optional<MessageKey> localization = {}) -> ActionResult {
+  return {ActionStatus::failed, std::string(reason), std::move(localization)};
 }
 auto accepted(const ActionResult& result) -> bool {
   return result.status == ActionStatus::accepted;
@@ -489,7 +489,8 @@ struct NmlPort::Impl {
       return;
     startup_tool.reset();
     if (!write_sidecar(spindle_tool_file, std::format("{}\n", tool)))
-      messages.push_back({true, "Could not save the spindle tool for the next startup."});
+      messages.push_back({true, "Could not save the spindle tool for the next startup.",
+                          MessageKey{"backend.nmlPort.spindleToolNotSaved"}});
   }
 
   void add(bool error, std::span<const char> field) {
@@ -497,7 +498,8 @@ struct NmlPort::Impl {
     if (!error && breakpoint && text.starts_with(breakpoint_message) &&
         std::string_view(text).substr(breakpoint_message.size()) == breakpoint->receipt) {
       if (!breakpoint->marker_seen.exchange(true) && !save_breakpoint())
-        messages.push_back({true, "Could not save the breakpoint pause for app recovery."});
+        messages.push_back({true, "Could not save the breakpoint pause for app recovery.",
+                            MessageKey{"backend.nmlPort.breakpointPauseNotSaved"}});
       return;
     }
     if (!text.empty())
@@ -548,11 +550,13 @@ struct NmlPort::Impl {
       if (cause == JogStopCause::watchdog &&
           (!told_watchdog || *history.watchdog_tripped - *told_watchdog > jog_stop_window)) {
         told_watchdog = history.watchdog_tripped;
-        messages.push_back({true, std::string(watchdog_stop_text)});
+        messages.push_back(
+            {true, std::string(watchdog_stop_text), MessageKey{"backend.jogStop.watchdog"}});
       }
       if (cause == JogStopCause::probe_contact && told_contact != history.contact_edge) {
         told_contact = history.contact_edge;
-        messages.push_back({false, std::string(probe_contact_stop_text)});
+        messages.push_back({false, std::string(probe_contact_stop_text),
+                            MessageKey{"backend.jogStop.probeContact"}});
       }
       if (!logged.empty() && logged.back().cause == cause && logged.back().text == seen.text)
         ++logged.back().count;
@@ -709,7 +713,8 @@ struct NmlPort::Impl {
     if (cancelled)
       return withdraw(message.type);
     if (wrote != 0)
-      return failed("Cannot write to LinuxCNC's command channel.");
+      return failed("Cannot write to LinuxCNC's command channel.",
+                    MessageKey{"backend.nmlPort.cannotWrite"});
     written_types.push_back(message.type);
     serial = message.serial_number;
     written = true;
@@ -1073,7 +1078,9 @@ void NmlPort::idle_maintenance(const Wanted& wanted) {
   const auto length = table ? tool_z(*table, tool) : std::nullopt;
   if (!length) {
     impl_->startup_tool.reset();
-    impl_->messages.push_back({true, std::format("Could not restore T{} from the tool table.", tool)});
+    impl_->messages.push_back(
+        {true, std::format("Could not restore T{} from the tool table.", tool),
+         MessageKey{"backend.nmlPort.restoreFromTable", {{"tool", std::to_string(tool)}}}});
     return;
   }
   const auto mode = before.controller.mode;
@@ -1082,7 +1089,9 @@ void NmlPort::idle_maintenance(const Wanted& wanted) {
     if (!accepted(changed)) {
       if (wanted()) {
         impl_->startup_tool.reset();
-        impl_->messages.push_back({true, std::format("Could not enter MDI to restore T{}.", tool)});
+        impl_->messages.push_back(
+            {true, std::format("Could not enter MDI to restore T{}.", tool),
+             MessageKey{"backend.nmlPort.restoreNoMdi", {{"tool", std::to_string(tool)}}}});
       }
       return;
     }
@@ -1149,7 +1158,7 @@ auto NmlPort::set_machine_state(MachineState state, const Wanted& wanted) -> Act
     // A step that timed out took nothing out of it: its reason is this port's own words, and the
     // result below says what became of the request.
     if (sent.status == ActionStatus::failed && !sent.reason.empty())
-      impl_->messages.push_back({true, sent.reason});
+      impl_->messages.push_back({true, sent.reason, sent.localization});
     const EMC_STAT* now = impl_->stat();
     const Link link = impl_->status.link();
     if (now == nullptr)
@@ -1219,9 +1228,11 @@ auto NmlPort::home(std::optional<Axis> axis, const Wanted& wanted) -> ActionResu
   if (!axis && !impl_->config.home_all_configured) {
     if (std::ranges::any_of(impl_->config.rotary_joints,
                             [](const auto& joints) { return !joints.empty(); }))
-      return failed("Configure [JOINT_n] HOME_SEQUENCE for every joint to use Home all.");
+      return failed("Configure [JOINT_n] HOME_SEQUENCE for every joint to use Home all.",
+                    MessageKey{"backend.nmlPort.homeAllSequence"});
     return failed("Homing all axes at once is not configured ([JOINT_n] HOME_SEQUENCE): home "
-                  "each axis.");
+                  "each axis.",
+                  MessageKey{"backend.nmlPort.homeAllNotConfigured"});
   }
   // A request for one joint of a synchronized group (a shared negative HOME_SEQUENCE) homes the
   // whole group, each joint to its own switch (seen on 2.9.4). Without one it homes that joint.
@@ -1327,7 +1338,8 @@ auto NmlPort::mdi(std::string_view text, const Wanted& wanted) -> ActionResult {
     return withdrawn();
   EMC_TASK_PLAN_EXECUTE message;
   if (!put(message.command, text))
-    return failed("The MDI block is too long for LinuxCNC.");
+    return failed("The MDI block is too long for LinuxCNC.",
+                  MessageKey{"backend.nmlPort.mdiTooLong"});
   auto started = impl_->start(message, from);
   if (accepted(started) && impl_->loads != nullptr)
     ++impl_->loads->mdi_blocks;
@@ -2813,7 +2825,8 @@ auto NmlPort::fixed_setter(const FixedSetterRequest& request, SetterEpoch epoch,
 
 auto NmlPort::open_program(std::string_view path, const Wanted& wanted) -> ActionResult {
   if (path == impl_->breakpoint_copy.string() || path == impl_->legacy_breakpoint_copy)
-    return failed("Open the original program instead of its temporary breakpoint copy.");
+    return failed("Open the original program instead of its temporary breakpoint copy.",
+                  MessageKey{"backend.nmlPort.openOriginal"});
   return open_program_file(path, wanted, true);
 }
 
@@ -2825,7 +2838,8 @@ auto NmlPort::open_program_file(std::string_view path, const Wanted& wanted, boo
     return withdrawn();
   EMC_TASK_PLAN_OPEN message;
   if (!put(message.file, path))
-    return failed("The program path is too long for LinuxCNC.");
+    return failed("The program path is too long for LinuxCNC.",
+                  MessageKey{"backend.nmlPort.pathTooLong"});
   // The interpreter keeps a program open until it has run to its end or was aborted, and
   // refuses another while it does ("A file is already open"): close first. Closing with none
   // open does nothing.
@@ -2848,7 +2862,8 @@ auto NmlPort::open_program_file(std::string_view path, const Wanted& wanted, boo
 
 auto NmlPort::run(const Wanted& wanted) -> ActionResult {
   if (status().controller.breakpoint_program)
-    return failed("Wait for the original program to reopen after the breakpoint run.");
+    return failed("Wait for the original program to reopen after the breakpoint run.",
+                  MessageKey{"messages.policy.waitBreakpointReopen"});
   const auto from = impl_->begin(&wanted);
   const Impl::Scope scope{*impl_};
   if (!impl_->still())
@@ -2877,7 +2892,8 @@ auto NmlPort::start_checked(const PreviewInputs& inputs, const Wanted& current,
     return failed(reason);
   EMC_TASK_PLAN_OPEN open;
   if (!inputs.program_file || !put(open.file, execution_path.value_or(*inputs.program_file)))
-    return failed("The program path is too long for LinuxCNC.");
+    return failed("The program path is too long for LinuxCNC.",
+                  MessageKey{"backend.nmlPort.pathTooLong"});
   // Refresh the interpreter's descriptor for this path without publishing a new load.
   EMC_TASK_PLAN_CLOSE close;
   if (auto closed = impl_->run(close, from); !accepted(closed))
@@ -2904,20 +2920,23 @@ auto NmlPort::start_checked(const PreviewInputs& inputs, const Wanted& current,
 auto NmlPort::run_to_breakpoint(const PreviewInputs& inputs, std::string_view program, int line,
                                 const Wanted& current, const Wanted& wanted) -> ActionResult {
   if (!inputs.program_file || impl_->breakpoint || status().controller.breakpoint_program)
-    return failed("The breakpoint needs the original program.");
+    return failed("The breakpoint needs the original program.",
+                  MessageKey{"backend.nmlPort.breakpointOriginal"});
   const auto receipt = std::to_string(Clock::now().time_since_epoch().count());
   const auto copy = with_breakpoint(program, line, receipt);
   if (!copy)
     return failed(copy.error());
   if (!current())
-    return failed("The program or tool data changed. Review the new program check.");
+    return failed("The program or tool data changed. Review the new program check.",
+                  MessageKey{"messages.session.programOrToolsChanged"});
   if (const auto reason = validate_program_inputs(inputs); !reason.empty())
     return failed(reason);
   impl_->breakpoint = std::make_shared<const BreakpointSource>(
       *inputs.program_file, impl_->breakpoint_copy.string(), line, receipt);
   if (!impl_->save_breakpoint() || !write_sidecar(impl_->breakpoint_copy, *copy)) {
     impl_->discard_breakpoint();
-    return failed("Could not save the temporary breakpoint program.");
+    return failed("Could not save the temporary breakpoint program.",
+                  MessageKey{"backend.nmlPort.breakpointCopyNotSaved"});
   }
   if (impl_->loads)
     impl_->loads->breakpoint.store(impl_->breakpoint);
@@ -2947,8 +2966,10 @@ void NmlPort::finish_breakpoint(const Wanted& wanted) {
     }
   }
   if (wanted() && !std::exchange(impl_->breakpoint_reported, true))
-    impl_->messages.push_back({true, "The original program could not be reopened after the "
-                                     "breakpoint. Open a program to continue."});
+    impl_->messages.push_back({true,
+                               "The original program could not be reopened after the "
+                               "breakpoint. Open a program to continue.",
+                               MessageKey{"backend.nmlPort.originalNotReopened"}});
 }
 
 namespace {
@@ -3227,7 +3248,8 @@ auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inpu
     const auto send_mdi = [&](std::string_view block) -> ActionResult {
       EMC_TASK_PLAN_EXECUTE message;
       if (!put(message.command, block))
-        return failed("The restart block is too long for LinuxCNC.");
+        return failed("The restart block is too long for LinuxCNC.",
+                      MessageKey{"backend.nmlPort.restartBlockTooLong"});
       auto sent = impl_->send(message);
       if (accepted(sent) && impl_->loads)
         ++impl_->loads->mdi_blocks;
@@ -3263,11 +3285,13 @@ auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inpu
         return impl_->failure(from, "LinuxCNC did not save its parameters for the restart.");
       if (!files_current())
         return failed("The machine's saved parameters changed after the restart was reviewed. "
-                      "Choose the line again.");
+                      "Choose the line again.",
+                      MessageKey{"backend.nmlPort.restartParametersChanged"});
       return {};
     };
     if (!files_current() || !current_tool())
-      return failed("The restart program or tool length changed.");
+      return failed("The restart program or tool length changed.",
+                    MessageKey{"backend.nmlPort.restartChanged"});
     if (after_change) {
       if (auto done = wait(completion_timeout, [&](const EMC_STAT& s) {
             return complete(s) && s.io.tool.toolInSpindle == point.tool;
@@ -3280,7 +3304,8 @@ auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inpu
       if (!idle(before) || before.controller.tool_in_spindle != inputs.start.tool_in_spindle ||
           !restart_at(before, inputs.start.position, config.motion_tolerances.restart_position_mm) ||
           before.commanded_position[2] > clearance + restart_command_tolerance)
-        return failed("The machine moved after the restart was reviewed.");
+        return failed("The machine moved after the restart was reviewed.",
+                      MessageKey{"backend.nmlPort.movedAfterReview"});
       if (before.controller.mode != TaskMode::mdi)
         if (auto switched = mode(EMC_TASK_MODE_MDI); !accepted(switched))
           return switched;
@@ -3305,7 +3330,8 @@ auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inpu
       if (!idle(now) || now.controller.spindle_active ||
           !restart_at(now, inputs.start.position, config.motion_tolerances.restart_position_mm) ||
           now.commanded_position[2] > clearance + restart_command_tolerance)
-        return failed("The spindle or approach position changed before retracting.");
+        return failed("The spindle or approach position changed before retracting.",
+                      MessageKey{"backend.nmlPort.changedBeforeRetract"});
       if (auto done = block(std::format("G53 G0 Z{:.8f}", clearance),
                             std::chrono::seconds{45}); !accepted(done))
         return done;
@@ -3330,7 +3356,8 @@ auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inpu
     if (!idle(loaded) || loaded.controller.mode != TaskMode::mdi ||
         loaded.controller.tool_in_spindle != point.tool ||
         !restart_at_z(loaded, clearance, config.motion_tolerances.restart_position_mm))
-      return failed("The tool or clearance changed before the restart approach.");
+      return failed("The tool or clearance changed before the restart approach.",
+                    MessageKey{"backend.nmlPort.changedBeforeApproach"});
     if (auto done = block(point.h == 0 ? "G49" : std::format("G43 H{}", point.h),
                           completion_timeout); !accepted(done))
       return done;
@@ -3338,7 +3365,8 @@ auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inpu
     if (!idle(compensated) || !restart_at_z(compensated, clearance, config.motion_tolerances.restart_position_mm) ||
         !restart_near(compensated.tool_offset, point.tool_offset) ||
         compensated.work[2] < point.clearance_z - config.motion_tolerances.restart_position_mm)
-      return failed("LinuxCNC did not confirm the tool offset and Z clearance.");
+      return failed("LinuxCNC did not confirm the tool offset and Z clearance.",
+                    MessageKey{"backend.nmlPort.offsetUnconfirmed"});
     if (auto done = block(std::format("G53 G0 X{:.8f} Y{:.8f}", endpoint[0], endpoint[1]),
                           std::chrono::seconds{45}); !accepted(done))
       return done;
@@ -3354,7 +3382,8 @@ auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inpu
     if (!idle(at_clearance) || !restart_at(at_clearance, above, config.motion_tolerances.restart_position_mm) ||
         at_clearance.spindle_direction != point.spindle_direction ||
         at_clearance.flood != point.flood || at_clearance.mist != point.mist)
-      return failed("LinuxCNC did not confirm the restart position, spindle or coolant.");
+      return failed("LinuxCNC did not confirm the restart position, spindle or coolant.",
+                    MessageKey{"backend.nmlPort.restartPositionUnconfirmed"});
     if (clearance > endpoint[2] + 1e-6) {
       const double feed = point.approach_feed;
       const auto bound = std::clamp((clearance - endpoint[2]) / feed * 120000.0 + 5000.0,
@@ -3383,12 +3412,14 @@ auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inpu
         !accepted(done))
       return done;
     if (!files_current() || !current_tool())
-      return failed("The restart program or tool length changed during the approach.");
+      return failed("The restart program or tool length changed during the approach.",
+                    MessageKey{"backend.nmlPort.changedDuringApproach"});
     const auto at_start = read();
     if (!idle(at_start) ||
         !restart_at(at_start, endpoint, config.motion_tolerances.restart_position_mm) ||
         !restart_near(at_start.tool_offset, point.tool_offset))
-      return failed("The machine did not reach the verified restart point.");
+      return failed("The machine did not reach the verified restart point.",
+                    MessageKey{"backend.nmlPort.restartPointNotReached"});
     if (auto switched = mode(EMC_TASK_MODE_AUTO); !accepted(switched))
       return switched;
     EMC_TASK_PLAN_CLOSE close;
@@ -3396,11 +3427,13 @@ auto NmlPort::start_restart(const RestartPoint& point, const PreviewInputs& inpu
       return closed;
     EMC_TASK_PLAN_OPEN open;
     if (!put(open.file, *inputs.program_file))
-      return failed("The program path is too long for LinuxCNC.");
+      return failed("The program path is too long for LinuxCNC.",
+                    MessageKey{"backend.nmlPort.pathTooLong"});
     if (auto opened = impl_->run(open, from); !accepted(opened))
       return opened;
     if (!files_current())
-      return failed("The program changed before LinuxCNC could restart it.");
+      return failed("The program changed before LinuxCNC could restart it.",
+                    MessageKey{"backend.nmlPort.changedBeforeRestart"});
     EMC_TASK_PLAN_RUN run;
     run.line = point.line;
     return impl_->start(run, from);
@@ -3440,41 +3473,48 @@ auto NmlPort::move_paused_z(double distance, bool returning, const Wanted& wante
   if (!wanted())
     return withdrawn();
   if (!limits || !hal || !z || !start.paused_z_feedback)
-    return failed("Paused Z feedback is unavailable.");
+    return failed("Paused Z feedback is unavailable.",
+                  MessageKey{"backend.nmlPort.pausedZFeedback"});
   if (stop_spindle && (returning || distance <= 0 || z->spindle != PausedSpindle::can_stop))
-    return failed("The paused spindle state changed. Review the controls and try again.");
+    return failed("The paused spindle state changed. Review the controls and try again.",
+                  MessageKey{"messages.policy.pausedSpindleChanged"});
   if (!stop_spindle && !z->reason.empty())
     return failed(z->reason);
   if (!std::isfinite(distance) ||
       (!returning && (distance == 0 || std::abs(distance) > limits->lift_mm)))
-    return failed("The paused Z jog distance is out of range.");
+    return failed("The paused Z jog distance is out of range.",
+                  MessageKey{"messages.policy.pausedZDistance"});
 
   const double count = limits->count_mm;
   const double tolerance = count / 2;
   const auto delta = returning ? 0 : static_cast<std::int32_t>(std::round(distance / count));
   const double target = returning ? 0 : z->offset + delta * count;
   if (target < -tolerance || target > limits->lift_mm + 1e-9 || (!returning && delta == 0))
-    return failed("Z must stay between the paused position and the configured lift limit.");
+    return failed("Z must stay between the paused position and the configured lift limit.",
+                  MessageKey{"backend.nmlPort.pausedZBetween"});
   const auto& axes = start.controller.axes;
   const double base_z = axes[2].machine - z->offset;
   const bool clear = std::abs(target) <= tolerance;
   const double end_z = base_z + (clear ? 0 : target);
   if (!std::isfinite(end_z) || !std::isfinite(axes[2].min_limit) ||
       !std::isfinite(axes[2].max_limit) || end_z < axes[2].min_limit || end_z > axes[2].max_limit)
-    return failed("The requested lift would cross a Z travel limit.");
+    return failed("The requested lift would cross a Z travel limit.",
+                  MessageKey{"backend.nmlPort.liftCrossesLimit"});
   if (stop_spindle) {
     auto held = hold_paused_spindle(start, wanted);
     if (!accepted(held))
       return held;
   }
   if (!hal->begin_paused_z(Clock::now()))
-    return failed("The paused Z motion interlock is open.");
+    return failed("The paused Z motion interlock is open.",
+                  MessageKey{"backend.nmlStatus.interlockOpen"});
   const struct Permit {
     HalShared& hal;
     ~Permit() { hal.stop_paused_z(); }
   } permit{*hal};
 
-  auto stopped = failed("Paused Z motion stopped. Check the Z position before continuing.");
+  auto stopped = failed("Paused Z motion stopped. Check the Z position before continuing.",
+                        MessageKey{"backend.nmlPort.pausedZStopped"});
   const auto safe = [&](const NmlStatus& now) {
     return wanted() && now.controller.paused_z && now.paused_z_feedback &&
            now.paused_z_interlock.empty() && now.program_file == start.program_file &&
@@ -3516,7 +3556,8 @@ auto NmlPort::move_paused_z(double distance, bool returning, const Wanted& wante
     return stopped;
   if (!finished)
     return failed(
-        "LinuxCNC did not confirm the requested Z position. Check the axis and HAL wiring.");
+        "LinuxCNC did not confirm the requested Z position. Check the axis and HAL wiring.",
+        MessageKey{"backend.nmlPort.zUnconfirmed"});
   std::this_thread::sleep_for(gate_settle);
   const auto now = status();
   if (!safe(now) || !arrived(now))
@@ -3539,11 +3580,13 @@ auto NmlPort::hold_paused_spindle(const NmlStatus& start, const Wanted& wanted) 
       start.program_file,      start.current_line, start.controller.tool_in_spindle,
       start.spindle_direction, start.spindle_rpm,  restart_position(start.controller)};
   if (!wanted() || hold.file.empty() || !hold.matches(status()))
-    return failed("The paused program changed before stopping the spindle.");
+    return failed("The paused program changed before stopping the spindle.",
+                  MessageKey{"backend.nmlPort.changedBeforeSpindleStop"});
   // After a restart there is no trustworthy in-memory pause identity. Keep only a recovery
   // marker on disk, written before changing the spindle.
   if (!write_sidecar(impl_->spindle_hold_marker, "CoffeeCNC interrupted spindle hold\n"))
-    return failed("Could not save spindle hold recovery state.");
+    return failed("Could not save spindle hold recovery state.",
+                  MessageKey{"backend.nmlPort.spindleHoldNotSaved"});
   impl_->hal->paused_spindle.store(PausedSpindle::stopping);
   auto stopped = spindle_command(SpindleDirection::stopped, 0, wanted, true);
   if (!accepted(stopped)) {
@@ -3558,7 +3601,8 @@ auto NmlPort::hold_paused_spindle(const NmlStatus& start, const Wanted& wanted) 
   });
   if (interrupted || !verified) {
     impl_->spindle_recovery();
-    return failed("Spindle stop was not verified. Press Stop before continuing.");
+    return failed("Spindle stop was not verified. Press Stop before continuing.",
+                  MessageKey{"backend.nmlPort.spindleStopUnverified"});
   }
   impl_->spindle_hold = std::move(hold);
   impl_->hal->paused_spindle.store(PausedSpindle::restore);
@@ -3569,7 +3613,8 @@ auto NmlPort::restore_paused_spindle(const Wanted& wanted) -> ActionResult {
   const auto& hold = impl_->spindle_hold;
   const auto before = status();
   if (!hold || !wanted() || !hold->at_base(before) || before.controller.spindle_active)
-    return failed("Return Z and verify the stopped spindle before continuing.");
+    return failed("Return Z and verify the stopped spindle before continuing.",
+                  MessageKey{"backend.nmlPort.returnZ"});
   auto started = spindle_command(hold->direction, hold->rpm, wanted, true);
   bool interrupted = false;
   const bool at_speed =
@@ -3582,7 +3627,8 @@ auto NmlPort::restore_paused_spindle(const Wanted& wanted) -> ActionResult {
     return {};
   impl_->spindle_recovery();
   static_cast<void>(spindle_command(SpindleDirection::stopped, 0, {}, true));
-  return failed("Spindle restart was not verified. Press Stop before continuing.");
+  return failed("Spindle restart was not verified. Press Stop before continuing.",
+                MessageKey{"backend.nmlPort.spindleRestartUnverified"});
 }
 
 void NmlPort::recover_paused_spindle(const Wanted& wanted) {
@@ -3608,7 +3654,8 @@ void NmlPort::recover_paused_spindle(const Wanted& wanted) {
 
 auto NmlPort::resume(const Wanted& wanted) -> ActionResult {
   if (!impl_->breakpoint && status().controller.breakpoint_program)
-    return failed("The breakpoint source is unavailable. Stop and reopen the original program.");
+    return failed("The breakpoint source is unavailable. Stop and reopen the original program.",
+                  MessageKey{"backend.nmlPort.breakpointSource"});
   if (impl_->breakpoint_recovered && impl_->breakpoint && status().controller.breakpoint_program) {
     // After an app restart the panel loaded the source again. It must still agree with the
     // execution copy before the operator can resume a recovered pause.
@@ -3623,14 +3670,17 @@ auto NmlPort::resume(const Wanted& wanted) -> ActionResult {
       return expected && *expected == *saved;
     };
     if (!matches())
-      return failed("The original program changed. Stop and reopen it before running again.");
+      return failed("The original program changed. Stop and reopen it before running again.",
+                    MessageKey{"backend.nmlPort.originalChanged"});
     impl_->breakpoint_recovered = false;
   }
   const auto before = status();
   if (impl_->config.paused_z && (before.controller.link != Link::live || !before.paused_z_feedback))
-    return failed("Paused Z feedback is unavailable. Resume could not check the Z position.");
+    return failed("Paused Z feedback is unavailable. Resume could not check the Z position.",
+                  MessageKey{"backend.nmlPort.resumeNoFeedback"});
   if (before.controller.paused_z && before.controller.paused_z->spindle == PausedSpindle::recover)
-    return failed("Press Stop before continuing after an interrupted spindle hold.");
+    return failed("Press Stop before continuing after an interrupted spindle hold.",
+                  MessageKey{"messages.policy.spindleHoldInterrupted"});
   if (before.controller.paused_z && before.controller.paused_z->displaced) {
     auto returned = move_paused_z(0, true, wanted);
     if (!accepted(returned))
@@ -3645,7 +3695,8 @@ auto NmlPort::resume(const Wanted& wanted) -> ActionResult {
   const bool at_breakpoint = impl_->breakpoint && impl_->breakpoint->marker_seen.load();
   const auto resume_program = [&]() -> ActionResult {
     if (restoring && !impl_->spindle_hold->at_speed(status()))
-      return failed("Spindle speed or the paused position changed before Resume.");
+      return failed("Spindle speed or the paused position changed before Resume.",
+                    MessageKey{"backend.nmlPort.changedBeforeResume"});
     const auto from = impl_->begin(&wanted);
     const Impl::Scope scope{*impl_};
     if (!impl_->still())
@@ -3669,7 +3720,8 @@ auto NmlPort::resume(const Wanted& wanted) -> ActionResult {
   }
   if (accepted(resumed) && at_breakpoint && impl_->breakpoint->marker_seen.exchange(false) &&
       !impl_->save_breakpoint())
-    impl_->messages.push_back({true, "Could not save that the breakpoint has resumed."});
+    impl_->messages.push_back({true, "Could not save that the breakpoint has resumed.",
+                               MessageKey{"backend.nmlPort.breakpointResumeNotSaved"}});
   return resumed;
 }
 
@@ -3714,9 +3766,11 @@ auto NmlPort::set_override(Override which, double value, const Wanted& wanted) -
   case Override::velocity_limit: {
     const auto maximum = impl_->config.limits.max_trajectory_velocity;
     if (!maximum)
-      return failed("Maximum velocity control is unavailable on this machine.");
+      return failed("Maximum velocity control is unavailable on this machine.",
+                    MessageKey{"messages.policy.velocityLimitUnavailable"});
     if (!std::isfinite(value) || value < 0 || value > 1)
-      return failed("Maximum velocity limit is out of range.");
+      return failed("Maximum velocity limit is out of range.",
+                    MessageKey{"messages.policy.velocityLimitRange"});
     EMC_TRAJ_SET_MAX_VELOCITY message;
     message.velocity = value * *maximum / 60 / impl_->config.millimetres_per_unit;
     return impl_->pass(message, from);

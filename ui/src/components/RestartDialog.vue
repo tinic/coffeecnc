@@ -10,7 +10,7 @@ import { formatLength, formatVelocity, toolLabel, velocityUnit, wcsName } from '
 import AppIcon from './AppIcon.vue'
 import { vTooltip } from '../tooltip'
 import ModalDialog from './ModalDialog.vue'
-import { translateMessage } from '../i18n/messages'
+import { translateResult } from '../i18n/messages'
 
 const props = defineProps<{ line: number; section: string; prepared?: RestartPlan }>()
 const emit = defineEmits<{ close: [] }>()
@@ -54,7 +54,7 @@ const removeListener = onResult((command, result) => {
   if (command !== request.value) return
   request.value = null
   if (result.outcome !== 'accepted') {
-    failure.value = (): string => translateMessage(result.reason, result.refusal) || t('program.restartDialog.notConfirmed')
+    failure.value = (): string => translateResult(result) || t('program.restartDialog.notConfirmed')
     if (command.type === 'start_restart') {
       plan.value = null
       // No answer does not mean nothing moves: stop what the machine may still be doing.

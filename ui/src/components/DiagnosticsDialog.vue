@@ -9,7 +9,7 @@ import { useI18n } from 'vue-i18n'
 import { alarms, groups, shown, stateTips, type Shown } from '../diagnostics'
 import { onResult, panel, send } from '../machine'
 import type { CommandBody, DiagnosticInput, HalToolName } from '../protocol'
-import { translateMessage } from '../i18n/messages'
+import { translateResult } from '../i18n/messages'
 import { vTooltip } from '../tooltip'
 import ModalDialog from './ModalDialog.vue'
 
@@ -27,7 +27,7 @@ const removeListener = onResult((command, result) => {
   if (command !== request) return
   request = null
   starting.value = null
-  refused.value = result.outcome === 'accepted' ? null : (): string => translateMessage(result.reason, result.refusal)
+  refused.value = result.outcome === 'accepted' ? null : (): string => translateResult(result)
 })
 
 const now = ref(Date.now())

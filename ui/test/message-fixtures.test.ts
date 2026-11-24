@@ -973,6 +973,24 @@ const examples = [
     "dwells": []
   },
   {
+    "type": "preview",
+    "context": 4821339,
+    "state": "unavailable",
+    "error": {
+      "line": 0,
+      "text": "Cutter compensation (G41) is active: no preview.",
+      "localization": {
+        "key": "backend.previewEngine.cutterCompensation",
+        "params": {
+          "code": "G41"
+        }
+      }
+    },
+    "segments": [],
+    "bounds": null,
+    "dwells": []
+  },
+  {
     "type": "message",
     "level": "error",
     "text": "Joint 0 on limit switch error",
@@ -983,6 +1001,16 @@ const examples = [
     "level": "info",
     "text": "Probe tripped",
     "time": 1700000001000
+  },
+  {
+    "type": "message",
+    "level": "info",
+    "text": "Jog stopped: probe contact",
+    "time": 1700000001100,
+    "localization": {
+      "key": "backend.jogStop.probeContact",
+      "params": {}
+    }
   },
   {
     "type": "result",
@@ -1017,6 +1045,16 @@ const examples = [
     "id": 44,
     "outcome": "timed_out",
     "reason": "LinuxCNC did not answer."
+  },
+  {
+    "type": "result",
+    "id": 47,
+    "outcome": "timed_out",
+    "reason": "LinuxCNC did not answer.",
+    "localization": {
+      "key": "messages.session.linuxcncNoAnswer",
+      "params": {}
+    }
   },
   {
     "type": "result",
@@ -1242,8 +1280,14 @@ const examples = [
     "machine_id": "G0759",
     "revision": 0,
     "availability": "unavailable",
-    "reason": "Operator settings file is corrupt",
-    "document": null
+    "reason": "/home/cnc/operator-settings.json exceeds 16 KiB. The file was left alone.",
+    "document": null,
+    "localization": {
+      "key": "backend.operatorSettingsStore.fileTooLarge",
+      "params": {
+        "file": "/home/cnc/operator-settings.json"
+      }
+    }
   },
   {
     "type": "offset_history",

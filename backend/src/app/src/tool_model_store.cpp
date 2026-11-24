@@ -678,7 +678,8 @@ void ToolModelStore::loop() {
     std::vector<std::string> messages;
     if (reply.snapshot)
       messages.push_back(std::move(changed_snapshot));
-    messages.push_back(encode_result(next->id, reply.outcome, reply.reason));
+    messages.push_back(
+        encode_result(next->id, reply.outcome, reply.reason, {}, {}, {}, reply.localization));
     send(next->page, std::move(messages));
   }
 }

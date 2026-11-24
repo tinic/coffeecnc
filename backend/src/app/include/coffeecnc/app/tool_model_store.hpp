@@ -232,9 +232,10 @@ private:
 struct ToolModelReply {
   CommandOutcome outcome{CommandOutcome::accepted};
   std::string reason;
-  // The `tool_models` snapshot is sent before the result: after a save, for a stale base
-  // revision, and when the store has just become unavailable.
+  // The settings snapshot is sent before the result: after a save, for a stale base revision,
+  // and when the store has just become unavailable.
   bool snapshot{};
+  std::optional<MessageKey> localization{};
 };
 
 // The saved document of one machine and every step that reads or replaces it. Synchronous and
@@ -319,7 +320,8 @@ private:
   [[nodiscard]] auto read_language() const -> PanelLanguage;
   [[nodiscard]] auto replace(std::string_view name, std::string_view temporary,
                              const std::string& text) -> ToolModelFiles::Done;
-  [[nodiscard]] auto unavailable(std::string reason) const -> OperatorSettings;
+  [[nodiscard]] auto unavailable(std::string reason, MessageKey localization) const
+      -> OperatorSettings;
   [[nodiscard]] auto path(std::string_view name) const -> std::string;
   void show(OperatorSettings settings);
   ToolModelFiles& files_;

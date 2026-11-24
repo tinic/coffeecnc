@@ -40,6 +40,7 @@ struct AlarmRecord {
   // A result's command as the panel sent it, without its id, as JSON text; `{"type":...}`
   // only when it is longer than max_command_bytes; empty when it is not known.
   std::string command;
+  std::optional<MessageKey> localization{};
   friend auto operator==(const AlarmRecord&, const AlarmRecord&) -> bool = default;
 };
 

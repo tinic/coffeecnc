@@ -148,6 +148,7 @@
       "measuredSet": "{wcs} {axes} am gemessenen Punkt gesetzt."
     },
     "guide": {
+      "resultCircleCheck": "Ein zusätzlicher Kontakt prüft den Kreis. Bei einer Abweichung über 0,02 mm wird der Nullpunkt nicht gesetzt.",
       "angleFront": "Vorne · Y−",
       "angleLeft": "Links · X−",
       "inputDiameter": "Ungefährer Durchmesser",
@@ -244,6 +245,10 @@
       "inputAngles": "Richtungen ab +X"
     },
     "guideDialog": {
+      "checkCircle": "Mit zusätzlichem Kontakt prüfen",
+      "checkAngle": "Prüfwinkel (°)",
+      "shortArcCheck": "Die Prüfung benötigt Kontakte über etwa 240° des Kreises. Bei einem kürzeren Bogen schalten Sie den zusätzlichen Kontakt aus und prüfen das Ergebnis mit Nur messen.",
+      "checkAngleRange": "Wählen Sie mindestens {separation}° Abstand zu den anderen Kontakten.",
       "previous": "Vorherige Bewegung",
       "pause": "Pause",
       "play": "Abspielen",

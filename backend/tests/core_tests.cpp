@@ -318,6 +318,62 @@ void height_map_grid() {
   require(!std::isfinite(height_map_point_seconds(slow)), "no latch feed: no bound");
 }
 
+void circle_verification() {
+  const auto check = []<std::size_t Size>(const std::array<double, Size>& angles) {
+    std::array<std::array<double, 2>, Size> points{};
+    for (std::size_t i = 0; i < angles.size(); ++i) {
+      const double angle = angles.at(i) * std::numbers::pi / 180;
+      points.at(i) = {250 + 7 * std::cos(angle), -180 + 7 * std::sin(angle)};
+    }
+    const auto fit = fit_probe_circle(points);
+    require(fit && std::abs(fit->circle.radius - 7) < 1e-8 &&
+                std::hypot(fit->circle.centre[0] - 250, fit->circle.centre[1] + 180) < 1e-8 &&
+                fit->max_residual_mm < 1e-8,
+            "verified contacts on a circle return its centre and diameter");
+    for (std::size_t i = 0; i < angles.size(); ++i) {
+      const double angle = angles.at(i) * std::numbers::pi / 180;
+      for (const double sign : {-1.0, 1.0}) {
+        auto early = points;
+        early.at(i)[0] += sign * std::cos(angle);
+        early.at(i)[1] += sign * std::sin(angle);
+        const auto result = fit_probe_circle(early);
+        require(result && result->max_residual_mm > circle_check_limit_mm,
+                "the fitted circle rejects a 1 mm early trip at each bore and boss contact");
+      }
+    }
+  };
+  check(std::array{0.0, 120.0, 240.0, 60.0});
+  check(std::array{0.0, 90.0, 180.0, 270.0, 45.0});
+  const std::array quarters{0.0, 90.0, 180.0, 270.0};
+  const auto stable = planned_circle_quality(quarters);
+  require(stable && std::abs(stable->min_residual_gain - 0.25) < 1e-9 &&
+              std::abs(stable->single_contact_centre_error_mm - 0.04) < 1e-9,
+          "four evenly spaced contacts retain a quarter of each error");
+  for (const auto& weak :
+       {std::array{0.0, 120.0, 240.0, 60.0}, std::array{195.0, 240.0, 285.0, 217.5}}) {
+    const auto gain = planned_circle_quality(weak);
+    require(gain && gain->min_residual_gain < circle_min_residual_gain,
+            "unbalanced full and partial arcs are refused before moving");
+  }
+  const auto narrow = planned_circle_quality(std::array{0.0, 10.0, 275.0, 285.0});
+  require(narrow && narrow->min_residual_gain >= circle_min_residual_gain &&
+              narrow->single_contact_centre_error_mm > circle_max_centre_error_mm,
+          "a 95-degree layout can reveal a trip while letting it move the centre too far");
+  const auto five = planned_circle_quality(std::array{0.0, 90.0, 180.0, 270.0, 45.0});
+  require(five && five->min_residual_gain >= circle_min_residual_gain &&
+              five->single_contact_centre_error_mm < circle_max_centre_error_mm,
+          "the regular five-contact layout keeps the predicted centre shift within the limit");
+  const std::array cardinal{std::array{7.0, 0.0}, std::array{0.0, 7.0}, std::array{-7.0, 0.0},
+                            std::array{0.0, -7.0}};
+  const auto quiet = measured_circle_quality(cardinal, {0, 0}, std::array{0.0, 0.0, 0.0, 0.0});
+  const auto noisy = measured_circle_quality(cardinal, {0, 0}, std::array{0.0, 0.0, 0.0, 0.01});
+  require(quiet && noisy && noisy->centre_uncertainty_mm > quiet->centre_uncertainty_mm,
+          "the verification contact's latch spread contributes to the uncertainty");
+  const std::array line{std::array{0.0, 0.0}, std::array{1.0, 1.0}, std::array{2.0, 2.0},
+                        std::array{3.0, 3.0}};
+  require(!fit_probe_circle(line), "collinear verification contacts are rejected");
+}
+
 // Three-point bore and boss geometry (#247): the circle, the arc it covers, the spread checks.
 void arc_geometry() {
   const auto on_circle = [](double degrees) {
@@ -975,6 +1031,7 @@ auto main() -> int {
     edge_rotation_wraps();
     probe_modal_restore();
     arc_geometry();
+    circle_verification();
     work_origin_gates();
     rotation_and_shift_gates();
     paused_z_gates();

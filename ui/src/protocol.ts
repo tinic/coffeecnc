@@ -605,6 +605,7 @@ export interface RestartPlan {
 export interface FixedSetterLimits {
   material_geometry?: { reach_mm: number; margin_mm: number; clearance_mm: number; depth_mm: number }
   material_features?: boolean
+  circle_check?: boolean
   reference_tool: number
   travel_mm: number
   feed_mm_min: number
@@ -1001,16 +1002,16 @@ export type FixedSetter = CommandBase & { type: 'fixed_setter' } & (
    */
   | { action: 'ball'; gauge_width: number; tool: number; x: number; y: number; z: number }
   /** X0 Y0 at the centre of a bore; the ball starts inside it, below its top. */
-  | { action: 'bore'; tool: number; x: number; y: number; z: number; measure_only?: boolean }
+  | { action: 'bore'; tool: number; x: number; y: number; z: number; measure_only?: boolean; check_angle?: number }
   /** X0 Y0 at the centre of a boss of about `diameter` mm; probed from outside below Z0. */
-  | { action: 'boss'; diameter: number; tool: number; x: number; y: number; z: number; measure_only?: boolean }
+  | { action: 'boss'; diameter: number; tool: number; x: number; y: number; z: number; measure_only?: boolean; check_angle?: number }
   /**
    * X0 Y0 at the centre of the circle through three contacts (#247): a bore probed outward from the
    * start, a boss inward from beyond `diameter`, along `angles` (degrees from the work +X axis). The
    * directions must be at least 10° apart and cover at least 90°.
    */
-  | { action: 'bore_arc'; angles: [number, number, number]; tool: number; x: number; y: number; z: number; measure_only?: boolean }
-  | { action: 'boss_arc'; angles: [number, number, number]; diameter: number; tool: number; x: number; y: number; z: number; measure_only?: boolean }
+  | { action: 'bore_arc'; angles: [number, number, number]; tool: number; x: number; y: number; z: number; measure_only?: boolean; check_angle?: number }
+  | { action: 'boss_arc'; angles: [number, number, number]; diameter: number; tool: number; x: number; y: number; z: number; measure_only?: boolean; check_angle?: number }
   /** Measures an edge's angle: the face of `direction` at the start and `spacing` mm along it. */
   | { action: 'angle'; direction: 'x_minus' | 'x_plus' | 'y_minus' | 'y_plus'; spacing: number; tool: number; x: number; y: number; z: number; measure_only?: boolean }
   | { action: 'apply_angle'; measurement_id: number; tool: number }

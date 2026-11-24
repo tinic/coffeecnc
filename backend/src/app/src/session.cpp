@@ -2118,7 +2118,10 @@ auto Session::perform(Queued& request, const Decision& decision, const Controlle
             return answer({CommandOutcome::failed, std::move(result.error())});
           Stage step;
           // A height map that stopped after some points fails with the points measured so far.
-          if (const auto& map = result->height_map; map && map->partial)
+          if (result->origin_refusal)
+            step = answer({CommandOutcome::failed, result->origin_refusal->text,
+                           result->origin_refusal->localization});
+          else if (const auto& map = result->height_map; map && map->partial)
             step = answer({CommandOutcome::failed, *map->partial});
           step.setter = std::move(*result);
           return step;

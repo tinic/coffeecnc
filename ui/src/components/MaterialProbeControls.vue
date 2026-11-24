@@ -113,10 +113,10 @@ function openGuide(target: MaterialGuideTarget): void {
     guide.value = target
   }
 }
-function startGuide(size: number, angle: AngleEdge, angles: Angles): void {
+function startGuide(size: number, angle: AngleEdge, angles: Angles, checkAngle?: number): void {
   const target = guide.value
   guide.value = null
-  if (target !== null) probe(target, size, angle, angles)
+  if (target !== null) probe(target, size, angle, angles, checkAngle)
 }
 /** The trigger radius correction the controller applies to this probe's XY results. */
 const runout = computed(() => setterState.value?.runout?.tool === props.tool ? setterState.value.runout : null)
@@ -220,7 +220,7 @@ function applyRotation(): void {
   send(request)
 }
 
-function probe(target: MaterialGuideTarget, size: number, angle: AngleEdge, angles: Angles): void {
+function probe(target: MaterialGuideTarget, size: number, angle: AngleEdge, angles: Angles, checkAngle?: number): void {
   if (pending.value) return
   cycleFailed.value = false
   edgeRotation.value = null
@@ -312,6 +312,10 @@ function probe(target: MaterialGuideTarget, size: number, angle: AngleEdge, angl
       break
     }
   }
+  if (checkAngle !== undefined &&
+      (request.action === 'bore' || request.action === 'boss' ||
+       request.action === 'bore_arc' || request.action === 'boss_arc'))
+    request = { ...request, check_angle: checkAngle }
   // Only the actions the controller can run measure-only: a later action writes unless it says so.
   if (measureOnly.value && (request.action === 'material' || request.action === 'corner' ||
       request.action === 'inside_corner' || request.action === 'pocket' || request.action === 'slot' ||

@@ -981,7 +981,8 @@ export class SimMachine {
           this.checkOffsets()
           this.historySource = null
           this.sendStatus()
-          this.emit({ type: 'result', id: pending.id, ...result })
+          const localization = pending.plan.failureKey
+          this.emit({ type: 'result', id: pending.id, ...result, ...(localization ? { localization } : {}) })
         }
         return
       }
@@ -1480,6 +1481,11 @@ export class SimMachine {
       return
     }
     if (!plan.moves.length) {
+      if (plan.failure !== undefined) {
+        const localization = plan.failureKey
+        this.emit({ type: 'result', id, ...fail(plan.failure), ...(localization ? { localization } : {}) })
+        return
+      }
       const setter = plan.finish()
       this.historySource = { source: command.action === 'touch_off' ? 'tool_setter' : 'probe', restores: null }
       this.checkTools()

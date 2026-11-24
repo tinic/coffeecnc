@@ -184,6 +184,7 @@ public:
   }
   // A fixed setter when set: each cycle is recorded by its action and answers as scripted.
   bool setter{};
+  SetterState setter_state{};
   auto fixed_setter_available() const -> bool override { return setter; }
   auto fixed_setter(const FixedSetterRequest& request, SetterEpoch, const Wanted&)
       -> std::expected<SetterState, std::string> override {
@@ -193,7 +194,7 @@ public:
                                                  : "other");
     if (done.status != ActionStatus::accepted)
       return std::unexpected(done.reason);
-    return SetterState{};
+    return setter_state;
   }
 
 private:
@@ -419,6 +420,23 @@ void stale_pages_are_dropped() {
   const auto outcome = driver.handle(second, ready, at(0ms));
   require(results(outcome).size() == 1 && outcome.send_snapshots,
           "The current page is unaffected by the stale page's IDs");
+}
+
+void circle_check_result() {
+  Rig rig;
+  rig.port.setter = true;
+  rig.port.state = homed_machine();
+  rig.port.state.tool_in_spindle = 99;
+  rig.port.state.in_position = true;
+  rig.port.setter_state.origin_refusal =
+      LocalizedReason{"Circle check failed.",
+                      MessageKey{"backend.nmlPort.circleCheckResidual", {{"residual", "0.210"}}}};
+  const auto reply = results(rig.send(
+      R"("type":"fixed_setter","action":"bore","tool":99,"x":0,"y":0,"z":0,"check_angle":45)"));
+  require(reply.size() == 1 && reply.front().at("outcome") == "failed" &&
+              reply.front().at("localization").at("key") == "backend.nmlPort.circleCheckResidual" &&
+              reply.front().at("localization").at("params").at("residual") == "0.210",
+          "The refused origin write keeps the circle check message key and residual");
 }
 
 // Clearing the probe runout (#247) only removes a file: it needs neither the probe in the
@@ -3240,6 +3258,7 @@ auto main(int argc, char** argv) -> int {
     usb_copy_does_not_hold_the_command_worker();
     controller_messages_wait_for_ready();
     runout_clear_gates();
+    circle_check_result();
     panel_watchdog_uses_a_monotonic_page_clock();
     panel_watchdog_cancels_waiting_work();
     ready_gate();

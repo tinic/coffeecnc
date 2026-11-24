@@ -1,10 +1,11 @@
-import type { FixedSetter, ProbedPoint, ProbeDirection, ProbeRunout, SetterMeasured, SetterState, Tool, Vec3 } from '../protocol'
+import type { FixedSetter, MessageKey, ProbedPoint, ProbeDirection, ProbeRunout, SetterMeasured, SetterState, Tool, Vec3 } from '../protocol'
 import { demoFixture, demoProbe, demoProbeTools, demoSetter, type ProbeBlock } from './probe-fixture'
 import { toWork, type Modal } from './gcode'
 import { heightGrid } from '../height-map'
 import {
   arcAnglesValid, arcCentreUncertainty, arcMaxCentreUncertainty, arcMinMeasuredSpan, bossDiameterPlausible, circleThrough, contactSigma,
-  measuredSpan,
+  checkAngleValid, circleCheckLimit, circleMaxCentreError, circleMinResidualGain, circleRays, fitProbeCircle, measuredCircleQuality,
+  measuredSpan, plannedCircleQuality,
 } from '../arc'
 
 type XY = [number, number]
@@ -13,7 +14,7 @@ type Cycle = Exclude<FixedSetter, { action: 'status' | 'clear_runout' }>
 type Axis = 'X' | 'Y' | 'Z' | 'XY'
 export interface ProbeMove { target: Vec3; feed?: number; contact?: boolean }
 /** `failure` fails the cycle after its moves; with `partial` the result keeps the setter state (a stopped height map). */
-export interface ProbePlan { moves: ProbeMove[]; finish: () => SetterState; failure?: string; partial?: boolean }
+export interface ProbePlan { moves: ProbeMove[]; finish: () => SetterState; failure?: string; failureKey?: MessageKey; partial?: boolean }
 /** Machine travel, mm. */
 export interface Travel { readonly min: Vec3; readonly max: Vec3 }
 
@@ -503,42 +504,79 @@ export class SimProbe {
     }
     // Two frame faces as the machine point where the work system reads X0 Y0.
     const corner = (x: number, y: number): Vec3 => fromFrame([x, y, start[2]])
-    if (command.action === 'bore_arc' || command.action === 'boss_arc') {
-      if (!arcAnglesValid(command.angles))
+    if (command.action === 'bore_arc' || command.action === 'boss_arc' ||
+        ((command.action === 'bore' || command.action === 'boss') && command.check_angle !== undefined)) {
+      const primary = 'angles' in command ? command.angles : circleRays
+      if ('angles' in command && !arcAnglesValid(command.angles))
         return 'Enter three probe angles at least 10° apart that cover at least 90° of the circle.'
-      const inside = command.action === 'bore_arc'
+      const check = command.check_angle === undefined ? undefined : command.check_angle % 360
+      if (check !== undefined && !checkAngleValid(check, primary))
+        return 'Choose a check angle at least 10° from the other contacts.'
+      const headings = check === undefined ? primary : [...primary, check]
+      const weakLayout = 'Spread the check contacts around the circle. A bad contact can be hidden by the current layout.'
+      const centreRisk = 'Spread the check contacts farther around the circle. A bad contact could move the fitted centre by more than 0.05 mm.'
+      if (check !== undefined) {
+        const planned = plannedCircleQuality(headings)
+        if (planned.gain < circleMinResidualGain) return weakLayout
+        if (!(planned.centreError <= circleMaxCentreError)) return {
+          ...result(() => ({})), failure: centreRisk,
+          failureKey: { key: 'backend.nmlPort.circleCheckCentreRisk', params: {} },
+        }
+      }
+      const inside = command.action === 'bore_arc' || command.action === 'bore'
+      const diameter = 'diameter' in command ? command.diameter : 0
       if (inside && (radiusFrom(start, bore) >= boreRadius - rubyRadius ||
           start[2] + rubyRadius >= gaugeZ || start[2] < gaugeZ - stockHeight)) return 'Jog the ball into the simulated bore below its top.'
       if (!inside) {
-        if (!(command.diameter >= 2 && command.diameter <= 200)) return 'Enter a size from 2 to 200 mm.'
+        if (!(diameter >= 2 && diameter <= 200)) return 'Enter a size from 2 to 200 mm.'
         if (!applied || Math.abs(toWork(modal, [start[0], start[1], gaugeZ])[2]) > 0.1 || start[2] <= gaugeZ)
           return 'Touch off T99, set Z0 on the feature top, and start above it.'
         if (radiusFrom(start, boss) >= bossRadius) return 'Start above the simulated boss.'
       }
       const contacts: [number, number][] = []
-      for (const [index, degrees] of command.angles.entries()) {
+      for (const [index, degrees] of headings.entries()) {
         const heading = turn([1, 0], degrees)
         const contact = inside
           ? lateral(path, start, axisOf(heading), rayRound(start, axisOf(heading), bore, boreRadius - rubyRadius, true))
-          : outside(path, gaugeZ, start, axisOf([-heading[0], -heading[1]]), command.diameter / 2 + reach + margin + rubyRadius,
+          : outside(path, gaugeZ, start, axisOf([-heading[0], -heading[1]]), diameter / 2 + reach + margin + rubyRadius,
             at => rayRound(at, axisOf([-heading[0], -heading[1]]), boss, bossRadius + rubyRadius, false))
         if (!contact) return `Contact ${String(index + 1)} at ${degrees.toFixed(1)}°: ${noContact}`
         const [u, v] = toFrame(contact)
         contacts.push([u, v])
       }
       const [a, b, c] = contacts as [[number, number], [number, number], [number, number]]
-      const circle = circleThrough([a, b, c])
+      const fit = check === undefined ? null : fitProbeCircle(contacts)
+      if (check !== undefined && (!fit || fit.maxResidual > circleCheckLimit)) {
+        const stopped = result(() => ({}))
+        if (!fit) return { ...stopped,
+          failure: 'Circle check failed. The contacts do not give a usable circle. Check the surface and probe again.',
+          failureKey: { key: 'backend.nmlPort.circleCheckFit', params: {} },
+        }
+        const residual = fit.maxResidual.toFixed(3)
+        return { ...stopped,
+          failure: `Circle check failed. The largest contact error was ${residual} mm, over 0.02 mm. Clean the surface and probe again.`,
+          failureKey: { key: 'backend.nmlPort.circleCheckResidual', params: { residual } },
+        }
+      }
+      const verified = fit ? measuredCircleQuality(contacts, fit.centre) : null
+      if (verified && verified.gain < circleMinResidualGain)
+        return { ...result(() => ({})), failure: weakLayout,
+          failureKey: { key: 'backend.nmlPort.circleCheckSensitivity', params: {} } }
+      if (verified && !(verified.centreError <= circleMaxCentreError))
+        return { ...result(() => ({})), failure: centreRisk,
+          failureKey: { key: 'backend.nmlPort.circleCheckCentreRisk', params: {} } }
+      const circle = fit ?? circleThrough([a, b, c])
       const span = circle ? measuredSpan([a, b, c], circle.centre) : 0
       if (!circle || span < arcMinMeasuredSpan)
         return `The three contacts lie almost on a line: they cover ${span.toFixed(1)}° of a circle. Spread the angles further, and check that all three touched the same round wall.`
       const surface = circle.radius + (inside ? tableRadius : -tableRadius)
       if (!(surface > 0) || Math.hypot(startFrame[0] - circle.centre[0], startFrame[1] - circle.centre[1]) >= surface)
         return 'The circle through the contacts does not enclose the confirmed starting point.'
-      if (!inside && !bossDiameterPlausible(2 * surface, command.diameter))
-        return `The contacts give a boss of Ø ${(2 * surface).toFixed(3)} mm, which differs from the entered Ø ${command.diameter.toFixed(3)} mm by more than 0.5 mm or 10 %. Check that all three touched the boss, then probe again.`
+      if (!inside && !bossDiameterPlausible(2 * surface, diameter))
+        return `The contacts give a boss of Ø ${(2 * surface).toFixed(3)} mm, which differs from the entered Ø ${diameter.toFixed(3)} mm by more than 0.5 mm or 10 %. Check that all three touched the boss, then probe again.`
       // The simulated latch repeats exactly: each contact counts with the 1 µm floor.
       const sigma = contactSigma(0)
-      const uncertainty = arcCentreUncertainty([a, b, c], circle.centre, [sigma, sigma, sigma])
+      const uncertainty = verified?.uncertainty ?? arcCentreUncertainty([a, b, c], circle.centre, [sigma, sigma, sigma])
       if (uncertainty === null || uncertainty > arcMaxCentreUncertainty)
         return `The estimated centre uncertainty from latch repeatability is ${(uncertainty ?? Infinity).toFixed(3)} mm, more than 0.02 mm: the contacts cover ${span.toFixed(1)}° with a latch spread up to 0.0000 mm. Spread the angles further and probe again.`
       const offset = origin(corner(circle.centre[0], circle.centre[1]), 'XY')

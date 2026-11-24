@@ -1,4 +1,4 @@
-add_library(coffeecnc_core src/command_policy.cpp src/jog_lease.cpp src/jog_stop_report.cpp
+add_library(coffeecnc_core src/command_policy.cpp src/fixed_setter.cpp src/jog_lease.cpp src/jog_stop_report.cpp
             src/task_heartbeat.cpp)
 target_include_directories(coffeecnc_core PUBLIC include)
 target_compile_features(coffeecnc_core PUBLIC cxx_std_23)

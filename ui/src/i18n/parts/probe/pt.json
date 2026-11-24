@@ -148,6 +148,7 @@
       "measuredSet": "{axes} de {wcs} definido no ponto medido."
     },
     "guide": {
+      "resultCircleCheck": "Um contato adicional verifica o círculo. Um desvio superior a 0,02 mm impede o ajuste da origem.",
       "angleFront": "Frontal · Y−",
       "angleLeft": "Esquerda · X−",
       "inputDiameter": "Diâmetro aproximado",
@@ -244,6 +245,10 @@
       "inputAngles": "Direções a partir de +X"
     },
     "guideDialog": {
+      "checkCircle": "Verificar com um contato adicional",
+      "checkAngle": "Ângulo de verificação (°)",
+      "shortArcCheck": "A verificação precisa de contatos distribuídos por cerca de 240° do círculo. Em um arco mais curto, desative o contato adicional e use Somente medir para inspecionar o resultado.",
+      "checkAngleRange": "Use um ângulo a pelo menos {separation}° dos outros contatos.",
       "previous": "Movimento anterior",
       "pause": "Pausa",
       "play": "Reproduzir",

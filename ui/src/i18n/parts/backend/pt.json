@@ -265,6 +265,12 @@
       "cannotRead": "Não é possível ler o ficheiro."
     },
     "nmlPort": {
+      "circleCheckCentreRisk": "Espalhe mais os contatos de verificação ao redor do círculo. Um contato incorreto pode deslocar o centro calculado em mais de 0,05 mm.",
+      "circleCheckSensitivity": "Distribua os contatos de verificação ao redor do círculo. Nesta disposição, um contato incorreto pode passar despercebido.",
+      "circleCheckResidual": "A verificação do círculo falhou. O maior desvio de contato foi de {residual} mm, acima de 0,02 mm. Limpe a superfície e apalpe novamente.",
+      "circleCheckFit": "A verificação do círculo falhou. Os contatos não formam um círculo utilizável. Verifique a superfície e apalpe novamente.",
+      "circleCheckAngle": "Escolha um ângulo de verificação a pelo menos 10° dos outros contatos.",
+      "circleCheckFeature": "O contato adicional só está disponível para um furo ou um ressalto.",
       "breakpointPlainProgram": "Um ponto de paragem precisa de um programa sem sub-rotinas nem ciclos.",
       "breakpointMotionBlock": "Escolha um bloco de movimento no programa carregado.",
       "commandTeleop": "a mudança entre modo mundo e modo junta",

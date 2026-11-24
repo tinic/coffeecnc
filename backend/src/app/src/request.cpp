@@ -463,7 +463,8 @@ auto command(const Json& object) -> Command {
         const auto& angles = field(object, "angles");
         if (!angles.is_array() || angles.size() != request.angles_deg.size() ||
             !std::ranges::all_of(angles, [](const Json& angle) { return angle.is_number(); }))
-          throw InvalidRequest("Expected three probe angles in degrees.");
+          throw InvalidRequest(LocalizedReason{"Expected three probe angles in degrees.",
+                                               MessageKey{"messages.request.expectedAngles"}});
         for (std::size_t i = 0; i < request.angles_deg.size(); ++i)
           request.angles_deg.at(i) = angles.at(i).get<double>();
       } else if (action == SetterAction::slot || action == SetterAction::ridge) {

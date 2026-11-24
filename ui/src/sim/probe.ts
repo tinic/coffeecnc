@@ -1,4 +1,4 @@
-import type { FixedSetter, ProbeDirection, SetterState, Tool, Vec3 } from '../protocol'
+import type { FixedSetter, ProbedPoint, ProbeDirection, SetterMeasured, SetterState, Tool, Vec3 } from '../protocol'
 import { demoFixture, demoProbe, demoProbeTools, demoSetter, type ProbeBlock } from './probe-fixture'
 import { toWork, type Modal } from './gcode'
 import {
@@ -115,9 +115,12 @@ function rayRound(start: Vec3, direction: XY, centre: XY, radius: number, inside
 
 class Path {
   readonly moves: ProbeMove[] = []
+  /** Every search: where it began and the ball-centre contact. */
+  readonly contacts: { from: Vec3; contact: Vec3 }[] = []
   constructor(readonly start: Vec3) {}
   move(target: Vec3): void { this.moves.push({ target }) }
   touch(from: Vec3, contact: Vec3): void {
+    this.contacts.push({ from, contact })
     const length = Math.hypot(contact[0] - from[0], contact[1] - from[1], contact[2] - from[2])
     const retreat = Math.min(latchBackoff / length, 1)
     const backoff: Vec3 = [
@@ -166,6 +169,9 @@ export class SimProbe {
   /** A measured edge: the G5x rotation applying it writes. */
   private angle: { id: number; rotation: number; frame: string } | null = null
   private angleId = 0
+  /** A measure-only result: the machine point applying makes the origin of `axis`. */
+  private feature: { id: number; point: Vec3; axis: Axis; frame: string } | null = null
+  private featureId = 0
 
   constructor(tools: readonly Tool[]) {
     this.physicalLengths = new Map(tools.map(tool => [tool.number, tool.number === 1 ? 62.43 : tool.length]))
@@ -196,15 +202,48 @@ export class SimProbe {
         return { ...this.state(modal), ...change }
       },
     })
-    const origin = (point: Vec3, axis: Axis): ProbePlan => result(() => {
+    const shift = (point: Vec3, axis: Axis): Partial<SetterState> => {
       const work = toWork(modal, point)
       const offset = modal.offsets[modal.wcs - 1]
       if (offset === undefined) throw new Error('Missing simulated work origin')
       const [x, y] = turn([axis === 'X' || axis === 'XY' ? work[0] : 0, axis === 'Y' || axis === 'XY' ? work[1] : 0], rotation)
       modal.offsets[modal.wcs - 1] = [offset[0] + x, offset[1] + y, offset[2] + (axis === 'Z' ? work[2] : 0)]
       return { material: { wcs: modal.wcs, axis } }
+    }
+    const measureOnly = 'measure_only' in command && command.measure_only
+    // Each search's surface point: the ball centre one radius further along the travel.
+    const faces = (): ProbedPoint[] => path.contacts.map(({ from, contact }) => {
+      const length = Math.hypot(contact[0] - from[0], contact[1] - from[1])
+      if (length < 1e-9) return { direction: 'z_top', work: toWork(modal, contact), machine: contact }
+      const unit: XY = [(contact[0] - from[0]) / length, (contact[1] - from[1]) / length]
+      const surface = along(contact, unit, tableRadius)
+      const [u, v] = turn(unit, -rotation)
+      const direction: Lateral = Math.abs(u) >= Math.abs(v) ? (u > 0 ? 'x_plus' : 'x_minus') : (v > 0 ? 'y_plus' : 'y_minus')
+      return { direction, work: toWork(modal, surface), machine: surface }
     })
+    // Measure-only: keep the point to apply later and report it; an XY point at the probing depth.
+    const measure = (point: Vec3, axis: Axis): Partial<SetterState> => {
+      const touched = faces()
+      const at: Vec3 = axis === 'Z' ? point : [point[0], point[1], touched.at(-1)?.machine[2] ?? point[2]]
+      const [x, y, z] = toWork(modal, at)
+      const id = ++this.featureId
+      this.feature = { id, point, axis, frame: frame(modal) }
+      const work: SetterMeasured['work'] = {
+        ...(axis.includes('X') ? { x } : {}), ...(axis.includes('Y') ? { y } : {}), ...(axis === 'Z' ? { z } : {}),
+      }
+      return { measured: { measurement_id: id, wcs: modal.wcs, axes: axis, work, machine: at, faces: touched } }
+    }
+    const origin = (point: Vec3, axis: Axis): ProbePlan => result(() => measureOnly ? measure(point, axis) : shift(point, axis))
 
+    if (command.action === 'apply_measurement') {
+      const measurement = this.feature
+      this.feature = null
+      this.angle = null
+      if (measurement?.id !== command.measurement_id) return 'Probe the feature again before applying the measurement.'
+      if (measurement.frame !== frame(modal)) return 'The work frame or tool changed. Probe the feature again.'
+      return result(() => shift(measurement.point, measurement.axis))
+    }
+    this.feature = null
     if (command.action === 'apply_angle') {
       const measurement = this.angle
       this.angle = null
@@ -320,7 +359,10 @@ export class SimProbe {
       return result(() => {
         const id = ++this.angleId
         this.angle = { id, rotation: wrapped(rotation + degrees), frame: frame(modal) }
-        return { edge_angle: degrees, edge_rotation: { measurement_id: id, wcs: modal.wcs, rotation: wrapped(rotation + degrees) } }
+        return {
+          edge_angle: degrees, edge_rotation: { measurement_id: id, wcs: modal.wcs, rotation: wrapped(rotation + degrees) },
+          ...(measureOnly ? { measured: { wcs: modal.wcs, axes: '', work: {}, faces: faces() } } : {}),
+        }
       })
     }
 

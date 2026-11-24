@@ -79,6 +79,7 @@
       "toolTouchOffInvalid": "Cargue una herramienta e indique un valor de toma de referencia finito.",
       "fixedSetterNeeds": "El palpador de herramienta fijo requiere la herramienta confirmada y el husillo parado.",
       "probeValuesFinite": "Las posiciones y dimensiones de palpado deben ser finitas.",
+      "probeAlwaysWrites": "Esta acción de palpado siempre escribe su resultado.",
       "probeNeedsAxes": "El palpador requiere ejes configurados y ningún final de carrera activo.",
       "stopBeforeToolEdit": "Pare la ejecución y termine los cambios de herramienta antes de editar herramientas.",
       "invalidToolRow": "Fila de la tabla de herramientas no válida.",

@@ -86,6 +86,27 @@ void command_results() {
               arc_json.at("material").at("axis") == "XY",
           "A three-point result reports the diameter, the arc the contacts covered and the "
           "centre uncertainty");
+  SetterState bore{};
+  bore.center_diameter = 16;
+  bore.measured = SetterState::Measured{
+      .id = 5,
+      .wcs = 2,
+      .axes = "XY",
+      .work = {4.0, -2.0, std::nullopt},
+      .machine = std::array{9.0, -5.0, 6.0},
+      .faces = {{ProbeDirection::x_plus, {12.0, -2.0, -6.0}, {17.0, -5.0, 6.0}}}};
+  const auto measured = Json::parse(encode_result(42, CommandOutcome::accepted, "", bore)).at("setter");
+  require(measured.at("measured") ==
+                  Json{{"measurement_id", 5},
+                       {"wcs", 2},
+                       {"axes", "XY"},
+                       {"work", {{"x", 4.0}, {"y", -2.0}}},
+                       {"machine", {9.0, -5.0, 6.0}},
+                       {"faces", Json::array({{{"direction", "x_plus"},
+                                               {"work", {12.0, -2.0, -6.0}},
+                                               {"machine", {17.0, -5.0, 6.0}}}})}} &&
+              !measured.contains("material"),
+          "A measure-only result reports the point and faces in work and machine millimetres");
   slot.feature_size[1] = std::numeric_limits<double>::quiet_NaN();
   const auto invalid = Json::parse(encode_result(42, CommandOutcome::accepted, "", slot));
   require(invalid.at("outcome") == "failed" && !invalid.contains("setter"),

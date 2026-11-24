@@ -381,6 +381,8 @@
       "arcBossDiameter": "Les contacts donnent un tenon de Ø {measured} mm, pas environ le Ø {entered} mm saisi. Vérifiez que les trois ont touché le tenon, puis palpez de nouveau.",
       "arcUncertain": "Le centre est incertain de {uncertainty} mm, plus de 0.02 mm : les contacts couvrent {span}° avec un écart de verrouillage jusqu’à {spread} mm. Écartez davantage les angles et palpez de nouveau.",
       "arcContact": "Contact {n} à {angle}° : {error}",
+      "probeFeatureAgain": "Palpez à nouveau l’élément avant d’appliquer la mesure.",
+      "measuredFrameChanged": "Le repère pièce ou l’outil a changé. Palpez à nouveau l’élément.",
       "rotationCancelled": "La rotation a été annulée avant l’écriture du système pièce.",
       "rotationCommand": "Impossible de construire la commande de rotation pièce.",
       "rotationUnverified": "Impossible de vérifier la rotation appliquée. Vérifiez le système pièce actif.",
@@ -576,7 +578,11 @@
       "stopExistsNamed": "demande hors d’un sous-programme si {name} existe : sur la machine, il peut exister depuis un programme ou un bloc MDI antérieur, ce que l’aperçu ne sait pas",
       "stopComputedParameter": "lit un paramètre dont le numéro est calculé (#[...], ##) : lequel, et si le programme l’a défini, n’est pas connu de l’aperçu",
       "stopReturnValue": "lit {name} ou {other} avant qu’un sous-programme du programme ne soit revenu : sa valeur issue d’un programme ou d’un bloc MDI antérieur n’est pas connue de l’aperçu",
-      "stopDefinitionBlock": "un mot O dans une définition de sous-programme appartient à un bloc extérieur : les lignes exécutées ne sont pas connues de l’aperçu"
+      "stopDefinitionBlock": "un mot O dans une définition de sous-programme appartient à un bloc extérieur : les lignes exécutées ne sont pas connues de l’aperçu",
+      "stopPythonLine": "une ligne `;py,` exécute du Python dans l’interpréteur",
+      "stopPythonComment": "un commentaire ({word}...) exécute du Python dans l’interpréteur",
+      "stopFileWritingComment": "un commentaire ({word}...) écrit un fichier",
+      "stopOwordName": "un mot O a un nom calculé ou qui n’est pas un nom simple (lettres, chiffres, `_`, `-`, `.`) : l’interpréteur chercherait un fichier portant ce nom"
     },
     "nmlStatus": {
       "pauseFirst": "Mettez en pause le programme en cours avant de jogger Z.",

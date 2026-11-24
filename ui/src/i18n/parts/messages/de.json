@@ -79,6 +79,7 @@
       "toolTouchOffInvalid": "Laden Sie ein Werkzeug und geben Sie einen endlichen Antastwert an.",
       "fixedSetterNeeds": "Der Werkzeuglängensensor erfordert das bestätigte Werkzeug und eine stehende Spindel.",
       "probeValuesFinite": "Antastpositionen und Maße müssen endlich sein.",
+      "probeAlwaysWrites": "Diese Antastaktion schreibt ihr Ergebnis immer.",
       "probeNeedsAxes": "Der Messtaster erfordert konfigurierte Achsen und keinen aktiven Endschalter.",
       "stopBeforeToolEdit": "Stoppen Sie die Ausführung und schließen Sie Werkzeugwechsel ab, bevor Sie Werkzeuge bearbeiten.",
       "invalidToolRow": "Ungültige Zeile der Werkzeugtabelle.",

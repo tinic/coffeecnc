@@ -79,6 +79,7 @@
       "toolTouchOffInvalid": "工具を装着し、有限の原点設定値を指定してください。",
       "fixedSetterNeeds": "ツールセッターには、確認済みの工具と停止した主軸が必要です。",
       "probeValuesFinite": "プロービングの位置と寸法は有限値である必要があります。",
+      "probeAlwaysWrites": "このプローブ操作は常に結果を書き込みます。",
       "probeNeedsAxes": "プローブには、設定済みの軸と作動していないハードリミットが必要です。",
       "stopBeforeToolEdit": "工具を編集する前に、実行を停止して工具交換を完了してください。",
       "invalidToolRow": "工具テーブルの行が無効です。",

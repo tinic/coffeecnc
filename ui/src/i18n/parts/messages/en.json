@@ -79,6 +79,7 @@
       "toolTouchOffInvalid": "Load a tool and provide a finite touch-off value.",
       "fixedSetterNeeds": "Fixed setter requires the confirmed tool and a stopped spindle.",
       "probeValuesFinite": "Probe positions and dimensions must be finite.",
+      "probeAlwaysWrites": "This probe action always writes its result.",
       "probeNeedsAxes": "The probe requires configured axes and no active hard limit.",
       "stopBeforeToolEdit": "Stop execution and finish tool changes before editing tools.",
       "invalidToolRow": "Invalid tool table row.",

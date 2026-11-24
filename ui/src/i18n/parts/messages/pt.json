@@ -79,6 +79,7 @@
       "toolTouchOffInvalid": "Carregue uma ferramenta e indique um valor de tomada de referência finito.",
       "fixedSetterNeeds": "O apalpador de ferramenta fixo exige a ferramenta confirmada e a árvore parada.",
       "probeValuesFinite": "As posições e dimensões de apalpação têm de ser finitas.",
+      "probeAlwaysWrites": "Esta ação de apalpação escreve sempre o seu resultado.",
       "probeNeedsAxes": "O apalpador exige eixos configurados e nenhum fim de curso ativo.",
       "stopBeforeToolEdit": "Pare a execução e termine as trocas de ferramenta antes de editar ferramentas.",
       "invalidToolRow": "Linha da tabela de ferramentas inválida.",

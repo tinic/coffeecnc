@@ -1,5 +1,6 @@
 #include <coffeecnc/app/panel_feed.hpp>
 #include <coffeecnc/app/runtime.hpp>
+#include <coffeecnc/core/text_file.hpp>
 #include <coffeecnc/linuxcnc/hal_component.hpp>
 #include <coffeecnc/linuxcnc/hal_control.hpp>
 #include <coffeecnc/linuxcnc/machine_config.hpp>
@@ -649,7 +650,19 @@ void feature_scenarios(NmlPort& port, double scale, const auto& mdi) {
 //   solid (corner, boss, ridge): trips inside u -5..13, v -9..5 below Z 12;
 //   edge (angle): trips where v + g*u >= 6 (front) or u + g*v >= 6 (left), g = -0.05.
 // Each result is the work origin in the frame (where the work system reads X0 Y0) and the size.
-void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& mdi) {
+// With `measure` (#247), every cycle runs measure-only first: it must write nothing and report
+// the expected point and faces. Applying that measurement must then set the same origin.
+void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& mdi,
+                       bool measure = false, const std::string& tool_table = {}) {
+  // The MDI blocks written since `from` that write an offset or the tool table: G10.
+  const auto g10_since = [&](std::size_t from) {
+    const auto all = port.writes();
+    return std::count_if(all.begin() + static_cast<std::ptrdiff_t>(std::min(from, all.size())), all.end(),
+                         [](const NmlPort::Written& written) { return written.mdi.contains("G10"); });
+  };
+  const auto table_text = [&] {
+    return read_text_file(tool_table, std::size_t{1} << 20).value_or(std::string{});
+  };
   checked(port.set_tool({98, 98, 50, 0, "Setter reference"}, {}));
   checked(port.set_tool({99, 99, 45, 2, "Ruby probe"}, {}));
   constexpr double none = std::numeric_limits<double>::quiet_NaN();
@@ -764,11 +777,67 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
     require(ok, std::format("{} probes along the {}° work axes and sets G55 in them", expected.name,
                             degrees));
   };
-  const auto run = [&](const Expected& expected, FixedSetterRequest request) {
+  const auto to_machine = [&](double u, double v) { return std::array{c * u - s * v, s * u + c * v}; };
+  // A measure-only cycle: nothing written, the point and faces reported; then applied.
+  const auto measure_cycle = [&](const Expected& expected, const NmlStatus& before,
+                            const FixedSetterRequest& request, std::size_t faces) {
+    auto probe = request;
+    probe.measure_only = true;
+    const auto writes = port.writes().size();
+    const auto table_before = table_text();
+    const auto result = port.fixed_setter(probe, epoch, {});
+    if (!result || !result->measured)
+      throw std::runtime_error(std::format("{} measure at {}°: {}", expected.name, degrees,
+                                           result ? "no measurement" : result.error()));
+    const auto after = port.status();
+    const auto& m = *result->measured;
+    const auto kept = origin_of(before);
+    const auto start = to_frame(request.start);
+    bool ok = after.g5x == before.g5x && after.rotation_xy == before.rotation_xy &&
+              after.g92 == before.g92 && !result->material && m.id != 0 && m.wcs == 2 &&
+              m.faces.size() == faces && m.machine && std::abs(machine()[2] - request.start[2]) < 0.03;
+    // Probing moves only: blocks were written, none of them a G10, and the tool table is the same.
+    const auto g10 = g10_since(writes);
+    ok = ok && port.writes().size() > writes && g10 == 0 && table_text() == table_before;
+    std::string line = std::format("fact=measure_only action={} rotation={} axes={} faces={} g10_blocks={}",
+                                   expected.name, degrees, m.axes, m.faces.size(), g10);
+    std::array<double, 2> point{};
+    for (std::size_t i = 0; i < 2; ++i) {
+      point[i] = expected.origin[i].value_or(start[i]);
+      if (expected.origin[i]) {
+        const double work = *expected.origin[i] - kept[i];
+        ok = ok && m.work[i] && std::abs(*m.work[i] - work) < 0.03;
+        line += std::format(" work_{0}_expected={1:.4f} work_{0}_measured={2:.4f}", "xy"[i], work,
+                            m.work[i].value_or(none));
+      } else {
+        ok = ok && !m.work[i];
+      }
+    }
+    const auto machine_point = to_machine(point[0], point[1]);
+    for (std::size_t i = 0; i < 2; ++i) {
+      ok = ok && std::abs((*m.machine)[i] - machine_point[i]) < 0.03;
+      line += std::format(" machine_{0}_expected={1:.4f} machine_{0}_measured={2:.4f}", "xy"[i],
+                          machine_point[i], (*m.machine)[i]);
+    }
+    std::cout << line << std::endl;
+    require(ok, std::format("{} measures along the {}° work axes and writes nothing", expected.name,
+                            degrees));
+    const auto applied = port.fixed_setter(
+        {.action = SetterAction::apply_measurement, .tool = 99, .edge_measurement = m.id}, epoch, {});
+    if (!applied)
+      throw std::runtime_error(std::format("{} apply at {}°: {}", expected.name, degrees, applied.error()));
+    auto reported = *result;
+    reported.material = applied->material;
+    return reported;
+  };
+  const auto run = [&](const Expected& expected, FixedSetterRequest request, std::size_t faces = 0) {
     const auto before = port.status();
     request.tool = 99;
     request.start = machine();
-    verify(expected, before, port.fixed_setter(request, epoch, {}));
+    if (measure)
+      verify(expected, before, measure_cycle(expected, before, request, faces));
+    else
+      verify(expected, before, port.fixed_setter(request, epoch, {}));
   };
 
   // Hollow: walls (ball contacts) at u -5 and 13, v -9 and 5; physical faces one radius out.
@@ -776,36 +845,215 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
   at(2, 1);
   run({.name = "inside_corner", .origin = {-6, 6}},
       {.action = SetterAction::inside_corner, .direction = ProbeDirection::x_minus,
-       .y_direction = ProbeDirection::y_plus});
+       .y_direction = ProbeDirection::y_plus},
+      2);
   at(2, 1);
-  run({.name = "pocket", .origin = {4, -2}, .size = {20, 16}}, {.action = SetterAction::pocket});
+  run({.name = "pocket", .origin = {4, -2}, .size = {20, 16}}, {.action = SetterAction::pocket}, 4);
   at(2, 1);
   run({.name = "slot", .origin = {4, std::nullopt}, .size = {20, std::nullopt}},
-      {.action = SetterAction::slot, .direction = ProbeDirection::x_plus});
+      {.action = SetterAction::slot, .direction = ProbeDirection::x_plus}, 2);
   at(2, 1);
   run({.name = "slot_y", .origin = {std::nullopt, -2}, .size = {std::nullopt, 16}},
-      {.action = SetterAction::slot, .direction = ProbeDirection::y_plus});
+      {.action = SetterAction::slot, .direction = ProbeDirection::y_plus}, 2);
   at(2, 1);
   // The bore's Y chord passes through its centre: 14 mm between contacts plus the 2 mm ball.
-  run({.name = "bore", .origin = {4, -2}, .diameter = 16}, {.action = SetterAction::bore});
+  run({.name = "bore", .origin = {4, -2}, .diameter = 16}, {.action = SetterAction::bore}, 4);
 
   // Solid: contacts at u -5 and 13, v -9 and 5; the faces lie one radius inward of them.
   probe_input("sim-rot-outer", "sim-rot-solid.and");
   at(2, 1);
   run({.name = "corner", .origin = {-4, -8}},
       {.action = SetterAction::corner, .direction = ProbeDirection::x_plus,
-       .y_direction = ProbeDirection::y_plus});
+       .y_direction = ProbeDirection::y_plus},
+      2);
   // From the far corner: contacts at u 13 and v 5, faces one radius inward at 12 and 4.
   at(10, 2);
   run({.name = "corner_xminus_yminus", .origin = {12, 4}},
       {.action = SetterAction::corner, .direction = ProbeDirection::x_minus,
-       .y_direction = ProbeDirection::y_minus});
+       .y_direction = ProbeDirection::y_minus},
+      2);
   at(3, -1);
   run({.name = "boss", .origin = {4, -2}, .diameter = 12},
-      {.action = SetterAction::boss, .gauge_width_mm = 16});
+      {.action = SetterAction::boss, .gauge_width_mm = 16}, 4);
   at(2, 1);
   run({.name = "ridge", .origin = {std::nullopt, -2}, .size = {std::nullopt, 12}},
-      {.action = SetterAction::ridge, .direction = ProbeDirection::y_plus, .gauge_width_mm = 12});
+      {.action = SetterAction::ridge, .direction = ProbeDirection::y_plus, .gauge_width_mm = 12},
+      2);
+
+  if (measure) {
+    // A single edge from beside the solid part, below its top: contact at u -5, face at u -4.
+    at(-9, -2);
+    mdi("G21 G90 G53 G0 Z8");
+    mdi(scale == 1 ? "G21 G91" : "G20 G91");
+    auto before = port.status();
+    FixedSetterRequest edge_request{.action = SetterAction::material, .tool = 99, .start = machine(),
+                                    .direction = ProbeDirection::x_plus};
+    const auto edge = measure_cycle({.name = "edge_x", .origin = {-4, std::nullopt}}, before, edge_request, 1);
+    const auto edge_after = port.status();
+    std::cout << std::format("fact=measure_only action=edge_x_apply rotation={} origin_u_expected=-4.0000 "
+                             "origin_u_measured={:.4f} origin_v_kept={:.4f} origin_v_measured={:.4f}",
+                             degrees, origin_of(edge_after)[0], origin_of(before)[1],
+                             origin_of(edge_after)[1])
+              << std::endl;
+    require(edge.material && edge.material->axis == 'X' &&
+                std::abs(origin_of(edge_after)[0] + 4) < 0.03 &&
+                std::abs(origin_of(edge_after)[1] - origin_of(before)[1]) < 0.03,
+            "applying a measured X edge sets work X0 on the face and keeps Y");
+    // Z top over the part: Z0 is moved 1 mm down first, so the top reads Z1 until applied.
+    mdi("G21 G90 G53 G0 Z20"); // up first: the part is between here and there
+    at(2, 1);
+    mdi("G21 G10 L20 P0 Z9");
+    mdi(scale == 1 ? "G21 G91" : "G20 G91");
+    before = port.status();
+    const auto top_writes = port.writes().size();
+    const auto top_table = table_text();
+    FixedSetterRequest top{.action = SetterAction::material, .tool = 99, .start = machine(),
+                           .direction = ProbeDirection::z_top, .measure_only = true};
+    const auto z = port.fixed_setter(top, epoch, {});
+    if (!z || !z->measured)
+      throw std::runtime_error(std::format("Z top measure at {}°: {}", degrees, z ? "no measurement" : z.error()));
+    const auto& zm = *z->measured;
+    const auto measured_status = port.status();
+    const bool unchanged = measured_status.g5x == before.g5x && measured_status.g92 == before.g92 &&
+                           measured_status.rotation_xy == before.rotation_xy &&
+                           g10_since(top_writes) == 0 && table_text() == top_table;
+    std::cout << std::format("fact=measure_only action=z_top rotation={} axes={} work_z_expected=1.0000 "
+                             "work_z_measured={:.4f} machine_z_expected=12.0000 machine_z_measured={:.4f} "
+                             "g5x_g92_rotation_table_unchanged={}",
+                             degrees, zm.axes, zm.work[2].value_or(none),
+                             zm.machine ? (*zm.machine)[2] : none, unchanged)
+              << std::endl;
+    require(unchanged && zm.axes == "Z" && zm.work[2] && std::abs(*zm.work[2] - 1) < 0.03 &&
+                !zm.work[0] && !zm.work[1] && zm.machine && std::abs((*zm.machine)[2] - 12) < 0.03 &&
+                port.writes().size() > top_writes,
+            "Z top measures the top without writing Z0");
+    const auto z_applied = port.fixed_setter(
+        {.action = SetterAction::apply_measurement, .tool = 99, .edge_measurement = zm.id}, epoch, {});
+    const auto z_after = port.status();
+    std::cout << std::format("fact=measure_only action=z_top_apply rotation={} work_z_expected=8.0000 "
+                             "work_z_measured={:.4f}",
+                             degrees, z_after.work[2])
+              << std::endl;
+    require(z_applied && z_applied->material && z_applied->material->axis == 'Z' &&
+                std::abs(z_after.work[2] - 8) < 0.03 &&
+                std::abs(origin_of(z_after)[0] - origin_of(before)[0]) < 0.03 &&
+                std::abs(origin_of(z_after)[1] - origin_of(before)[1]) < 0.03,
+            z_applied ? "applying the measured top sets Z0 there and keeps XY" : z_applied.error());
+    // A measurement is applied once; a new probe action forgets it.
+    const auto again = port.fixed_setter(
+        {.action = SetterAction::apply_measurement, .tool = 99, .edge_measurement = zm.id}, epoch, {});
+    require(!again && again.error().contains("Probe the feature again"),
+            "a measurement cannot be applied twice");
+    // A changed work origin refuses an applied measurement before writing.
+    at(2, 1);
+    top.start = machine();
+    const auto stale = port.fixed_setter(top, epoch, {});
+    if (!stale || !stale->measured)
+      throw std::runtime_error(stale ? "no measurement" : stale.error());
+    mdi("G21 G10 L20 P0 Z7");
+    mdi(scale == 1 ? "G21 G91" : "G20 G91");
+    const auto stale_writes = port.writes().size();
+    const auto stale_origin = port.status().g5x;
+    const auto refused = port.fixed_setter(
+        {.action = SetterAction::apply_measurement, .tool = 99, .edge_measurement = stale->measured->id},
+        epoch, {});
+    require(!refused && refused.error().contains("work frame") &&
+                port.writes().size() == stale_writes && port.status().g5x == stale_origin,
+            "a measurement taken in another work frame is refused before writing");
+    // Every other way a measurement goes stale refuses it before writing (one each). `change`
+    // runs between measuring and applying; `at_apply` is the session epoch the apply carries.
+    // Epoch fields: page (a reconnect or a new panel session), datum (E-stop, power, homing),
+    // tool (a tool change, an MDI block, a program run, step or resume, an offset edit), stop.
+    const auto refused_after = [&](std::string_view name, const auto& change, SetterEpoch at_apply,
+                                   std::string_view reason) {
+      at(2, 1);
+      top.start = machine();
+      const auto taken = port.fixed_setter(top, epoch, {});
+      if (!taken || !taken->measured)
+        throw std::runtime_error(std::format("{}: {}", name, taken ? "no measurement" : taken.error()));
+      change();
+      const auto before_apply = port.status();
+      const auto writes_before = port.writes().size();
+      const auto table_before = table_text();
+      const auto result = port.fixed_setter(
+          {.action = SetterAction::apply_measurement, .tool = 99, .edge_measurement = taken->measured->id},
+          at_apply, {});
+      const auto after = port.status();
+      std::cout << std::format("fact=measure_only action=stale_{} rotation={} refused={} writes={}", name,
+                               degrees, !result, port.writes().size() - writes_before)
+                << std::endl;
+      require(!result && result.error().contains(reason) && port.writes().size() == writes_before &&
+                  after.g5x == before_apply.g5x && after.g92 == before_apply.g92 &&
+                  after.rotation_xy == before_apply.rotation_xy && table_text() == table_before,
+              result ? std::format("{}: expected a refused measurement", name) : result.error());
+    };
+    const auto units = scale == 1 ? "G21 G91" : "G20 G91";
+    refused_after("tool_offset", [&] { mdi("G43 H98"); }, epoch, "work frame or tool");
+    mdi("G43 H99");
+    refused_after("tool_change", [&] { mdi("M61 Q98"); }, epoch, "Load T99");
+    mdi("M61 Q99");
+    mdi("G43 H99");
+    refused_after("g92", [&] { mdi("G92 X1"); mdi(units); }, epoch, "work frame or tool");
+    refused_after("g52", [&] { mdi("G52 X1"); mdi(units); }, epoch, "work frame or tool");
+    refused_after("rotation", [&] { mdi(std::format("G21 G10 L2 P2 R{}", degrees + 1)); mdi(units); },
+                  epoch, "work frame or tool");
+    mdi(std::format("G21 G10 L2 P2 R{}", degrees));
+    mdi(units);
+    const auto none_changed = [] {};
+    auto page = epoch;
+    ++page.page;
+    refused_after("epoch_page", none_changed, page, "work frame or tool");
+    auto datum = epoch;
+    ++datum.datum;
+    refused_after("epoch_datum", none_changed, datum, "work frame or tool");
+    auto tool_epoch = epoch;
+    ++tool_epoch.tool;
+    refused_after("epoch_tool", none_changed, tool_epoch, "work frame or tool");
+    auto stop = epoch;
+    ++stop.stop;
+    refused_after("epoch_stop", none_changed, stop, "work frame or tool");
+    // A new probe action forgets the measurement before it: the first ID is refused, the second
+    // is applied.
+    at(2, 1);
+    top.start = machine();
+    const auto first = port.fixed_setter(top, epoch, {});
+    at(2, 1);
+    top.start = machine();
+    const auto second = port.fixed_setter(top, epoch, {});
+    if (!first || !first->measured || !second || !second->measured)
+      throw std::runtime_error("two measurements expected");
+    const auto forgotten_writes = port.writes().size();
+    const auto forgotten = port.fixed_setter(
+        {.action = SetterAction::apply_measurement, .tool = 99, .edge_measurement = first->measured->id},
+        epoch, {});
+    const bool forgotten_clean = port.writes().size() == forgotten_writes;
+    const auto latest = port.fixed_setter(
+        {.action = SetterAction::apply_measurement, .tool = 99, .edge_measurement = second->measured->id},
+        epoch, {});
+    std::cout << std::format("fact=measure_only action=forgotten rotation={} first_refused={} writes={} "
+                             "second_applied={}",
+                             degrees, !forgotten, forgotten_clean ? 0 : 1, latest.has_value())
+              << std::endl;
+    require(!forgotten && forgotten.error().contains("Probe the feature again") && forgotten_clean &&
+                latest.has_value() && first->measured->id != second->measured->id,
+            "a new probe action forgets the measurement before it");
+    // An action that always writes is refused as a measurement before anything is sent.
+    for (const auto action : {SetterAction::ball, SetterAction::touch_off, SetterAction::check}) {
+      const auto writes_before = port.writes().size();
+      FixedSetterRequest writer{.action = action, .tool = 99, .start = machine(), .measure_only = true};
+      writer.gauge_width_mm = 20;
+      const auto refused_writer = port.fixed_setter(writer, epoch, {});
+      require(!refused_writer && refused_writer.error().contains("always writes its result") &&
+                  port.writes().size() == writes_before,
+              "the ball calibration and the tool setter refuse measure-only natively too");
+    }
+    mdi("G92.1");
+    mdi("G21 G90 G53 G0 X0 Y0 Z20");
+    mdi("G21 G10 L20 P0 Z8");
+    mdi("G54");
+    require(port.status().g5x == g54, "measuring and applying change only the active work system");
+    return;
+  }
 
   // Ball calibration stays refused in a rotated system, before any command.
   at(2, 1);
@@ -937,7 +1185,16 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
 // obstacle (an early trip) or a notch (no contact); on a boss a burr below its top. With
 // `faults` the scenario runs those cases and a stop mid-cycle instead of the measured cycles.
 void arc_scenarios(NmlPort& port, double scale, double degrees, const auto& mdi, bool faults,
-                   HalShared& shared) {
+                   HalShared& shared, const std::string& tool_table) {
+  // The MDI blocks written since `from` that write an offset or the tool table: G10.
+  const auto g10_since = [&](std::size_t from) {
+    const auto all = port.writes();
+    return std::count_if(all.begin() + static_cast<std::ptrdiff_t>(std::min(from, all.size())), all.end(),
+                         [](const NmlPort::Written& written) { return written.mdi.contains("G10"); });
+  };
+  const auto table_text = [&] {
+    return read_text_file(tool_table, std::size_t{1} << 20).value_or(std::string{});
+  };
   checked(port.set_tool({98, 98, 50, 0, "Setter reference"}, {}));
   checked(port.set_tool({99, 99, 45, 2, "Ruby probe"}, {}));
   constexpr double none = std::numeric_limits<double>::quiet_NaN();
@@ -1055,15 +1312,18 @@ void arc_scenarios(NmlPort& port, double scale, double degrees, const auto& mdi,
     if (action == SetterAction::boss_arc)
       request.gauge_width_mm = 12;
     const auto writes = port.writes().size();
+    const auto table_before = table_text();
     const auto result = port.fixed_setter(request, epoch, wanted);
     const auto after = port.status();
+    const auto g10 = g10_since(writes);
     const bool unchanged = after.g5x == before.g5x && after.g92 == before.g92 &&
                            after.rotation_xy == before.rotation_xy &&
-                           after.tool_offset == before.tool_offset && after.wcs == before.wcs;
+                           after.tool_offset == before.tool_offset && after.wcs == before.wcs &&
+                           g10 == 0 && table_text() == table_before;
     std::cout << std::format("fact=arc_fault action={} rotation={} angles={:.0f},{:.0f},{:.0f} "
-                             "refused={} moved={} offsets_unchanged={} reason=\"{}\"",
+                             "refused={} moved={} g10_blocks={} offsets_unchanged={} reason=\"{}\"",
                              name, degrees, angles[0], angles[1], angles[2], !result,
-                             port.writes().size() > writes, unchanged,
+                             port.writes().size() > writes, g10, unchanged,
                              result ? std::string{} : result.error())
               << std::endl;
     require(!result && result.error().contains(reason) && unchanged,
@@ -1180,6 +1440,61 @@ void arc_scenarios(NmlPort& port, double scale, double degrees, const auto& mdi,
   run("boss_arc", SetterAction::boss_arc, {90, 180, 270}, 12);
   at(3, -1);
   run("boss_arc_partial", SetterAction::boss_arc, {195, 240, 285}, 12);
+
+  // Measure only (#247): both cycles move as usual, write no G10 and leave the tool table as it
+  // was, report three surface points and the centre; applying the measurement sets it.
+  const auto measure = [&](std::string_view name, SetterAction action, std::array<double, 3> angles) {
+    const auto before = port.status();
+    FixedSetterRequest request{.action = action, .tool = 99, .start = machine(), .measure_only = true};
+    request.angles_deg = angles;
+    if (action == SetterAction::boss_arc)
+      request.gauge_width_mm = 12;
+    const auto writes = port.writes().size();
+    const auto table_before = table_text();
+    const auto result = port.fixed_setter(request, epoch, {});
+    if (!result || !result->measured)
+      throw std::runtime_error(std::format("{} measure at {}°: {}", name, degrees,
+                                           result ? "no measurement" : result.error()));
+    const auto after = port.status();
+    const auto& m = *result->measured;
+    const auto g10 = g10_since(writes);
+    const bool unchanged = after.g5x == before.g5x && after.g92 == before.g92 &&
+                           after.rotation_xy == before.rotation_xy && g10 == 0 &&
+                           table_text() == table_before;
+    const auto kept = origin_of(before);
+    const std::array work{4 - kept[0], -2 - kept[1]};
+    std::cout << std::format("fact=measure_only action={} rotation={} axes={} faces={} g10_blocks={} "
+                             "table_unchanged={} work_x_expected={:.4f} work_x_measured={:.4f} "
+                             "work_y_expected={:.4f} work_y_measured={:.4f} centre_uncertainty_mm={:.4f}",
+                             name, degrees, m.axes, m.faces.size(), g10, table_text() == table_before,
+                             work[0], m.work[0].value_or(none), work[1], m.work[1].value_or(none),
+                             result->center_uncertainty_mm.value_or(none))
+              << std::endl;
+    require(unchanged && !result->material && m.id != 0 && m.axes == "XY" && m.faces.size() == 3 &&
+                port.writes().size() > writes && m.work[0] && m.work[1] &&
+                std::abs(*m.work[0] - work[0]) < 0.03 && std::abs(*m.work[1] - work[1]) < 0.03 &&
+                result->center_uncertainty_mm,
+            std::format("{} measures only and writes nothing", name));
+    const auto applied = port.fixed_setter(
+        {.action = SetterAction::apply_measurement, .tool = 99, .edge_measurement = m.id}, epoch, {});
+    const auto origin = origin_of(port.status());
+    std::cout << std::format("fact=measure_only action={}_apply rotation={} origin_u_measured={:.4f} "
+                             "origin_v_measured={:.4f}",
+                             name, degrees, origin[0], origin[1])
+              << std::endl;
+    require(applied && applied->material && applied->material->corner &&
+                std::abs(origin[0] - 4) < 0.03 && std::abs(origin[1] + 2) < 0.03,
+            applied ? std::format("{}: applying sets X0 Y0 at the centre", name) : applied.error());
+  };
+  // Move G55 off the centre first, so applying has something to change.
+  mdi("G21 G10 L20 P0 X1 Y1");
+  mdi(scale == 1 ? "G21 G91" : "G20 G91");
+  probe_input("sim-arc-wall");
+  at(2, 1);
+  measure("bore_arc", SetterAction::bore_arc, {0, 120, 240});
+  probe_input("sim-arc-boss");
+  at(3, -1);
+  measure("boss_arc", SetterAction::boss_arc, {90, 180, 270});
 
   // Directions too close together, or covering less than 90°, are refused before moving.
   probe_input("sim-arc-wall");
@@ -1564,7 +1879,8 @@ void run(const std::string& ini, std::string_view scenario) {
   const bool material = scenario == "material";
   const bool edge = scenario == "edge-rotation";
   const bool features = scenario == "features";
-  const bool rotated = scenario == "rotated";
+  const bool measure = scenario == "measure";
+  const bool rotated = scenario == "rotated" || measure;
   const bool arc = scenario == "arc" || scenario == "arc-rotated" || scenario == "arc-faults";
   const bool g0759 = std::filesystem::path(ini).filename() == "coffeecnc_g0759.ini";
   auto config = load_machine_config(ini);
@@ -1626,13 +1942,13 @@ void run(const std::string& ini, std::string_view scenario) {
   mdi("G21 G90 G94 G40");
   if (rotated) {
     // Millimetres at +7.5°, inches at -30°: each rotated cycle in both units and turns.
-    rotated_scenarios(*port, scale, scale == 1 ? 7.5 : -30, mdi);
+    rotated_scenarios(*port, scale, scale == 1 ? 7.5 : -30, mdi, measure, config->tool_table);
     return;
   }
   if (arc) {
     // Millimetres unrotated and at +7.5°, inches at -30°; the faults at +7.5° in millimetres.
     arc_scenarios(*port, scale, scenario == "arc" ? 0 : scale == 1 ? 7.5 : -30, mdi,
-                  scenario == "arc-faults", shared);
+                  scenario == "arc-faults", shared, config->tool_table);
     return;
   }
   if (scenario == "measure-m6") {
@@ -1916,8 +2232,9 @@ auto main(int argc, char** argv) -> int {
   const std::string_view scenario = argc == 4 ? argv[3] : "";
   const std::filesystem::path ini = argv[2];
   if ((scenario != "" && scenario != "material" && scenario != "edge-rotation" &&
-       scenario != "features" && scenario != "rotated" && scenario != "arc" &&
-       scenario != "arc-rotated" && scenario != "arc-faults" && scenario != "measure-m6") ||
+       scenario != "features" && scenario != "rotated" && scenario != "measure" &&
+       scenario != "arc" && scenario != "arc-rotated" && scenario != "arc-faults" &&
+       scenario != "measure-m6") ||
       ini.parent_path() != run_dir ||
       (ini.filename() != "coffeecnc_sim.ini" &&
        !(scenario == "edge-rotation" && ini.filename() == "coffeecnc_g0759.ini")))

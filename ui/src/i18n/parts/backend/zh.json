@@ -381,6 +381,8 @@
       "arcBossDiameter": "由接触点得到的凸台为 Ø {measured} mm，与输入的大致 Ø {entered} mm 不符。请检查三个点是否都接触了凸台，然后重新探测。",
       "arcUncertain": "圆心不确定度为 {uncertainty} mm，超过 0.02 mm：接触点覆盖 {span}°，锁存偏差最大 {spread} mm。请将角度分得更开，然后重新探测。",
       "arcContact": "{angle}° 处的接触 {n}：{error}",
+      "probeFeatureAgain": "应用测量结果前，请重新探测该特征。",
+      "measuredFrameChanged": "工件坐标系或刀具已更改。请重新探测该特征。",
       "rotationCancelled": "写入工件坐标系前旋转已取消。",
       "rotationCommand": "无法生成工件旋转指令。",
       "rotationUnverified": "无法确认已应用的旋转。请检查当前工件坐标系。",
@@ -576,7 +578,11 @@
       "stopExistsNamed": "在子程序之外询问 {name} 是否存在：在机床上它可能来自先前程序或 MDI 程序段，预览不知道这一点",
       "stopComputedParameter": "读取编号为计算所得的参数（#[...]、##）：预览不知道是哪一个参数，也不知道程序是否已设置它",
       "stopReturnValue": "在程序的子程序返回之前读取 {name} 或 {other}：预览不知道其来自先前程序或 MDI 程序段的值",
-      "stopDefinitionBlock": "子程序定义中的 O 字属于定义之外的程序块：预览不知道哪些行会运行"
+      "stopDefinitionBlock": "子程序定义中的 O 字属于定义之外的程序块：预览不知道哪些行会运行",
+      "stopPythonLine": "`;py,` 行会在解释器中运行 Python",
+      "stopPythonComment": "注释 ({word}...) 会在解释器中运行 Python",
+      "stopFileWritingComment": "注释 ({word}...) 会写入文件",
+      "stopOwordName": "O 字的名称由计算得出，或不是仅由字母、数字、`_`、`-`、`.` 组成的简单名称：解释器会按该名称查找文件"
     },
     "nmlStatus": {
       "pauseFirst": "点动 Z 前请先暂停正在运行的程序。",

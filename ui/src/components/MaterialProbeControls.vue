@@ -4,9 +4,10 @@ import { useI18n } from 'vue-i18n'
 import { translateMessage, translateResult } from '../i18n/messages'
 import { allHomed, homingActive, manualBlock, onResult, panel, send } from '../machine'
 import { homingMessage } from '../machine-block'
-import type { CommandBody, ProbeDirection } from '../protocol'
+import type { CommandBody, ProbeDirection, SetterMeasured, SetterState } from '../protocol'
 import { setterState, touchedOff, type SetterStatusLine } from '../setter-state'
 import { formatLength, wcsName } from '../units'
+import MeasuredResult from './MeasuredResult.vue'
 import SetterStatusBand from './SetterStatusBand.vue'
 import WorkpieceProbeDiagram from './WorkpieceProbeDiagram.vue'
 import ProbeGuideDialog from './ProbeGuideDialog.vue'
@@ -17,7 +18,7 @@ import { vTooltip } from '../tooltip'
 
 const props = defineProps<{ tool: number }>()
 const { t } = useI18n()
-type Request = Extract<CommandBody, { type: 'fixed_setter'; action: 'material' | 'corner' | 'ball' | 'bore' | 'boss' | 'bore_arc' | 'boss_arc' | 'angle' | 'apply_angle' | 'inside_corner' | 'pocket' | 'slot' | 'ridge' }>
+type Request = Extract<CommandBody, { type: 'fixed_setter'; action: 'material' | 'corner' | 'ball' | 'bore' | 'boss' | 'bore_arc' | 'boss_arc' | 'angle' | 'apply_angle' | 'apply_measurement' | 'inside_corner' | 'pocket' | 'slot' | 'ridge' }>
 // The button names the part face. The protocol still specifies the tool's travel.
 const surfaces = [
   { key: 'zTop', label: null, travel: 'z_top', approach: '−Z' },
@@ -96,8 +97,13 @@ const choosingFeature = shallowRef(false)
 const extendedFeatures = computed(() => panel.hello?.fixed_setter?.material_features === true)
 const featureActive = computed(() => {
   const action = pending.value?.action
-  return choosingFeature.value || action !== undefined && !['material', 'ball', 'apply_angle'].includes(action)
+  return choosingFeature.value || action !== undefined && !['material', 'ball', 'apply_angle', 'apply_measurement'].includes(action)
 })
+/** Probe actions report what they find and set nothing (#247); the ball calibration always writes. */
+const measureOnly = shallowRef(false)
+/** The last measure-only result: shown in its card, and applied from there after a review. */
+const measuredResult = shallowRef<{ setter: SetterState; measured: SetterMeasured; frame: string } | null>(null)
+const showingResult = shallowRef(false)
 function openGuide(target: MaterialGuideTarget): void {
   if (pending.value === null) {
     choosingFeature.value = false
@@ -120,6 +126,21 @@ watch(frame, () => {
   edgeRotation.value = null
   askingRotation.value = false
 })
+const canApplyMeasured = computed(() => measuredResult.value?.measured.measurement_id !== undefined &&
+  frame.value === measuredResult.value.frame && panel.status?.offsets.wcs === measuredResult.value.measured.wcs &&
+  !pending.value && !machineReason.value && !toolBlock.value)
+const axesText = (axes: string): string => axes.split('').map((axis) => `${axis}0`).join(' ')
+function applyMeasured(): void {
+  const result = measuredResult.value
+  const id = result?.measured.measurement_id
+  if (!canApplyMeasured.value || !result || id === undefined) return
+  showingResult.value = false
+  const request = { type: 'fixed_setter', action: 'apply_measurement', measurement_id: id, tool: props.tool } as const
+  pending.value = request
+  const values = { wcs: wcsName(result.measured.wcs), axes: axesText(result.measured.axes) }
+  line.value = { text: (): string => t('probe.materialProbe.settingMeasured', values), level: 'busy' }
+  send(request)
+}
 const degreesText = (degrees: number): string => `${degrees >= 0 ? '+' : '−'}${Math.abs(degrees).toFixed(3)}°`
 function applyRotation(): void {
   const offer = edgeRotation.value
@@ -136,6 +157,8 @@ function probe(target: MaterialGuideTarget, size: number, angle: AngleEdge, angl
   cycleFailed.value = false
   edgeRotation.value = null
   askingRotation.value = false
+  measuredResult.value = null
+  showingResult.value = false
   const status = panel.status
   const [x, y, z] = ['x', 'y', 'z'].map((axis) => status?.axes.find((entry) => entry.axis === axis)?.machine)
   const machine = machineReason.value
@@ -215,6 +238,12 @@ function probe(target: MaterialGuideTarget, size: number, angle: AngleEdge, angl
       break
     }
   }
+  // Only the actions the controller can run measure-only: a later action writes unless it says so.
+  if (measureOnly.value && (request.action === 'material' || request.action === 'corner' ||
+      request.action === 'inside_corner' || request.action === 'pocket' || request.action === 'slot' ||
+      request.action === 'ridge' || request.action === 'bore' || request.action === 'boss' || request.action === 'bore_arc' ||
+      request.action === 'boss_arc' || request.action === 'angle'))
+    request = { ...request, measure_only: true }
   pending.value = request
   line.value = { text: busy, level: 'busy' }
   send(request)
@@ -235,6 +264,35 @@ const removeListener = onResult((command, result) => {
   const failure = (fallback: () => string): Line => ({
     text: (): string => result.reason ? translateResult(result) : fallback(), level: 'blocked',
   })
+  if (request.action === 'apply_measurement') {
+    measuredResult.value = null
+    const material = result.setter?.material
+    if (result.outcome === 'accepted' && material) {
+      setterState.value = result.setter ?? null
+      const values = { wcs: wcsName(material.wcs), axes: axesText(material.axis) }
+      line.value = { text: (): string => t('probe.materialProbe.measuredSet', values), level: 'done' }
+    } else {
+      line.value = failure((): string => t('probe.materialProbe.noOrigin'))
+    }
+    return
+  }
+  const measured = 'measure_only' in request && request.measure_only ? result.setter?.measured : undefined
+  if (result.outcome === 'accepted' && result.setter && measured) {
+    measuredResult.value = { setter: result.setter, measured, frame: frame.value }
+    if (request.action !== 'angle') {
+      setterState.value = result.setter
+      const format = (value: number): string => formatLength(value, panel.unit)
+      const values = {
+        wcs: wcsName(measured.wcs),
+        values: (['x', 'y', 'z'] as const).flatMap((axis) => {
+          const value = measured.work[axis]
+          return value === undefined ? [] : [`${axis.toUpperCase()} ${format(value)}`]
+        }).join(' '),
+      }
+      line.value = { text: (): string => t('probe.materialProbe.measuredDone', values), level: 'done' }
+      return
+    }
+  }
   if (request.action === 'apply_angle') {
     const degrees = result.setter?.edge_angle
     edgeRotation.value = null
@@ -348,6 +406,8 @@ watch([
 ], () => {
   edgeRotation.value = null
   askingRotation.value = false
+  measuredResult.value = null
+  showingResult.value = false
   if (!panel.hello?.fixed_setter) return
   setterState.value = null
   statusRequest = null
@@ -385,13 +445,22 @@ onBeforeUnmount(() => {
       </button>
       <button
         v-tooltip="t('probe.materialProbe.calibrateTip')"
-        type="button" class="btn calibrate" :class="{ on: pending?.action === 'ball' }" @click="openGuide({ kind: 'ball' })"
+        type="button" class="btn calibrate" :class="{ on: pending?.action === 'ball' }" :disabled="measureOnly"
+        @click="openGuide({ kind: 'ball' })"
       >
         {{ t('probe.materialProbe.calibrate') }}
+      </button>
+      <button
+        v-tooltip="t('probe.materialProbe.measureOnlyTip')"
+        type="button" class="btn measure-only" :class="{ on: measureOnly }" :aria-pressed="measureOnly"
+        :disabled="pending !== null" @click="measureOnly = !measureOnly"
+      >
+        {{ t('probe.materialProbe.measureOnly') }}
       </button>
     </div>
     <SetterStatusBand class="probe-status" :line="displayLine">
       <template #actions>
+        <button v-if="measuredResult" class="btn rotation-action" type="button" aria-haspopup="dialog" @click="showingResult = true">{{ t('probe.materialProbe.result') }}</button>
         <button v-if="canApplyRotation" class="btn rotation-action" type="button" @click="askingRotation = true">{{ t('probe.materialProbe.applyRotationMenu') }}</button>
       </template>
     </SetterStatusBand>
@@ -459,6 +528,10 @@ onBeforeUnmount(() => {
         </template>
       </div>
     </ModalDialog>
+    <MeasuredResult
+      v-if="showingResult && measuredResult" :result="measuredResult.setter" :measured="measuredResult.measured"
+      :can-apply="canApplyMeasured" :stale="frame !== measuredResult.frame" @apply="applyMeasured" @close="showingResult = false"
+    />
     <ModalDialog v-if="askingRotation && edgeRotation" :title="t('probe.materialProbe.rotationTitle')" size="small" fresh-gesture @close="askingRotation = false">
       <p class="rotation-effect">
         {{ t('probe.materialProbe.rotationEffect', {

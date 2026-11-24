@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -53,9 +54,10 @@ auto file_stamp(const std::string& path) -> std::optional<FileStamp> {
   struct stat info{};
   if (path.empty() || ::stat(path.c_str(), &info) != 0)
     return std::nullopt;
+  const auto modified =
+      std::chrono::seconds{info.st_mtim.tv_sec} + std::chrono::nanoseconds{info.st_mtim.tv_nsec};
   return FileStamp{.inode = static_cast<std::uint64_t>(info.st_ino),
-                   .modified = (std::int64_t{info.st_mtim.tv_sec} * 1'000'000'000) +
-                               std::int64_t{info.st_mtim.tv_nsec},
+                   .modified = modified.count(),
                    .size = std::int64_t{info.st_size}};
 }
 

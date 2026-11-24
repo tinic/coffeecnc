@@ -8,11 +8,11 @@
   --bg: #eef1f3; --bg-sunken: #e4e9ed; --panel: #fbfcfd; --panel-raised: #fff;
   --preview-backdrop: radial-gradient(ellipse at 45% 32%, #f8fafc, #e5ecf1 64%, #d4dfe7);
   --tool-preview-backdrop: radial-gradient(ellipse at 50% 42%, #fbfcfd, #e8edf1 78%, #e2e8ed);
-  --control: #ccd5dd; --control-hover: #c3cdd6; --control-active: #b6c2cd; --field: #d8dfe5;
+  --control: #c3ced8; --control-hover: #bac7d2; --control-active: #afbdca; --field: #d8dfe5;
   --bar: #c3ccd5; --bar-control: #fff;
-  --bar-stop-soft: var(--stop-soft); --bar-warn-soft: var(--warn-soft); --bar-go-soft: var(--go-soft);
+  --bar-stop-soft: #ffe5e5; --bar-warn-soft: var(--warn-soft); --bar-go-soft: var(--go-soft);
   --line: #dce1e5; --line-strong: #dce1e5;
-  --text: #20272c; --text-dim: #465662; --text-faint: #5c6b76; --text-disabled: #6d7984;
+  --text: #20272c; --text-dim: #465662; --text-faint: #5c6b76; --text-disabled: #66727d;
   --dro-zero-opacity: .24;
   --accent: #245bb0; --accent-soft: #c9ddf7; --on-accent: #fff;
   --go: #0f6649; --go-soft: #c3e6d4; --go-action: #0d6243; --on-go: #fff; --warn: #805410; --warn-soft: #f4d79b;
@@ -49,7 +49,7 @@
   --tool-preview-backdrop: radial-gradient(ellipse at 50% 42%, #3b4652, #252e37 60%, #1c232b);
   --control: #3a434c; --control-hover: #434d57; --control-active: #4e5964; --field: #31383f;
   --bar: #30373e; --bar-control: #48515b;
-  --bar-stop-soft: #3f2226; --bar-warn-soft: #33270f; --bar-go-soft: #1a2e27;
+  --bar-stop-soft: #351a1d; --bar-warn-soft: #33270f; --bar-go-soft: #1a2e27;
   --line: #343a40; --line-strong: #3d444b;
   --text: #edf0f2; --text-dim: #aeb9c3; --text-faint: #98a6b1; --text-disabled: #8a949e;
   --accent: #81b4ff; --accent-soft: #283c56; --on-accent: #102237;
@@ -65,10 +65,11 @@
   --bg: #f3e9d9; --bg-sunken: #ece0cf; --panel: #fff8ed; --panel-raised: #fffbf5;
   --preview-backdrop: radial-gradient(ellipse at 46% 34%, #fff7e9, #e9d8b9 80%, #e1cca8);
   --tool-preview-backdrop: radial-gradient(ellipse at 48% 39%, #fffaf1, #e9d9bc 82%, #e4cfae);
-  --control: #dccab0; --control-hover: #d4c0a3; --control-active: #cab595; --field: #e6d8c4;
+  --control: #d8c5aa; --control-hover: #d0bb9c; --control-active: #c6b08e; --field: #e6d8c4;
   --bar: #d6c3a6; --bar-control: #fffbf5;
   --line: #ddc9a9; --line-strong: #cbb38d;
-  --text: #30271f; --text-dim: #635242; --text-faint: #77614e; --text-disabled: #7d6a58;
+  --bar-stop-soft: #ffe6e0;
+  --text: #30271f; --text-dim: #5c4b3b; --text-faint: #77614e; --text-disabled: #7d6a58;
   --accent: #7a4529; --accent-soft: #ebcca8;
   --go: #1d5e3e; --go-soft: #c4ddb8; --go-action: #1b5e3e; --on-go: #fff; --warn: #74490f; --warn-soft: #eed298;
   --stop: #a6323b; --stop-soft: #f3cfc9;
@@ -78,9 +79,9 @@
   --bg: #101e2d; --bg-sunken: #122234; --panel: #1a2e42; --panel-raised: #213951;
   --preview-backdrop: radial-gradient(ellipse at 47% 34%, #27445d, #142c40 80%, #102437);
   --tool-preview-backdrop: radial-gradient(ellipse at 48% 39%, #355470, #1b354c 80%, #12293c);
-  --control: #31495f; --control-hover: #36506a; --control-active: #3f5c78; --field: #2b4155;
+  --control: #344d64; --control-hover: #3a5570; --control-active: #436180; --field: #2e4660;
   --bar: #2a4258; --bar-control: #3f5b75;
-  --bar-stop-soft: #4e2238; --bar-warn-soft: #3a2a1a; --bar-go-soft: #173a30;
+  --bar-stop-soft: #3c1a2d; --bar-warn-soft: #3a2a1a; --bar-go-soft: #173a30;
   --line: #34526c; --line-strong: #476581;
   --text: #eef7ff; --text-dim: #b2cadc; --text-faint: #91adc4; --text-disabled: #7f95aa;
   --accent: #7dc0ff; --accent-soft: #1d4a73; --on-accent: #102237;
@@ -136,7 +137,9 @@ select {
   background: var(--control);
 }
 
-.btn {
+.btn, button.choice {
+  -webkit-appearance: none;
+  appearance: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -152,71 +155,82 @@ select {
   touch-action: manipulation;
 }
 
-.btn:hover:not(:disabled), .choice:hover:not(:disabled) {
+.btn:hover:not(:disabled, [aria-disabled='true']), .choice:hover:not(:disabled, [aria-disabled='true']) {
   background: var(--control-hover);
 }
 
-.btn:active:not(:disabled),
-.choice:active:not(:disabled),
+.btn:active:not(:disabled, [aria-disabled='true']),
+.choice:active:not(:disabled, [aria-disabled='true']),
 .btn.held {
   background: var(--control-active);
 }
 
-.btn:focus-visible,
 input:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
-/* A disabled control keeps its shape and most of its fill; only the label dims. */
+/* A disabled control keeps its shape and most of its fill; only the label dims. A field keeps
+   all of its fill. */
 .btn:disabled,
+.btn[aria-disabled='true'],
 .choice:disabled {
   color: var(--text-disabled);
-  background: color-mix(in srgb, var(--control) 70%, transparent);
+  background: color-mix(in srgb, var(--control) 80%, transparent);
   cursor: not-allowed;
 }
 
 /* The same mark identifies a selection in tabs, segmented controls and view switches. */
-.btn.on:not(:disabled),
-.btn[aria-pressed='true']:not(:disabled),
+.btn.on:not(:disabled, [aria-disabled='true']),
+.btn[aria-pressed='true']:not(:disabled, [aria-disabled='true']),
 details[open] > summary.btn,
-.choice:not(:disabled):is([aria-current='page'], [aria-pressed='true'], .selected) {
+.choice:not(:disabled, [aria-disabled='true']):is([aria-current='page'], [aria-pressed='true'], .selected) {
   background: var(--accent-soft);
   color: var(--accent);
   font-weight: 650;
 }
 
-.btn.primary:not(:disabled) {
+.btn.primary:not(:disabled, [aria-disabled='true']) {
   background: var(--accent);
   color: var(--on-accent);
 }
 
-.btn.go:not(:disabled) {
+.btn.go:not(:disabled, [aria-disabled='true']) {
   background: var(--go-action);
   color: var(--on-go);
   font-weight: 700;
 }
 
-.btn.go:hover:not(:disabled) {
+.btn.go:hover:not(:disabled, [aria-disabled='true']) {
   background: color-mix(in srgb, var(--go-action) 88%, #000);
 }
 
-.btn.go:active:not(:disabled) {
+.btn.go:active:not(:disabled, [aria-disabled='true']) {
   background: color-mix(in srgb, var(--go-action) 76%, #000);
 }
 
-.btn.warning:not(:disabled) {
+.btn.warning:not(:disabled, [aria-disabled='true']) {
   background: var(--warn-soft);
   color: var(--warn);
 }
 
-.btn.danger:not(:disabled) {
+.btn.danger:not(:disabled, [aria-disabled='true']) {
   background: var(--stop-soft);
   color: var(--stop);
 }
 
-.btn.quiet:not(:disabled) {
+.btn.quiet:not(:disabled, [aria-disabled='true']) {
   color: var(--text-dim);
+}
+
+/* On the raised tone of a band or a bar, a disabled label dims a little further, to stay near
+   3:1 to 4:1. */
+.tinted-band .btn:is(:disabled, [aria-disabled='true']) {
+  color: color-mix(in srgb, var(--text-disabled) 85%, var(--panel-raised));
+}
+
+.bar-surface > .btn:is(:disabled, [aria-disabled='true']) {
+  color: color-mix(in srgb, var(--text-disabled) 85%, var(--bar-control));
 }
 
 /* A tool bar over content: its own tone, raised buttons, and soft fills that keep a tone step. */
@@ -245,11 +259,11 @@ details[open] > summary.btn,
   cursor: pointer;
 }
 
-.list-row:hover:not(:disabled) {
+.list-row:hover:not(:disabled, [aria-disabled='true']) {
   background: var(--control);
 }
 
-.list-row:active:not(:disabled) {
+.list-row:active:not(:disabled, [aria-disabled='true']) {
   background: var(--control-active);
 }
 
@@ -320,7 +334,6 @@ details[open] > summary.btn,
 
 .field:disabled {
   color: var(--text-disabled);
-  background: color-mix(in srgb, var(--field) 70%, transparent);
 }
 
 .chip {
@@ -360,11 +373,11 @@ details[open] > summary.btn,
   color: var(--warn);
 }
 
-.btn, .tone-control {
-  transition: background-color var(--press-fade) ease-out, border-color var(--press-fade) ease-out;
+.btn, .choice, .tone-control {
+  transition: background-color var(--press-fade) ease-out;
 }
 
-.btn:active, .btn.held, .tone-control:active {
+.btn:active, .btn.held, .choice:active, .tone-control:active {
   transition-duration: 0s;
 }
 

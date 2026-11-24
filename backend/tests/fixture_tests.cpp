@@ -291,10 +291,19 @@ auto encoded_messages() -> std::vector<Encoded> {
   preview.bounds.reset();
   messages.push_back(encode_preview(preview));
   messages.push_back(encode_preview({}));
+  Preview unavailable;
+  unavailable.context = 4821339;
+  unavailable.error =
+      PreviewError{0, "Cutter compensation (G41) is active: no preview.",
+                   MessageKey{"backend.previewEngine.cutterCompensation", {{"code", "G41"}}}};
+  messages.push_back(encode_preview(unavailable));
 
   messages.emplace_back(
       encode_message(MessageLevel::error, "Joint 0 on limit switch error", 1700000000123ms));
   messages.emplace_back(encode_message(MessageLevel::info, "Probe tripped", 1700000001000ms));
+  messages.emplace_back(encode_message(MessageLevel::info, "Jog stopped: probe contact",
+                                       1700000001100ms,
+                                       MessageKey{"backend.jogStop.probeContact"}));
   messages.emplace_back(encode_result(41, CommandOutcome::accepted, ""));
   messages.emplace_back(
       encode_result(42, CommandOutcome::rejected, "Home all configured axes first."));
@@ -303,6 +312,8 @@ auto encoded_messages() -> std::vector<Encoded> {
       RefusalMessage{"messages.policy.jogVelocityAxisLimit", {{"axis", "Z"}, {"limit", "750"}}}));
   messages.emplace_back(encode_result(43, CommandOutcome::failed, "LinuxCNC reported an error."));
   messages.emplace_back(encode_result(44, CommandOutcome::timed_out, "LinuxCNC did not answer."));
+  messages.emplace_back(encode_result(47, CommandOutcome::timed_out, "LinuxCNC did not answer.", {},
+                                      {}, {}, MessageKey{"messages.session.linuxcncNoAnswer"}));
   const RestartPoint restart{.line = 25,
                              .tool = 98,
                              .h = 98,
@@ -336,15 +347,26 @@ auto encoded_messages() -> std::vector<Encoded> {
   ToolModelAssignment end_mill{{3, 3, 6, "End mill 6 mm"}, ToolFamily::end_mill, {}};
   end_mill.overrides.stickout = 30;
   saved.document = ToolModelDocument{factory_tool_defaults(), {end_mill}};
-  messages.push_back(encode_tool_models(saved));
+  const auto tool_model_message = [](const ToolModels& models) -> Encoded {
+    return encode_tool_models(models).transform_error(
+        [](LocalizedReason reason) -> std::string { return std::move(reason.text); });
+  };
+  messages.push_back(tool_model_message(saved));
   ToolModels session_only;
   session_only.reason = "No machine identity configured";
-  messages.push_back(encode_tool_models(session_only));
+  messages.push_back(tool_model_message(session_only));
   ToolModels in_use;
   in_use.machine_id = "G0759";
   in_use.availability = ToolModelAvailability::unavailable;
-  in_use.reason = "Tool model settings are already in use";
-  messages.push_back(encode_tool_models(in_use));
+  in_use.reason = "Tool model settings in /data/G0759 are already in use by another CoffeeCNC. "
+                  "Tool models are not saved.";
+  in_use.reason_localization =
+      MessageKey{"backend.toolModelStore.inUse", {{"path", "/data/G0759"}}};
+  messages.push_back(tool_model_message(in_use));
+  if (auto localized = encode_tool_models_reason(in_use))
+    messages.emplace_back(std::move(*localized));
+  else
+    messages.emplace_back(std::unexpected("Missing tool-model reason"));
   messages.push_back(
       encode_operator_settings({"G0759", 2, ToolModelAvailability::available, "",
                                 OperatorPreferences{StartupUnits::inch, {1, 2, 3}, 1800, 600, 6.35,
@@ -354,7 +376,13 @@ auto encoded_messages() -> std::vector<Encoded> {
   messages.push_back(encode_operator_settings(
       {{}, 0, ToolModelAvailability::session_only, "No machine identity configured", {}}));
   messages.push_back(encode_operator_settings(
-      {"G0759", 0, ToolModelAvailability::unavailable, "Operator settings file is corrupt", {}}));
+      {"G0759",
+       0,
+       ToolModelAvailability::unavailable,
+       "/home/cnc/operator-settings.json exceeds 16 KiB. The file was left alone.",
+       {},
+       MessageKey{"backend.operatorSettingsStore.fileTooLarge",
+                  {{"file", "/home/cnc/operator-settings.json"}}}}));
 
   OffsetHistory history{4, true, "", {}};
   const auto change = [](HistoryField field, std::optional<double> before,
@@ -685,6 +713,7 @@ constexpr auto required_variants = std::to_array<std::string_view>({
     "offset_history before given",
     "offset_history after null",
     "offset_history after given",
+    "tool_models_reason",
     "backup_written",
     "backup_written not_included empty",
     "backup_written not_included some",

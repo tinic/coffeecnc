@@ -288,7 +288,19 @@ void tool_model_commands() {
   }
   const auto bad_holder = decode_request(with(assignment_wire, R"("family":"spot-drill")",
                                               R"("family":"spot-drill","holder":"unknown")"));
-  require(std::holds_alternative<DecodeError>(bad_holder), "Assignment refuses an unknown holder");
+  const auto* holder_error = std::get_if<DecodeError>(&bad_holder);
+  require(holder_error && holder_error->id == 42 &&
+              holder_error->reason == "Choose a supported holder for a tool model assignment." &&
+              holder_error->localization == MessageKey{"backend.toolModels.chooseHolder"},
+          "An invalid holder has a fallback and a catalog key");
+  const auto wrong_diameter =
+      decode_request(with(assignment_wire, R"("diameter":6.35)", R"("diameter":"6.35")"));
+  const auto* binding_error = std::get_if<DecodeError>(&wrong_diameter);
+  require(binding_error && binding_error->reason == "tool diameter must be a number." &&
+              binding_error->localization ==
+                  MessageKey{"backend.toolModels.fieldNumber",
+                             {{"object", "tool"}, {"field", "diameter"}}},
+          "A decoder failure keeps both structured field arguments");
   const auto all = body<SetToolModelAssignment>(
       with(assignment_wire, R"({"stickout":30,"tipAngle":120})",
            R"({"cuttingLength":1,"shankDiameter":2,"overallLength":3,"stickout":4,"tipAngle":5})"));

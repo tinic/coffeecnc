@@ -6,7 +6,7 @@ import { demoProbe, demoProbeTools, demoSetter } from '../src/sim/probe-fixture'
 import { answerTimeoutMs, createPanel } from '../src/store'
 import { factoryToolDefaults, toolIdentity } from '../src/tool-model'
 import { emptyToolModelDocument, type ToolModelDocument } from '../src/tool-model-settings'
-import { createToolModelState } from '../src/tool-model-state'
+import { createToolModelState, type ModelSaveResult } from '../src/tool-model-state'
 
 const tool: Tool = { number: 3, pocket: 7, diameter: 6.35, length: 50, comment: 'Quarter inch mill' }
 const disposals: (() => void)[] = []
@@ -143,6 +143,27 @@ describe('tool model persistence state', () => {
     expect((await r.models.saveDefaults(factoryToolDefaults(), r.models.context())).saved).toBe(true)
     expect(r.sent).toEqual([])
     expect(r.storageAccess).not.toHaveBeenCalled()
+  })
+
+  it('localizes only the matching storage snapshot and keeps accepting legacy snapshots', async () => {
+    const r = rig(); r.connect()
+    const reason = 'Storage temporarily unavailable'
+    const snapshot = { type: 'tool_models', machine_id: 'G0759', revision: 0,
+      availability: 'unavailable', reason, document: null } as const
+    const note = { type: 'tool_models_reason', machine_id: 'G0759', revision: 0, reason,
+      localization: { key: 'backend.toolModelStore.inUse', params: { path: '/data/G0759' } } } as const
+    const attemptSave = (): Promise<ModelSaveResult> => r.models.saveDefaults(factoryToolDefaults(), r.models.context())
+    r.receive(snapshot)
+    r.receive({ ...note, machine_id: 'OtherMill' })
+    r.receive({ ...note, revision: 1 })
+    r.receive({ ...note, reason: 'Some other problem' })
+    expect((await attemptSave()).reason).toBe(reason)
+    r.receive(note)
+    expect((await attemptSave()).reason).toBe(
+      'Tool model settings in /data/G0759 are already in use by another CoffeeCNC. Tool models are not saved.')
+    r.receive(snapshot)
+    expect((await attemptSave()).reason).toBe(reason)
+    expect(r.sent).toEqual([])
   })
 
   it('restores only matching live rows and preserves the saved catalog across stale or deleted tables', () => {

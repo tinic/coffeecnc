@@ -125,6 +125,7 @@
       "tooManyAssignments": "Hay más de 1001 asignaciones de modelo de herramienta.",
       "unknownHolder": "Portaherramientas desconocido.",
       "assignedTwice": "Está asignado más de una vez.",
+      "familyProblem": "{family}: {detail}",
       "toolProblem": "Herramienta {tool}: {detail}",
       "overridesEmpty": "Overrides debe estar vacío cuando se elimina la asignación.",
       "chooseHolder": "Elija un portaherramientas compatible para la asignación de modelo de herramienta.",

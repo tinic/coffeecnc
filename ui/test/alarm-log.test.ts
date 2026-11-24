@@ -87,6 +87,21 @@ describe('the simulator log', () => {
     ] })
   })
 
+  it('retains operator, refusal and failure localization across simulator reloads', () => {
+    const disk = storage()
+    const first = new SimAlarmLog(() => disk)
+    const refusal = { key: 'messages.session.cancelled', params: {} }
+    const failure = { key: 'messages.session.modeChanged', params: {} }
+    const notice = { key: 'backend.nmlPort.restoreFromTable', params: { tool: '98' } }
+    first.observe({ type: 'result', id: 1, outcome: 'rejected', reason: 'old refusal', refusal }, at)
+    first.observe({ type: 'result', id: 2, outcome: 'failed', reason: 'old failure', localization: failure }, at)
+    first.observe({ type: 'message', level: 'info', text: 'old notice', time: at, localization: notice }, at)
+    const reloaded = new SimAlarmLog(() => disk).view()
+    expect(reloaded.entries.map(({ text, localization }) => [text, localization])).toEqual([
+      ['old refusal', refusal], ['old failure', failure], ['old notice', notice],
+    ])
+  })
+
   it('works without browser storage', () => {
     const broken = new SimAlarmLog(() => { throw new Error('private window') })
     broken.observe({ type: 'message', level: 'error', text: 'x', time: at }, at)

@@ -1,7 +1,7 @@
 import { computed, shallowRef, watch, type ComputedRef, type ShallowRef } from 'vue'
 
 import { t } from './i18n'
-import { translateMessage } from './i18n/messages'
+import { translateResult } from './i18n/messages'
 import { connectionBlock } from './machine-block'
 import { byteLength, machineBusy, maxProgramBytes, programSource, uneditableReason } from './program-editor'
 import type { CommandBody, ProgramText } from './protocol'
@@ -95,7 +95,7 @@ export function createProgramLineEdits(panel: Pick<PanelState, 'status' | 'progr
       unsubscribe()
       pending.value = false
       if (result.outcome !== 'accepted') {
-        feedback.value = { file: program.file, text: (): string => translateMessage(result.reason, result.refusal) || t('program.lineEdits.notSaved'), error: true }
+        feedback.value = { file: program.file, text: (): string => translateResult(result) || t('program.lineEdits.notSaved'), error: true }
         return
       }
       if (cut !== undefined) clipboard.value = cut

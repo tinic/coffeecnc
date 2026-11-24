@@ -32,11 +32,14 @@ struct RestartPlan {
 [[nodiscard]] auto encode_result(RequestId id, CommandOutcome outcome, std::string_view reason,
                                  const std::optional<SetterState>& setter = {},
                                  const std::optional<RestartPlan>& restart = {},
-                                 const std::optional<RefusalMessage>& refusal = {}) -> std::string;
+                                 const std::optional<RefusalMessage>& refusal = {},
+                                 const std::optional<MessageKey>& localization = {}) -> std::string;
 
 // Wire text of an OperatorMessage. The time is since the Unix epoch.
 [[nodiscard]] auto encode_message(MessageLevel level, std::string_view text,
-                                  std::chrono::milliseconds unix_time) -> std::string;
+                                  std::chrono::milliseconds unix_time,
+                                  const std::optional<MessageKey>& localization = {})
+    -> std::string;
 
 } // namespace coffeecnc
 

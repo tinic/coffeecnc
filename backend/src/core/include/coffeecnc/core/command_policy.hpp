@@ -3,6 +3,7 @@
 
 #include <coffeecnc/core/diagnostics.hpp>
 #include <coffeecnc/core/fixed_setter.hpp>
+#include <coffeecnc/core/message_key.hpp>
 #include <coffeecnc/core/operator_settings.hpp>
 #include <coffeecnc/core/tool_models.hpp>
 
@@ -11,7 +12,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <map>
 #include <optional>
 #include <string>
 #include <variant>
@@ -309,10 +309,7 @@ using Command =
                  ManageProgramFile>;
 
 // A catalog key and its named arguments, carried alongside the English refusal.
-struct RefusalMessage {
-  std::string key;
-  std::map<std::string, std::string> params{};
-};
+using RefusalMessage = MessageKey;
 
 struct Decision {
   bool allowed{};

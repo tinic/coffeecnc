@@ -599,7 +599,7 @@ function coolant(which: 'flood' | 'mist'): void {
             <span class="result">
               <template v-if="entry.outcome === 'pending'">{{ t('manual.tab.mdiSent') }}</template>
               <template v-else-if="entry.outcome === 'accepted'">{{ t('manual.tab.mdiAccepted') }}</template>
-              <template v-else>{{ translateMessage(entry.reason, entry.refusal) }}</template>
+              <template v-else>{{ translateMessage(entry.reason, entry.localization) }}</template>
             </span>
           </button>
         </div>
@@ -776,7 +776,6 @@ function coolant(which: 'flood' | 'mist'): void {
   color: var(--go);
 }
 
-.btn[aria-disabled="true"] { opacity: .68; }
 
 .side > .mdi {
   display: grid;

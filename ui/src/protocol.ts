@@ -275,6 +275,15 @@ export type ToolModels = {
   document: null
 })
 
+/** Localization paired with a tool_models snapshot. Legacy panels ignore this message. */
+export interface ToolModelsReason {
+  type: 'tool_models_reason'
+  machine_id: string | null
+  revision: number
+  reason: string
+  localization: MessageKey
+}
+
 export interface ProgramText {
   type: 'program'
   revision: number
@@ -333,7 +342,7 @@ export interface Preview {
    * `segments` then end where it stopped. `unavailable`: no program loaded, or no preview possible.
    */
   state: 'pending' | 'ready' | 'failed' | 'unavailable'
-  error: { line: number; text: string } | null
+  error: { line: number; text: string; localization?: MessageKey } | null
   segments: PreviewSegment[]
   /** Extent of the feed moves (tool tip, machine coordinates), or null without any. */
   bounds: { min: Vec3; max: Vec3 } | null
@@ -444,6 +453,7 @@ export interface AlarmEntry {
   time: number
   level: 'error' | 'info'
   text: string
+  localization?: MessageKey
   /** A result's outcome; null for an operator message. */
   outcome: Exclude<CommandResult['outcome'], 'accepted'> | null
   /**
@@ -525,14 +535,17 @@ export interface OperatorMessage {
   type: 'message'
   level: 'error' | 'info'
   text: string
+  localization?: MessageKey
   /** Milliseconds since the Unix epoch. */
   time: number
 }
 
-export interface RefusalMessage {
+export interface MessageKey {
   key: string
   params: Record<string, string>
 }
+
+export type RefusalMessage = MessageKey
 
 /** Final outcome of the command with this `id`. Every command gets exactly one. */
 export interface CommandResult {
@@ -548,6 +561,8 @@ export interface CommandResult {
   reason: string
   /** Message key and named arguments supplied for a catalogued command refusal. */
   refusal?: RefusalMessage
+  /** Message key and named arguments for a catalogued non-accepted result. */
+  localization?: MessageKey
   setter?: SetterState
   /** The plan of an accepted `plan_restart`. */
   restart?: RestartPlan
@@ -658,6 +673,7 @@ export type FromMachine =
   | Status
   | ToolTable
   | ToolModels
+  | ToolModelsReason
   | ProgramText
   | Preview
   | WorkOffsets

@@ -201,8 +201,10 @@ auto manifest_json(const std::optional<std::string>& machine_id, std::int64_t cr
             {"symlink", source.symlink}};
   });
   auto not_included = Json::array();
-  for (const auto& item : left_out)
-    not_included.push_back({{"path", item.path}, {"reason", item.reason}});
+  std::ranges::transform(left_out, std::back_inserter(not_included),
+                         [](const BackupOmission& item) -> Json {
+                           return {{"path", item.path}, {"reason", item.reason}};
+                         });
   return {{"format", format_name},
           {"version", manifest_version},
           {"machine_id", machine_id ? Json(*machine_id) : Json(nullptr)},

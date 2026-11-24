@@ -396,7 +396,7 @@ private:
     return {"The program is longer than 16 MiB.", MessageKey{"backend.programFiles.size"}};
   }
 
-  void upload_reply(http::status status, LocalizedReason reason = {}) {
+  void upload_reply(http::status status, const LocalizedReason& reason = {}) {
     http::response<http::string_body> response{status, request_.get().version()};
     response.set(http::field::content_type, "application/json");
     response.body() = encode_upload_reply(reason);
@@ -483,7 +483,7 @@ private:
       }
       auto& io = self->owner_.io;
       net::post(io, [self = std::move(self), status, reason = std::move(reason)]() mutable -> void {
-        self->upload_reply(status, std::move(reason));
+        self->upload_reply(status, reason);
       });
     });
   }

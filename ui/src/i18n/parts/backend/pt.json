@@ -310,6 +310,7 @@
       "mdiTooLong": "O bloco MDI é demasiado longo para o LinuxCNC.",
       "probeModalNotRestored": "Não foi possível repor o modo de distância e os controlos de avanço após o ciclo de apalpação parado. Verifique G90 ou G91 e o ajuste de avanço.",
       "probeModalRestored": "Foram repostos o modo de distância e os controlos de avanço que o ciclo de apalpação parado alterou.",
+      "probeModalChanged": "O ciclo de apalpação parado deixou {items}. O CoffeeCNC não o repôs: mudou, ou correu um comando, depois da paragem.",
       "setterNotConfigured": "O apalpador de ferramenta fixo não está configurado.",
       "probeExceedsSetter": "O movimento de apalpação confirmado excede os limites do apalpador de ferramenta fixo.",
       "probeTooSlow": "O movimento de apalpação demoraria mais de três minutos.",

@@ -310,6 +310,7 @@
       "mdiTooLong": "MDI ブロックが LinuxCNC には長すぎます。",
       "probeModalNotRestored": "停止したプローブサイクルの後、距離モードと送り設定を元に戻せませんでした。G90 または G91 と送りオーバーライドを確認してください。",
       "probeModalRestored": "停止したプローブサイクルが変更した距離モードと送り設定を元に戻しました。",
+      "probeModalChanged": "停止したプローブサイクルは {items} のままにしました。停止後に変更されたか、コマンドが実行されたため、CoffeeCNC は元に戻していません。",
       "setterNotConfigured": "ツールセッターが設定されていません。",
       "probeExceedsSetter": "確認済みのプローブ移動がツールセッターの制限を超えています。",
       "probeTooSlow": "プローブ移動に 3 分以上かかります。",

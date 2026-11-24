@@ -3,6 +3,7 @@
 #include <coffeecnc/core/fixed_setter.hpp>
 #include <coffeecnc/core/jog_lease.hpp>
 #include <coffeecnc/core/jog_stop_report.hpp>
+#include <coffeecnc/core/probe_modal.hpp>
 #include <coffeecnc/core/task_heartbeat.hpp>
 
 #include <array>
@@ -119,6 +120,45 @@ void reference_mark_homing() {
 }
 
 // Applying an edge angle adds it to the present rotation: the sum stays in (-180, 180] (#245).
+// After a stopped probe cycle (#338): each item is restored only while it is what the cycle
+// left and no command ran since; the rest is reported.
+void probe_modal_restore() {
+  const ProbeModalState operator_state{true, 100, true, true};
+  const ProbeModalState left{false, 240, false, false};
+  const auto all = plan_probe_restore(operator_state, left, left, false);
+  require(!all.unknown && all.distance && all.feed_override && all.adaptive_feed && all.changed.empty(),
+          "an unchanged state is restored item by item");
+  // Somebody set G91 only, after the stop (another client, or ON_ABORT_COMMAND).
+  const auto g91 = plan_probe_restore(operator_state, left, {true, 240, false, false}, false);
+  std::cout << std::format("fact=probe_modal case=g91_only distance={} m50={} m52={} changed=\"{}\"",
+                           g91.distance, g91.feed_override, g91.adaptive_feed, g91.changed)
+            << '\n';
+  require(!g91.distance && g91.feed_override && g91.adaptive_feed && g91.changed == "G90 F240",
+          "G91 set after the stop keeps M50 and M52 restored and reports G90 and F");
+  const auto feed = plan_probe_restore(operator_state, left, {false, 300, false, false}, false);
+  require(!feed.distance && feed.feed_override && feed.changed == "G90 F240",
+          "a changed F is not overwritten");
+  const auto unknown = plan_probe_restore(operator_state, std::nullopt, left, false);
+  std::cout << std::format("fact=probe_modal case=left_unknown unknown={} distance={} m50={} m52={}",
+                           unknown.unknown, unknown.distance, unknown.feed_override,
+                           unknown.adaptive_feed)
+            << '\n';
+  require(unknown.unknown && !unknown.distance && !unknown.feed_override && !unknown.adaptive_feed,
+          "without a known left state nothing is restored and the operator is told");
+  const auto commands = plan_probe_restore(operator_state, left, left, true);
+  std::cout << std::format("fact=probe_modal case=command_since distance={} m50={} m52={} changed=\"{}\"",
+                           commands.distance, commands.feed_override, commands.adaptive_feed,
+                           commands.changed)
+            << '\n';
+  require(!commands.distance && !commands.feed_override && !commands.adaptive_feed &&
+              commands.changed == "G90 F240, M50 P0, M52 P0",
+          "a command since the stop drops every item, also one that matches, and reports them");
+  // An item the cycle did not change is neither restored nor reported.
+  const auto kept = plan_probe_restore({false, 240, true, false}, left, left, false);
+  require(!kept.distance && kept.feed_override && !kept.adaptive_feed && kept.changed.empty(),
+          "only the items the cycle changed are restored");
+}
+
 void edge_rotation_wraps() {
   for (const auto& [sum, wrapped] : {std::pair{363.0, 3.0}, std::pair{-363.0, -3.0},
                                      std::pair{181.8624, -178.1376}, std::pair{-180.0, 180.0},
@@ -768,6 +808,7 @@ auto main() -> int {
     reference_mark_homing();
     fixed_setter_homing();
     edge_rotation_wraps();
+    probe_modal_restore();
     arc_geometry();
     work_origin_gates();
     rotation_and_shift_gates();

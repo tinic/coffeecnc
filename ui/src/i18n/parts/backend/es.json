@@ -310,6 +310,7 @@
       "mdiTooLong": "El bloque MDI es demasiado largo para LinuxCNC.",
       "probeModalNotRestored": "No se pudieron restaurar el modo de distancia ni los controles de avance tras el ciclo de palpado detenido. Compruebe G90 o G91 y el ajuste del avance.",
       "probeModalRestored": "Se restauraron el modo de distancia y los controles de avance que cambió el ciclo de palpado detenido.",
+      "probeModalChanged": "El ciclo de palpado detenido dejó {items}. CoffeeCNC no lo restauró: cambió, o se ejecutó una orden, después de la parada.",
       "setterNotConfigured": "El palpador de herramienta fijo no está configurado.",
       "probeExceedsSetter": "El movimiento de palpado confirmado supera los límites del palpador de herramienta fijo.",
       "probeTooSlow": "El movimiento de palpado tardaría más de tres minutos.",

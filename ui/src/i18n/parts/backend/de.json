@@ -310,6 +310,7 @@
       "mdiTooLong": "Der MDI-Satz ist für LinuxCNC zu lang.",
       "probeModalNotRestored": "Der Abstandsmodus und die Vorschubeinstellungen konnten nach dem abgebrochenen Antastzyklus nicht wiederhergestellt werden. Prüfen Sie G90 oder G91 und den Vorschub-Override.",
       "probeModalRestored": "Der Abstandsmodus und die Vorschubeinstellungen, die der abgebrochene Antastzyklus geändert hat, wurden wiederhergestellt.",
+      "probeModalChanged": "Der abgebrochene Antastzyklus hat {items} hinterlassen. CoffeeCNC hat das nicht wiederhergestellt: Es wurde nach dem Abbruch geändert, oder ein Befehl lief.",
       "setterNotConfigured": "Der Werkzeuglängensensor ist nicht konfiguriert.",
       "probeExceedsSetter": "Die bestätigte Antastbewegung überschreitet die Grenzen des Werkzeuglängensensors.",
       "probeTooSlow": "Die Antastbewegung würde länger als drei Minuten dauern.",

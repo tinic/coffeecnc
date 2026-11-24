@@ -3,6 +3,7 @@
 
 #include <coffeecnc/core/jog_stop_report.hpp>
 #include <coffeecnc/core/preview.hpp>
+#include <coffeecnc/core/probe_modal.hpp>
 #include <coffeecnc/core/task_heartbeat.hpp>
 #include <coffeecnc/linuxcnc/tool_table.hpp>
 
@@ -402,23 +403,18 @@ struct NmlPort::Impl {
   std::optional<int> startup_tool;
   // The operator's modal state a probe cycle changes (distance mode, feed, M50, M52), kept from
   // its start until the cycle restores it. A cycle that stops early drops the machine's enable:
-  // it records what it left (`left`), and idle_maintenance restores the operator's state once
-  // the machine can take MDI, but only while the state is still what the cycle left. Anything
-  // else (an MDI block, a program end) means somebody set it since: the restore is dropped.
+  // it records what it left (`left`, after the abort has settled) and how many G-code commands
+  // this port had written then. idle_maintenance restores each item once the machine can take
+  // MDI, only while it is still what the cycle left and no G-code command ran since
+  // (plan_probe_restore), and says which items it did not restore.
   struct ProbeModal {
-    bool incremental;
-    double feed_mm_min;
-    bool feed_override;
-    bool adaptive_feed;
-    struct Left {
-      bool incremental;
-      double feed_mm_min;
-      bool feed_override;
-      bool adaptive_feed;
-    };
-    std::optional<Left> left{};
+    ProbeModalState operator_state;
+    std::optional<ProbeModalState> left{};
+    std::uint64_t commands_at_stop{};
   };
   std::optional<ProbeModal> probe_modal;
+  Clock::time_point probe_modal_retry{}; // a refused switch to MDI waits until then
+  std::uint64_t gcode_commands{};        // MDI blocks and program runs, steps, resumes written
   std::optional<int> observed_tool;
   // The joint or axis and the jjogmode of the jog stop that is the last command written, until
   // task echoes it.
@@ -728,6 +724,8 @@ struct NmlPort::Impl {
         ++loads->gcode_writes;
       loads->serials.begin();
     }
+    if (runs_gcode(message.type))
+      ++gcode_commands;
     const int wrote = command.call(
         [&](RCS_CMD_CHANNEL& channel) -> int { return still() ? channel.write(&message) : 0; });
     if (loads != nullptr)
@@ -1075,8 +1073,30 @@ void NmlPort::synch_parameters(const Wanted& wanted) {
     impl_->synch_retry = Clock::now() + synch_retry_period;
 }
 
+auto NmlPort::probe_modal_now() -> ProbeModalState {
+  const auto now = status();
+  return {std::ranges::contains(now.active_codes, "G91"), now.programmed_feed,
+          now.feed_override_enabled, now.adaptive_feed_enabled};
+}
+
+void NmlPort::report_probe_modal(const ProbeModalPlan& plan) {
+  if (plan.unknown)
+    impl_->messages.push_back(
+        {true,
+         "Could not restore the distance mode and feed controls after the stopped probe cycle. "
+         "Check G90 or G91 and the feed override.",
+         MessageKey{"backend.nmlPort.probeModalNotRestored"}});
+  if (!plan.changed.empty())
+    impl_->messages.push_back(
+        {false,
+         std::format("The stopped probe cycle left {}. CoffeeCNC did not restore it: it changed, "
+                     "or a command ran, after the stop.",
+                     plan.changed),
+         MessageKey{"backend.nmlPort.probeModalChanged", {{"items", plan.changed}}}});
+}
+
 void NmlPort::restore_probe_modal(const Wanted& wanted) {
-  if (!impl_->probe_modal)
+  if (!impl_->probe_modal || Clock::now() < impl_->probe_modal_retry)
     return;
   // As for the startup tool: the machine can take MDI.
   const auto ready = [&](const NmlStatus& status) {
@@ -1099,28 +1119,22 @@ void NmlPort::restore_probe_modal(const Wanted& wanted) {
   const auto pending = impl_->probe_modal;
   if (!pending || !ready(before) || !wanted())
     return;
-  const auto modal = *pending;
-  impl_->probe_modal.reset();
-  const auto not_restored = [&] {
-    impl_->messages.push_back(
-        {true,
-         "Could not restore the distance mode and feed controls after the stopped probe cycle. "
-         "Check G90 or G91 and the feed override.",
-         MessageKey{"backend.nmlPort.probeModalNotRestored"}});
-  };
-  // Restore only over what the cycle left. A state somebody set since stays as it is.
-  const auto& left = modal.left;
-  if (!left || std::ranges::contains(before.active_codes, "G91") != left->incremental ||
-      !(std::abs(before.programmed_feed - left->feed_mm_min) <= 1e-6) ||
-      before.feed_override_enabled != left->feed_override ||
-      before.adaptive_feed_enabled != left->adaptive_feed)
-    return;
-  const auto mode = before.controller.mode;
-  if (mode != TaskMode::mdi && !accepted(set_task_mode(TaskMode::mdi, wanted))) {
-    // Not taken now: try again when task can take it.
-    impl_->probe_modal = modal;
+  const auto& modal = pending->operator_state;
+  // Each item only over what the cycle left, and only when no command ran since the stop.
+  const auto plan = plan_probe_restore(modal, pending->left, probe_modal_now(),
+                                       impl_->gcode_commands != pending->commands_at_stop);
+  if (plan.unknown || (!plan.distance && !plan.feed_override && !plan.adaptive_feed)) {
+    impl_->probe_modal.reset();
+    report_probe_modal(plan);
     return;
   }
+  const auto mode = before.controller.mode;
+  if (mode != TaskMode::mdi && !accepted(set_task_mode(TaskMode::mdi, wanted))) {
+    // Not taken now: try again after a while, when task can take it.
+    impl_->probe_modal_retry = Clock::now() + synch_retry_period;
+    return;
+  }
+  impl_->probe_modal.reset();
   const auto settled = [&] {
     return until(settle_timeout, [&] {
       impl_->collect();
@@ -1130,29 +1144,33 @@ void NmlPort::restore_probe_modal(const Wanted& wanted) {
     });
   };
   const double scale = before.controller.program_units == LengthUnit::inch ? 25.4 : 1.0;
-  std::vector<std::string> blocks{std::format("{} G80 F{:.8f}", modal.incremental ? "G91" : "G90",
-                                              modal.feed_mm_min / scale)};
-  if (modal.feed_override)
-    blocks.emplace_back("M50 P1");
-  if (modal.adaptive_feed)
-    blocks.emplace_back("M52 P1");
+  std::vector<std::string> blocks;
+  if (plan.distance)
+    blocks.push_back(std::format("{} G80 F{:.8f}", modal.incremental ? "G91" : "G90",
+                                 modal.feed_mm_min / scale));
+  if (plan.feed_override)
+    blocks.push_back(std::format("M50 P{}", modal.feed_override ? 1 : 0));
+  if (plan.adaptive_feed)
+    blocks.push_back(std::format("M52 P{}", modal.adaptive_feed ? 1 : 0));
   bool sent = true;
   for (const auto& block : blocks)
     sent = sent && accepted(mdi(block, wanted)) && settled();
   const auto after = status();
   const bool verified =
-      sent && std::ranges::contains(after.active_codes, modal.incremental ? "G91" : "G90") &&
-      (!modal.feed_override || after.feed_override_enabled) &&
-      (!modal.adaptive_feed || after.adaptive_feed_enabled);
+      sent &&
+      (!plan.distance || std::ranges::contains(after.active_codes, modal.incremental ? "G91" : "G90")) &&
+      (!plan.feed_override || after.feed_override_enabled == modal.feed_override) &&
+      (!plan.adaptive_feed || after.adaptive_feed_enabled == modal.adaptive_feed);
   if (mode != TaskMode::mdi && wanted() && after.controller.machine == MachineState::on)
     static_cast<void>(set_task_mode(mode, wanted));
   if (!verified) {
-    not_restored();
+    report_probe_modal({.unknown = true});
     return;
   }
   impl_->messages.push_back(
       {false, "Restored the distance mode and feed controls the stopped probe cycle changed.",
        MessageKey{"backend.nmlPort.probeModalRestored"}});
+  report_probe_modal(plan);
 }
 
 void NmlPort::idle_maintenance(const Wanted& wanted) {
@@ -1552,11 +1570,20 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
     return std::unexpected("The probe move is outside the configured travel.");
 
   // What the cycle restores at its end, or idle_maintenance after a stop: the state before this
-  // cycle, or before an earlier one that stopped and is not restored yet.
-  const auto modal = impl_->probe_modal.value_or(
-      Impl::ProbeModal{std::ranges::contains(before.active_codes, "G91"), before.programmed_feed,
-                       raw->motion.traj.feed_override_enabled,
-                       raw->motion.traj.adaptive_feed_enabled});
+  // cycle, or before an earlier one that stopped and is not restored yet, when that is still
+  // all as the earlier cycle left it.
+  const ProbeModalState current{std::ranges::contains(before.active_codes, "G91"),
+                                before.programmed_feed, raw->motion.traj.feed_override_enabled,
+                                raw->motion.traj.adaptive_feed_enabled};
+  auto modal = current;
+  if (const auto pending = std::exchange(impl_->probe_modal, std::nullopt)) {
+    const auto plan = plan_probe_restore(pending->operator_state, pending->left, current,
+                                         impl_->gcode_commands != pending->commands_at_stop);
+    if (!plan.unknown && plan.changed.empty())
+      modal = pending->operator_state;
+    else
+      report_probe_modal(plan);
+  }
   const bool restore_feed_override = modal.feed_override;
   const bool restore_adaptive = modal.adaptive_feed;
   const bool restore_incremental = modal.incremental;
@@ -1633,14 +1660,23 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
     // What the cycle leaves the operator: a later restore puts the operator's state back only
     // while this is unchanged. Unknown without status: no restore then.
     if (impl_->probe_modal) {
-      std::optional<Impl::ProbeModal::Left> left;
-      if (const auto* s = impl_->stat(); s != nullptr && impl_->status.link() == Link::live) {
+      // After the abort has settled: task may run an ON_ABORT_COMMAND that sets modal state.
+      const bool settled = stopped && until(std::chrono::milliseconds{1500}, [&]() {
+        const auto* s = impl_->stat();
+        return s != nullptr && impl_->status.link() == Link::live &&
+               s->task.interpState == EMC_TASK_INTERP_IDLE &&
+               s->task.execState == EMC_TASK_EXEC_DONE && s->task.queuedMDIcommands == 0;
+      });
+      std::optional<ProbeModalState> left;
+      if (const auto* s = impl_->stat();
+          settled && s != nullptr && impl_->status.link() == Link::live) {
         const auto now = to_status(*s, impl_->config, hal, Link::live);
-        left = Impl::ProbeModal::Left{std::ranges::contains(now.active_codes, "G91"),
-                                      now.programmed_feed, now.feed_override_enabled,
-                                      now.adaptive_feed_enabled};
+        left = ProbeModalState{std::ranges::contains(now.active_codes, "G91"),
+                               now.programmed_feed, now.feed_override_enabled,
+                               now.adaptive_feed_enabled};
       }
       impl_->probe_modal->left = left;
+      impl_->probe_modal->commands_at_stop = impl_->gcode_commands;
     }
     // The cycle's own reason comes first: dropping the permit makes LinuxCNC report "motion
     // stopped by enable input", which says nothing about why the cycle stopped.
@@ -1739,7 +1775,7 @@ auto NmlPort::probe_fixed_setter(const FixedSetterMove& move, const Wanted& want
   };
 
   // From here the cycle changes the operator's modal state: keep it for a restore.
-  impl_->probe_modal = modal;
+  impl_->probe_modal = Impl::ProbeModal{modal};
   if (!block("M50 P0", completion_timeout) || !block("M52 P0", completion_timeout))
     return interrupt(std::format("Could not prepare the probing feed ({}).", block_failure));
   raw = live_cycle();

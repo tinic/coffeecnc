@@ -1173,9 +1173,10 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
   require(wrapped && std::abs(port.status().rotation_xy - wrapped_expected) < 0.05,
           wrapped ? "applying past 180° writes the same turn inside -180..180°" : wrapped.error());
   static_cast<void>(angle(ProbeDirection::y_plus, 0));
-  // A stop mid-cycle drops the machine's enable: the cycle has switched to G90 and turned the
-  // feed override (M50) and adaptive feed (M52) off. Once the machine can take MDI, the
-  // operator's G91 and both feed controls come back, once, and only over what the cycle left.
+  // A stop mid-cycle drops the machine's enable: the cycle has turned the feed override (M50)
+  // and adaptive feed (M52) off, and switched to G90 once it has sent a move. Once the machine
+  // can take MDI, each item comes back once, only while it is what the cycle left and no
+  // command ran since; the operator is told about the rest.
   // Last: it homes the machine again, and the edge rig above expects the first homing.
   probe_input("sim-rot-inner", "sim-rot-hollow.nand");
   {
@@ -1191,14 +1192,21 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
       return std::format("{} m50={} m52={}", codes(status), status.feed_override_enabled,
                          status.adaptive_feed_enabled);
     };
-    // G91, M50 P1 and M52 P1, a pocket cycle stopped 1.5 s in, the machine on again in MDI:
-    // what the cycle left. M50 and M52 are always off then; G90 only once it has sent a move.
+    // The panel messages since the last call, joined.
+    const auto told = [&] {
+      std::string text;
+      for (const auto& message : port.take_messages())
+        text += message.text + " | ";
+      return text;
+    };
+    // G91, M50 P1 and M52 P1, a pocket cycle stopped 2.2 s in (in its first search), the
+    // machine on again in MDI: what the cycle left.
     const auto stop_cycle = [&](std::string_view name) {
       at(2, 1);
       mdi("M50 P1");
       mdi("M52 P1");
       const auto before = port.status();
-      const auto stop_at = std::chrono::steady_clock::now() + 1500ms;
+      const auto stop_at = std::chrono::steady_clock::now() + 2200ms;
       const auto stopped = port.fixed_setter({.action = SetterAction::pocket, .tool = 99, .start = machine()},
                                              epoch, [&] { return std::chrono::steady_clock::now() < stop_at; });
       const auto off = port.status();
@@ -1206,6 +1214,7 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
       checked(port.set_machine_state(MachineState::on, {}));
       checked(port.set_task_mode(TaskMode::mdi, {}));
       const auto on = port.status();
+      static_cast<void>(told());
       std::cout << std::format("fact=probe_abort case={} rotation={} stopped={} machine_on_after_stop={} "
                                "before=\"{}\" at_machine_on=\"{}\"",
                                name, degrees, !stopped, off.controller.machine == MachineState::on,
@@ -1215,24 +1224,28 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
                   before.feed_override_enabled && before.adaptive_feed_enabled &&
                   !on.feed_override_enabled && !on.adaptive_feed_enabled,
               "a stopped pocket cycle leaves M50 and M52 off");
-      return before;
+      return on;
     };
 
-    // 1. Somebody sets M50 P1 after machine on: the restore is dropped, nothing is sent.
-    stop_cycle("changed_after_stop");
-    mdi("M50 P1");
+    // 1. An operator MDI block after the stop, the same distance mode the cycle left: nothing
+    //    is restored, and the operator is told what the cycle left.
+    auto left = stop_cycle("operator_mdi");
+    mdi(codes(left));
     auto written = last_write();
     idle();
+    auto message = told();
     idle();
     auto now = port.status();
-    std::cout << std::format("fact=probe_abort case=changed_after_stop restore_blocks={} after=\"{}\"",
-                             last_write() == written ? 0 : 1, state(now))
+    std::cout << std::format("fact=probe_abort case=operator_mdi restore_blocks={} after=\"{}\" "
+                             "message=\"{}\"",
+                             last_write() == written ? 0 : 1, state(now), message)
               << std::endl;
-    require(last_write() == written && !std::ranges::contains(now.active_codes, "G91") &&
-                now.feed_override_enabled && !now.adaptive_feed_enabled,
-            "a change after the stop suppresses the restore without an MDI block");
+    require(last_write() == written && state(now) == state(left) &&
+                message.contains("did not restore it") && message.contains("M50 P0") &&
+                message.contains("M52 P0"),
+            "an operator MDI block after the stop drops the restore and says so");
 
-    // 2. A program runs before the restore: its M2 sets G90 and the overrides on.
+    // 2. A program runs before the restore: its M2 sets G90 and M50 on. Nothing is sent.
     stop_cycle("program_ran");
     {
       const auto path = programs + "/coffeecnc-probe-abort.ngc";
@@ -1244,23 +1257,75 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
       checked(port.open_program(path, {}));
       checked(port.run({}));
       wait_for(port, [](const NmlStatus& current) {
-        return current.controller.interp == InterpState::idle && current.controller.in_position && !current.task_executing;
+        return current.controller.interp == InterpState::idle && current.controller.in_position &&
+               !current.task_executing;
       });
       checked(port.set_task_mode(TaskMode::mdi, {}));
     }
     const auto after_program = port.status();
     written = last_write();
     idle();
+    message = told();
     idle();
     now = port.status();
     std::cout << std::format("fact=probe_abort case=program_ran after_program=\"{}\" restore_blocks={} "
-                             "after=\"{}\"",
-                             state(after_program), last_write() == written ? 0 : 1, state(now))
+                             "after=\"{}\" message=\"{}\"",
+                             state(after_program), last_write() == written ? 0 : 1, state(now), message)
               << std::endl;
-    require(last_write() == written && state(now) == state(after_program),
-            "a program run before the restore suppresses it");
+    require(last_write() == written && state(now) == state(after_program) &&
+                message.contains("did not restore it"),
+            "a program run before the restore suppresses it and says so");
 
-    // 3. Homing: the restore waits while an axis homes, then runs once; a second pass sends nothing.
+    // 3. Another client sets G91 only after the stop (as AXIS or an ON_ABORT_COMMAND could):
+    //    M50 and M52 are still as the cycle left them and come back; the distance mode stays
+    //    the client's, and the operator is told what the cycle left there.
+    left = stop_cycle("g91_by_another_client");
+    const bool left_g90 = !std::ranges::contains(left.active_codes, "G91");
+    if (std::system("python3 -c \"import linuxcnc; c = linuxcnc.command(); c.mode(linuxcnc.MODE_MDI); "
+                    "c.wait_complete(); c.mdi('G91'); c.wait_complete()\"") != 0)
+      throw std::runtime_error("the second command client could not send G91");
+    wait_for(port, [](const NmlStatus& current) {
+      return std::ranges::contains(current.active_codes, "G91") &&
+             current.controller.interp == InterpState::idle;
+    });
+    written = last_write();
+    idle();
+    message = told();
+    now = port.status();
+    std::cout << std::format("fact=probe_abort case=g91_by_another_client left_g90={} restore_blocks={} "
+                             "after=\"{}\" message=\"{}\"",
+                             left_g90, last_write() == written ? 0 : 1, state(now), message)
+              << std::endl;
+    require(std::ranges::contains(now.active_codes, "G91") && now.feed_override_enabled &&
+                now.adaptive_feed_enabled && message.contains("Restored the distance mode") &&
+                (!left_g90 || (message.contains("left G90 F") && message.contains("did not restore it"))),
+            "G91 set after the stop keeps M50 and M52 restored and tells about G90 and F");
+
+    // 4. A refused switch to MDI backs off: the next pass within a second sends nothing, a
+    //    pass after it restores.
+    stop_cycle("mode_refused");
+    checked(port.set_task_mode(TaskMode::manual, {}));
+    int asked = 0;
+    port.idle_maintenance([&] { return ++asked == 1; }); // the switch to MDI is withdrawn
+    written = last_write();
+    idle();
+    const auto backed_off = port.status();
+    const bool sent_while_backing_off = last_write() != written;
+    std::this_thread::sleep_for(1200ms);
+    idle();
+    now = port.status();
+    message = told();
+    std::cout << std::format("fact=probe_abort case=mode_refused while_backing_off=\"{}\" mode_manual={} "
+                             "sent_while_backing_off={} after=\"{}\" restored_message={}",
+                             state(backed_off), backed_off.controller.mode == TaskMode::manual,
+                             sent_while_backing_off, state(now), message.contains("Restored the distance mode"))
+              << std::endl;
+    require(!sent_while_backing_off && backed_off.controller.mode == TaskMode::manual &&
+                !backed_off.feed_override_enabled && now.feed_override_enabled &&
+                now.adaptive_feed_enabled && message.contains("Restored the distance mode"),
+            "a refused switch to MDI waits a second, then the restore runs");
+
+    // 5. Homing: the restore waits while an axis homes, then runs once; a second pass sends nothing.
     const auto before = stop_cycle("homing_gate");
     checked(port.set_task_mode(TaskMode::manual, {}));
     checked(port.home({}, {}));
@@ -1277,24 +1342,20 @@ void rotated_scenarios(NmlPort& port, double scale, double degrees, const auto& 
     });
     idle();
     const auto restored = port.status();
-    const auto messages = port.take_messages();
-    const auto restored_messages = std::ranges::count_if(messages, [](const ControllerMessage& message) {
-      return message.text.contains("Restored the distance mode");
-    });
+    message = told();
     written = last_write();
     idle();
     const bool second = last_write() != written;
     std::cout << std::format("fact=probe_abort case=homing_gate while_homing=\"{}\" pending_while_homing={} "
-                             "restored=\"{}\" restored_messages={} second_restore_blocks={} offsets_unchanged={}",
-                             state(homing), pending_while_homing, state(restored), restored_messages,
-                             second ? 1 : 0, restored.g5x == before.g5x && restored.g92 == before.g92)
+                             "restored=\"{}\" restored_message={} second_restore_blocks={}",
+                             state(homing), pending_while_homing, state(restored),
+                             message.contains("Restored the distance mode"), second ? 1 : 0)
               << std::endl;
     require(pending_while_homing && !homing.feed_override_enabled && !homing.adaptive_feed_enabled,
             "the restore waits while an axis homes");
     require(std::ranges::contains(restored.active_codes, "G91") && restored.feed_override_enabled &&
-                restored.adaptive_feed_enabled && restored.g5x == before.g5x &&
-                restored.g92 == before.g92 && restored.rotation_xy == before.rotation_xy &&
-                restored_messages == 1 && !second,
+                restored.adaptive_feed_enabled && restored.g5x == before.g5x && restored.g92 == before.g92 &&
+                message.contains("Restored the distance mode") && !second,
             "after homing the stopped cycle's G91, M50 and M52 come back once");
     checked(port.set_task_mode(TaskMode::mdi, {}));
   }

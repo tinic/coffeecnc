@@ -1,5 +1,6 @@
 #include <coffeecnc/app/tool_models.hpp>
 
+#include "message_key_json.hpp"
 #include "tool_model_json.hpp"
 
 #include <coffeecnc/core/command_policy.hpp>
@@ -498,12 +499,11 @@ auto encode_tool_models(const ToolModels& models) -> std::expected<std::string, 
 auto encode_tool_models_reason(const ToolModels& models) -> std::optional<std::string> {
   if (!models.reason_localization || models.reason.empty())
     return {};
-  const auto& [key, params] = *models.reason_localization;
   const Json message{{"type", "tool_models_reason"},
                      {"machine_id", models.machine_id ? Json(*models.machine_id) : Json(nullptr)},
                      {"revision", models.revision},
                      {"reason", models.reason},
-                     {"localization", {{"key", key}, {"params", params}}}};
+                     {"localization", message_key_json(*models.reason_localization)}};
   return message.dump(-1, ' ', false, Json::error_handler_t::replace);
 }
 

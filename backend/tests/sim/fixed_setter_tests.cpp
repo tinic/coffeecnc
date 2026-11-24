@@ -17,7 +17,6 @@
 #include <fstream>
 #include <initializer_list>
 #include <iostream>
-#include <iterator>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -1023,8 +1022,12 @@ void runout_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, double 
   const auto pin = [&] { probe_input("sim-run-boss", "sim-run-solid.and"); };
   const auto status = [&] { return port->fixed_setter({SetterAction::status}, epoch, {}); };
   const auto saved = [&] {
-    std::ifstream in{runout_file};
-    return std::string{std::istreambuf_iterator<char>{in}, {}};
+    // Line by line: GCC 14 -O3 flags istreambuf_iterator with -Wnull-dereference.
+    std::ifstream input{runout_file};
+    std::string text;
+    for (std::string line; std::getline(input, line);)
+      text += line + '\n';
+    return text;
   };
   struct Value {
     std::string_view key;
@@ -1087,8 +1090,9 @@ void runout_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, double 
                   {"diameter", diameter, done.state.center_diameter.value_or(none)}},
            tolerance);
   };
-  // A request that fails before any motion and leaves the saved correction as it was.
-  const auto refused = [&](std::string_view name, FixedSetterRequest request, std::string_view reason) {
+  // A request that fails, before any motion unless `moves`, and leaves the saved correction.
+  const auto refused = [&](std::string_view name, FixedSetterRequest request, std::string_view reason,
+                           bool moves = false) {
     const auto file = saved();
     const auto writes = port->writes().size();
     request.tool = 99;
@@ -1097,7 +1101,7 @@ void runout_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, double 
     std::cout << std::format("fact=runout action={} refused={} writes={} file_kept={}", name, !result,
                              port->writes().size() - writes, saved() == file)
               << std::endl;
-    require(!result && result.error().contains(reason) && port->writes().size() == writes &&
+    require(!result && result.error().contains(reason) && (moves || port->writes().size() == writes) &&
                 saved() == file,
             result ? std::format("{} is refused", name) : result.error());
   };
@@ -1123,10 +1127,11 @@ void runout_scenarios(std::unique_ptr<NmlPort>& port, HalShared& shared, double 
   expect("slot_x", {{"centre_x", seen[0], slot.origin[0]}, {"width", 20, slot.state.feature_size[0].value_or(none)}},
          tight);
 
-  // Refused before any motion, the saved correction kept: a diameter typo of 0.1 mm (the radius
-  // part is then more than 0.05 mm), a ring beyond the search travel, a rotated work system.
+  // Refused, the saved correction kept: a diameter typo of 0.1 mm after the contacts (the
+  // radius part is then more than 0.05 mm); before any motion a ring beyond the search travel
+  // and a rotated work system.
   at(5, -1.5, 20);
-  refused("ring_typo", {.action = SetterAction::runout, .gauge_width_mm = 19.9}, "more than 0.05 mm");
+  refused("ring_typo", {.action = SetterAction::runout, .gauge_width_mm = 19.9}, "more than 0.05 mm", true);
   require(status().value().runout == kept->runout, "a refused calibration keeps the correction");
   refused("ring_beyond_travel", {.action = SetterAction::runout, .gauge_width_mm = 44},
           "shorter than the ring radius");

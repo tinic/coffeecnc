@@ -428,7 +428,13 @@ void runout_clear_gates() {
   rig.port.setter = true;
   rig.port.state.spindle_active = true;
   rig.port.state.interp = InterpState::reading;
-  rig.accepted(R"("type":"fixed_setter","action":"clear_runout","tool":99)");
+  // A setter result carries `setter` too: read the outcome, not the field count.
+  const auto outcome = [&rig](std::string_view body) -> std::string {
+    const auto found = results(rig.send(body));
+    return found.size() == 1 ? found.front().at("outcome").get<std::string>() : "none";
+  };
+  require(outcome(R"("type":"fixed_setter","action":"clear_runout","tool":99)") == "accepted",
+          "Clear is accepted with T3 loaded, the spindle on and a program reading");
   rig.acted({"fixed_setter clear_runout"}, "T3 loaded, the spindle on and a program reading: cleared");
 
   rig.port.state = homed_machine();
@@ -436,15 +442,17 @@ void runout_clear_gates() {
   rig.port.state.in_position = true;
   std::optional<Json> refused;
   rig.port.during["fixed_setter"] = [&rig, &refused]() -> void {
-    const auto outcome = rig.session.submit(
+    const auto submitted = rig.session.submit(
         rig.page,
         std::format(R"({{"id":{},"type":"fixed_setter","action":"clear_runout","tool":99}})",
                     rig.next_id++),
         at(rig.clock));
-    for (const auto& message : results(outcome))
+    for (const auto& message : results(submitted))
       refused = message;
   };
-  rig.accepted(R"("type":"fixed_setter","action":"runout","tool":99,"x":0,"y":0,"z":0,"diameter":20,"outside":false)");
+  require(outcome(R"("type":"fixed_setter","action":"runout","tool":99,"x":0,"y":0,"z":0,"diameter":20,"outside":false)") ==
+              "accepted",
+          "the runout calibration completes");
   require(refused && refused->at("outcome") == "rejected" &&
               refused->at("reason") == "A fixed setter operation is in progress.",
           "a runout cycle in progress refuses Clear");

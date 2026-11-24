@@ -19,6 +19,7 @@ struct LocalizedReason {
   std::string text;
   std::optional<MessageKey> localization{};
   [[nodiscard]] auto empty() const -> bool { return text.empty(); }
+  friend auto operator==(const LocalizedReason&, const LocalizedReason&) -> bool = default;
 };
 
 } // namespace coffeecnc

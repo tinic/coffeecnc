@@ -307,7 +307,9 @@ auto encoded_messages() -> std::vector<Encoded> {
 
   messages.emplace_back(
       encode_message(MessageLevel::error, "Joint 0 on limit switch error", 1700000000123ms));
-  messages.emplace_back(encode_message(MessageLevel::info, "Probe tripped", 1700000001000ms));
+  messages.emplace_back(encode_message(MessageLevel::info, "T1 restored in the spindle.",
+                                       1700000001000ms,
+                                       MessageKey{"backend.nmlPort.restored", {{"tool", "1"}}}));
   messages.emplace_back(encode_message(MessageLevel::info, "Jog stopped: probe contact",
                                        1700000001100ms,
                                        MessageKey{"backend.jogStop.probeContact"}));

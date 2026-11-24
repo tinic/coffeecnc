@@ -22,6 +22,7 @@ const adapter = import.meta.glob<string>([
   '../../backend/src/core/include/coffeecnc/core/controller_port.hpp',
   '../../backend/src/core/include/coffeecnc/core/jog_stop_report.hpp',
   '../../backend/src/linuxcnc/src/nml_port.cpp',
+  '../../backend/src/linuxcnc/src/tool_table.cpp',
   '../../backend/src/linuxcnc/src/nml_panel_source.cpp',
   '../../backend/src/linuxcnc/src/hal_diagnostics.cpp',
   '../../backend/src/app/src/diagnostics_feed.cpp',

@@ -2190,7 +2190,8 @@ auto Session::restore_offset(const Queued& request, const RestoreOffset& command
       entry->number == state.tool_in_spindle) {
     const auto effect = port_.tool_length_in_effect();
     if (!effect)
-      return answer({CommandOutcome::rejected, effect.error()});
+      return answer(
+          {CommandOutcome::rejected, effect.error().text, {}, effect.error().localization});
     follow_up = after_tool_length_write(entry->number, state.tool_in_spindle, *effect);
   }
   const auto mark = history_->begin(HistorySource::restore, entry->id);

@@ -1029,8 +1029,14 @@ const examples = [
   {
     "type": "message",
     "level": "info",
-    "text": "Probe tripped",
-    "time": 1700000001000
+    "text": "T1 restored in the spindle.",
+    "time": 1700000001000,
+    "localization": {
+      "key": "backend.nmlPort.restored",
+      "params": {
+        "tool": "1"
+      }
+    }
   },
   {
     "type": "message",

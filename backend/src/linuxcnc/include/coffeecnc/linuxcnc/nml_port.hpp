@@ -355,7 +355,7 @@ public:
       -> ActionResult override;
   // Rewrite [EMCIO] TOOL_TABLE and have LinuxCNC load it again.
   [[nodiscard]] auto tool_length_in_effect()
-      -> std::expected<ToolLengthInEffect, std::string> override;
+      -> std::expected<ToolLengthInEffect, LocalizedReason> override;
   [[nodiscard]] auto set_tool(const Tool& tool, const Wanted& wanted) -> ActionResult override;
   [[nodiscard]] auto remove_tool(int number, const Wanted& wanted) -> ActionResult override;
 

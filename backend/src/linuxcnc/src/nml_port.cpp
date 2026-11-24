@@ -883,16 +883,22 @@ struct NmlPort::Impl {
     return millimetres_per_minute / config.millimetres_per_unit / seconds_per_minute;
   }
 
-  [[nodiscard]] auto read_tool_table() const -> std::expected<std::string, std::string> {
+  [[nodiscard]] auto read_tool_table() const -> std::expected<std::string, LocalizedReason> {
     if (config.tool_table.empty())
-      return std::unexpected(std::string("No tool table is configured ([EMCIO] TOOL_TABLE)."));
+      return std::unexpected(LocalizedReason{"No tool table is configured ([EMCIO] TOOL_TABLE).",
+                                             MessageKey{"backend.nmlPort.noToolTable"}});
     auto text = read_text_file(config.tool_table, max_tool_table_bytes);
-    if (!text)
-      return std::unexpected(text.error() == TextFileError::too_large
-                                 ? std::format("Tool table {} is larger than 4 MiB.",
-                                               config.tool_table)
-                                 : std::format("Cannot read tool table {}.", config.tool_table));
-    return std::move(*text);
+    if (text)
+      return std::move(*text);
+
+    const auto& file = config.tool_table;
+    if (text.error() == TextFileError::too_large)
+      return std::unexpected(
+          LocalizedReason{std::format("Tool table {} is larger than 4 MiB.", file),
+                          MessageKey{"backend.nmlPort.toolTableTooLarge", {{"file", file}}}});
+    return std::unexpected(
+        LocalizedReason{std::format("Cannot read tool table {}.", file),
+                        MessageKey{"backend.nmlPort.cannotReadToolTable", {{"file", file}}}});
   }
 
   // Replaces the file in one step, then has LinuxCNC read it: two commits. Until the first the
@@ -901,14 +907,17 @@ struct NmlPort::Impl {
     // On disk before LinuxCNC reads it: a power cut leaves the old table or the new one.
     const std::string temporary = config.tool_table + ".coffeecnc";
     if (!write_synced(temporary, table))
-      return failed(std::format("Cannot write tool table {}.", temporary));
+      return failed(std::format("Cannot write tool table {}.", temporary),
+                    MessageKey{"backend.nmlPort.cannotWriteToolTable", {{"file", temporary}}});
     if (!still()) {
       std::error_code error;
       std::filesystem::remove(temporary, error);
       return withdrawn();
     }
     if (!rename_synced(temporary, config.tool_table))
-      return failed(std::format("Cannot replace tool table {}.", config.tool_table));
+      return failed(
+          std::format("Cannot replace tool table {}.", config.tool_table),
+          MessageKey{"backend.nmlPort.cannotReplaceToolTable", {{"file", config.tool_table}}});
     const auto from = mark();
     EMC_TOOL_LOAD_TOOL_TABLE message;
     std::ranges::fill(message.file, '\0'); // the configured table
@@ -916,9 +925,11 @@ struct NmlPort::Impl {
     // Withdrawn between the two commits. Nothing is rolled back: the file may have been edited
     // again by now.
     if (loaded.status == ActionStatus::cancelled)
-      return failed(std::format("The tool table file {} was changed, but the request was "
-                                "cancelled before LinuxCNC was told to load it.",
-                                config.tool_table));
+      return failed(
+          std::format("The tool table file {} was changed, but the request was "
+                      "cancelled before LinuxCNC was told to load it.",
+                      config.tool_table),
+          MessageKey{"backend.nmlPort.toolTableNotLoaded", {{"file", config.tool_table}}});
     if (accepted(loaded) && loads != nullptr)
       ++loads->tool_tables;
     return loaded;
@@ -1111,9 +1122,15 @@ void NmlPort::idle_maintenance(const Wanted& wanted) {
   });
   if (mode != TaskMode::mdi && wanted() && status().controller.machine == MachineState::on)
     static_cast<void>(set_task_mode(mode, wanted));
-  impl_->messages.push_back({!verified, verified
-      ? std::format("T{} restored in the spindle.", tool)
-      : std::format("Could not verify restoring T{} in the spindle. Check the active tool.", tool)});
+  if (verified)
+    impl_->messages.push_back(
+        {false, std::format("T{} restored in the spindle.", tool),
+         MessageKey{"backend.nmlPort.restored", {{"tool", std::to_string(tool)}}}});
+  else
+    impl_->messages.push_back(
+        {true,
+         std::format("Could not verify restoring T{} in the spindle. Check the active tool.", tool),
+         MessageKey{"backend.nmlPort.restoreUnverified", {{"tool", std::to_string(tool)}}}});
 }
 
 auto NmlPort::set_machine_state(MachineState state, const Wanted& wanted) -> ActionResult {
@@ -3870,10 +3887,11 @@ auto NmlPort::tool_changed(int tool, std::uint64_t request, const Wanted& wanted
   return {};
 }
 
-auto NmlPort::tool_length_in_effect() -> std::expected<ToolLengthInEffect, std::string> {
+auto NmlPort::tool_length_in_effect() -> std::expected<ToolLengthInEffect, LocalizedReason> {
   const auto current = status();
   if (current.controller.link != Link::live)
-    return std::unexpected(std::string("The tool length offset in effect cannot be read."));
+    return std::unexpected(LocalizedReason{"The tool length offset in effect cannot be read.",
+                                           MessageKey{"backend.nmlPort.lengthOffsetUnreadable"}});
   ToolLengthInEffect effect;
   effect.offset = current.tool_offset;
   const int tool = current.controller.tool_in_spindle;
@@ -3894,9 +3912,10 @@ auto NmlPort::set_tool(const Tool& tool, const Wanted& wanted) -> ActionResult {
     return withdrawn();
   const auto table = impl_->read_tool_table();
   if (!table)
-    return failed(table.error());
+    return failed(table.error().text, table.error().localization);
   const auto edited = with_tool(*table, tool, impl_->config.millimetres_per_unit);
-  return edited ? impl_->load_tool_table(*edited) : failed(edited.error());
+  return edited ? impl_->load_tool_table(*edited)
+                : failed(edited.error().text, edited.error().localization);
 }
 
 auto NmlPort::remove_tool(int number, const Wanted& wanted) -> ActionResult {
@@ -3905,13 +3924,16 @@ auto NmlPort::remove_tool(int number, const Wanted& wanted) -> ActionResult {
   if (!impl_->still())
     return withdrawn();
   if (const EMC_STAT* s = impl_->stat(); s != nullptr && s->io.tool.toolInSpindle == number)
-    return failed(std::format("Tool {} is in the spindle.", number));
+    return failed(
+        std::format("Tool {} is in the spindle.", number),
+        MessageKey{"backend.nmlPort.toolInSpindleNumber", {{"tool", std::to_string(number)}}});
   const auto table = impl_->read_tool_table();
   if (!table)
-    return failed(table.error());
+    return failed(table.error().text, table.error().localization);
   const auto edited = without_tool(*table, number);
   if (!edited)
-    return failed(std::format("Tool {} is not in the tool table.", number));
+    return failed(std::format("Tool {} is not in the tool table.", number),
+                  MessageKey{"backend.nmlPort.toolNotInTable", {{"tool", std::to_string(number)}}});
   return impl_->load_tool_table(*edited);
 }
 

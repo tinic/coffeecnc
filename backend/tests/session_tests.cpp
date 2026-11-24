@@ -178,8 +178,8 @@ public:
     return record("remove_tool", std::to_string(number));
   }
   // Read by a restore of the loaded tool's length; not an action, so not recorded.
-  std::expected<ToolLengthInEffect, std::string> length_in_effect{ToolLengthInEffect{}};
-  auto tool_length_in_effect() -> std::expected<ToolLengthInEffect, std::string> override {
+  std::expected<ToolLengthInEffect, LocalizedReason> length_in_effect{ToolLengthInEffect{}};
+  auto tool_length_in_effect() -> std::expected<ToolLengthInEffect, LocalizedReason> override {
     return length_in_effect;
   }
 
@@ -2721,8 +2721,15 @@ void tool_length_restore() {
   in_effect(90);
   rig.accepted(restore);
   rig.acted({"mdi G10 L1 P3 Z48.2"}, "A G43.2 sum stays: G10 L1 only");
-  rig.port.length_in_effect = std::unexpected(std::string("Cannot read tool table tool.tbl."));
-  rig.expect(restore, "rejected", "Cannot read tool table tool.tbl.");
+  rig.port.length_in_effect = std::unexpected(
+      LocalizedReason{"Cannot read tool table tool.tbl.",
+                      MessageKey{"backend.nmlPort.cannotReadToolTable", {{"file", "tool.tbl"}}}});
+  const auto unreadable = rig.result(restore);
+  require(unreadable.at("outcome") == "rejected" &&
+              unreadable.at("reason") == "Cannot read tool table tool.tbl." &&
+              unreadable.at("localization") == Json{{"key", "backend.nmlPort.cannotReadToolTable"},
+                                                    {"params", {{"file", "tool.tbl"}}}},
+          "An unreadable tool table reports its path and a translation key");
   rig.acted({}, "An unreadable offset in effect sends nothing");
   rig.port.state.tool_in_spindle = 2;
   rig.accepted(restore);

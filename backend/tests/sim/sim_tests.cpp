@@ -2068,8 +2068,7 @@ void lines_across_open(Rig& rig) {
            "M2\n";          // 4
   }
   NmlPanelSource source{rig.config, *rig.mailbox, {},
-                        [&](std::string_view path, std::uint64_t revision)
-                            -> std::expected<ProgramText, std::string> {
+                        [&](std::string_view path, std::uint64_t revision) {
                           return rig.programs.read_program(path, revision);
                         },
                         rig.loads};
@@ -2226,8 +2225,7 @@ struct PreviewOracle {
                  pass = table.read_raw();
                  return loaded_tools(pass, rig.config.millimetres_per_unit);
                },
-               [this](std::string_view path, std::uint64_t revision)
-                   -> std::expected<ProgramText, std::string> {
+               [this](std::string_view path, std::uint64_t revision) {
                  return rig.programs.read_program(path, revision);
                },
                rig.loads),
@@ -2582,8 +2580,7 @@ void preview_attached_mid_program(PreviewOracle& oracle) {
                           return loaded_tools(oracle.table.read_raw(),
                                               rig.config.millimetres_per_unit);
                         },
-                        [&](std::string_view path, std::uint64_t revision)
-                            -> std::expected<ProgramText, std::string> {
+                        [&](std::string_view path, std::uint64_t revision) {
                           return rig.programs.read_program(path, revision);
                         },
                         rig.loads};
@@ -3141,7 +3138,7 @@ public:
                   return loaded_tools(table.read_raw(), rig.config.millimetres_per_unit);
                 },
                 [&rig](std::string_view path,
-                       std::uint64_t revision) -> std::expected<ProgramText, std::string> {
+                       std::uint64_t revision) {
                   return rig.programs.read_program(path, revision);
                 },
                 rig.loads),
@@ -5389,7 +5386,7 @@ public:
                   return loaded_tools(table.read_raw(), rig.config.millimetres_per_unit);
                 },
                 [&rig](std::string_view path,
-                       std::uint64_t revision) -> std::expected<ProgramText, std::string> {
+                       std::uint64_t revision) {
                   return rig.programs.read_program(path, revision);
                 },
                 rig.loads),

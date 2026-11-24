@@ -54,9 +54,8 @@ struct PanelReading {
 
 // The text of a program for the `program` message: ProgramStore::read_program, handed to an
 // adapter that must not depend on the app layer.
-using ProgramReader =
-    std::function<std::expected<ProgramText, std::string>(std::string_view path,
-                                                          std::uint64_t revision)>;
+using ProgramReader = std::function<std::expected<ProgramText, LocalizedReason>(
+    std::string_view path, std::uint64_t revision)>;
 
 // A read-only view of the controller for the publisher thread, its only caller. Never touches
 // the command or error channel and no HAL pin. Implementations need not be thread-safe.

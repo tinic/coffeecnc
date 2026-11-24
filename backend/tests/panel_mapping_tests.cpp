@@ -356,11 +356,13 @@ struct Rig {
   NmlPanelSource source{
       config, mailbox, [this]() -> std::optional<std::vector<LoadedTool>> { return loaded; },
       [this](std::string_view path,
-             std::uint64_t revision) -> std::expected<ProgramText, std::string> {
+             std::uint64_t revision) -> std::expected<ProgramText, LocalizedReason> {
         ++reads;
         now += read_time;
         if (path.ends_with("refused.ngc"))
-          return std::unexpected(std::string("outside the program directory."));
+          return std::unexpected(
+              LocalizedReason{"Path is outside the program directory.",
+                              MessageKey{"backend.programStore.outsideDirectory"}});
         return ProgramText{revision, std::string(path), {"G0 X1", "M2"}, false, "0"};
       },
       &loads, [this]() -> NmlPanelSource::Clock::time_point { return now; }};
@@ -578,10 +580,16 @@ void source_program_loads() {
   s.program_file = (scratch / "refused.ngc").string();
   rig.mailbox.put(s, rig.now);
   r = rig.source.read();
-  require(!r.program && r.status.program.revision == 4 &&
-              r.status.program.file == s.program_file && r.messages.size() == 1 &&
-              r.messages[0].error &&
-              r.messages[0].text.find("outside the program directory") != std::string::npos,
+  require(!r.program && r.status.program.revision == 4 && r.status.program.file == s.program_file &&
+              r.messages.size() == 1 && r.messages[0].error &&
+              r.messages[0].text ==
+                  "The text of " + s.program_file +
+                      " cannot be shown: Path is outside the program directory." &&
+              r.messages[0].localization ==
+                  MessageKey{"backend.nmlPanelSource.textNotShown",
+                             {{"file", s.program_file},
+                              {"detail", "Path is outside the program directory."}},
+                             {{"detail", {"backend.programStore.outsideDirectory"}}}},
           "A program whose text cannot be read: named in the status, no text, said once");
   require(rig.source.read().messages.empty() && rig.reads == 4, "And not asked for again");
 

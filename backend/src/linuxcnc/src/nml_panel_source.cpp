@@ -302,15 +302,18 @@ struct NmlPanelSource::Impl {
     lines = Lines{};
     lines.not_before = clock();
     program.reset();
-    auto text = programs ? programs(program_file, program_revision)
-                         : std::unexpected(std::string("No program directory is configured."));
+    auto text =
+        programs ? programs(program_file, program_revision)
+                 : std::unexpected(LocalizedReason{"No program directory is configured.",
+                                                   MessageKey{"backend.programStore.noDirectory"}});
     if (text)
       program = std::make_shared<const ProgramText>(std::move(*text));
     else
       messages.push_back(
-          {true, std::format("The text of {} cannot be shown: {}", program_file, text.error()),
+          {true, std::format("The text of {} cannot be shown: {}", program_file, text.error().text),
            MessageKey{"backend.nmlPanelSource.textNotShown",
-                      {{"file", program_file}, {"detail", text.error()}}}});
+                      {{"file", program_file}, {"detail", text.error().text}},
+                      parameter_localization("detail", text.error().localization)}});
   }
 };
 

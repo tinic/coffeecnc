@@ -29,6 +29,8 @@ public:
   std::map<std::string, Node> nodes;
   // Directories whose names cannot be read.
   std::vector<std::string> unreadable;
+  // Files whose contents cannot be read even when their metadata is available.
+  std::vector<std::string> unreadable_files;
   // Every call, as `<operation> <path>`.
   mutable std::vector<std::string> calls;
   // Called once inside the next canonical(): what happens while the file system is slow.
@@ -122,6 +124,8 @@ public:
   auto read(const std::string& path, std::size_t limit) const
       -> std::expected<std::string, std::string> override {
     calls.push_back("read " + path);
+    if (std::ranges::find(unreadable_files, path) != unreadable_files.end())
+      return std::unexpected(std::string("Permission denied"));
     const auto node = nodes.find(path);
     if (node == nodes.end() || node->second.kind != FileKind::file)
       return std::unexpected(std::string("The file cannot be opened."));

@@ -534,8 +534,7 @@ auto run_application(const Options& options, const ApplicationHooks& hooks) -> i
                           pass = tools->read_raw();
                           return loaded_tools(pass, config->millimetres_per_unit);
                         },
-                        [&programs](std::string_view path, std::uint64_t revision)
-                            -> std::expected<ProgramText, std::string> {
+                        [&programs](std::string_view path, std::uint64_t revision) {
                           return programs.read_program(path, revision);
                         },
                         &loads};

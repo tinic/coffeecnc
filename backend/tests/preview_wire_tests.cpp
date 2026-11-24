@@ -4,6 +4,7 @@
 #include "../src/linuxcnc/src/preview_wire.hpp"
 #include "../src/linuxcnc/src/program_watch.hpp"
 
+#include <array>
 #include <chrono>
 #include <exception>
 #include <format>
@@ -83,24 +84,79 @@ void wire_formats() {
   require(parse_output("").end == HelperEnd::missing && parse_output("").defect.empty() &&
               parse_output("end ok\n").end == HelperEnd::ok,
           "Nothing, and nothing but the end");
-  const auto coded = write_restart_refusal(RestartRefusal::canned_cycle, true);
-  const auto text = write_restart_refusal(RestartRefusal::canned_cycle, false);
-  const auto parsed_refusal = parse_output(coded + "end ok\n");
-  require(parsed_refusal.end == HelperEnd::ok && !parsed_refusal.restart &&
-              parsed_refusal.restart_blocked == "This line is inside a canned cycle." &&
-              parsed_refusal.restart_blocked_localization ==
-                  MessageKey{"backend.previewRestart.cannedCycle"},
-          "A coded restart refusal gives the frontend an English fallback and the key");
-  require(text == "restart_blocked This line is inside a canned cycle.\n",
-          "An older caller gets the original text record");
-  const auto legacy = parse_output(text + "end ok\n");
-  require(legacy.end == HelperEnd::ok && legacy.restart_blocked == parsed_refusal.restart_blocked &&
-              !legacy.restart_blocked_localization,
-          "An older helper's text remains readable");
-  require(!parse_output("restart_refused 999\nend ok\n").defect.empty() &&
-              !parse_output("restart_refused 2 extra\nend ok\n").defect.empty() &&
-              !parse_output(coded + text + "end ok\n").defect.empty(),
-          "Unknown, malformed, and duplicate restart refusals invalidate the helper result");
+}
+
+void restart_refusal_codes() {
+  struct Row {
+    unsigned code;
+    RestartRefusal reason;
+    std::string_view text;
+    std::string_view key;
+  };
+  constexpr std::array<Row, 16> rows{{
+      {1, RestartRefusal::cutter_compensation, "Cutter compensation is active at this line.",
+       "backend.previewRestart.cutterCompensation"},
+      {2, RestartRefusal::canned_cycle, "This line is inside a canned cycle.",
+       "backend.previewRestart.cannedCycle"},
+      {3, RestartRefusal::feed_spindle_mode,
+       "This line requires a feed or spindle mode that cannot be restored for restart.",
+       "backend.previewRestart.feedSpindleMode"},
+      {4, RestartRefusal::no_motion, "Choose a line that moves the tool.",
+       "backend.previewRestart.noMotion"},
+      {5, RestartRefusal::move_kind, "Choose a rapid, feed, or arc move for restart.",
+       "backend.previewRestart.moveKind"},
+      {6, RestartRefusal::prior_motion, "The prior motion mode cannot be restored for restart.",
+       "backend.previewRestart.priorMotion"},
+      {7, RestartRefusal::explicit_arc, "Choose an arc block with an explicit G2 or G3.",
+       "backend.previewRestart.explicitArc"},
+      {8, RestartRefusal::skipped_effects,
+       "The skipped blocks change tool data or machine outputs.",
+       "backend.previewRestart.skippedEffects"},
+      {9, RestartRefusal::frame_or_tool,
+       "This line changes the coordinate frame or tool before moving.",
+       "backend.previewRestart.frameOrTool"},
+      {10, RestartRefusal::incomplete_state,
+       "The spindle or motion plane at this line is incomplete.",
+       "backend.previewRestart.incompleteState"},
+      {11, RestartRefusal::length_inactive, "The required tool length is not active at this line.",
+       "backend.previewRestart.lengthInactive"},
+      {12, RestartRefusal::length_mismatch,
+       "The tool length at this line does not match the loaded tool table.",
+       "backend.previewRestart.lengthMismatch"},
+      {13, RestartRefusal::subroutines,
+       "LinuxCNC run from line cannot safely skip blocks in a program with subroutines.",
+       "backend.previewRestart.subroutines"},
+      {14, RestartRefusal::tool_preselection,
+       "A later M6 depends on a tool selected before this restart line.",
+       "backend.previewRestart.toolPreselection"},
+      {15, RestartRefusal::rigid_tap,
+       "Run this tapping program from the start to establish the spindle override state.",
+       "backend.previewEngine.rigidTapRestart"},
+      {16, RestartRefusal::not_executed, "The selected line is not executed in this program.",
+       "backend.previewRestart.notExecuted"},
+  }};
+  for (const auto& row : rows) {
+    const auto wire = std::format("restart_refused {}\n", row.code);
+    require(write_restart_refusal(row.reason, true) == wire,
+            std::format("Restart refusal {} has a stable wire code", row.key));
+    const auto parsed = parse_output(wire + "end ok\n");
+    require(parsed.end == HelperEnd::ok && !parsed.restart && parsed.restart_blocked == row.text &&
+                parsed.restart_blocked_localization == MessageKey{std::string(row.key)},
+            std::format("Restart refusal {} has the expected text and key", row.code));
+    const auto old_wire = write_restart_refusal(row.reason, false);
+    require(old_wire == std::format("restart_blocked {}\n", row.text),
+            std::format("Restart refusal {} still writes the original text for older callers",
+                        row.code));
+    const auto legacy = parse_output(old_wire + "end ok\n");
+    require(legacy.end == HelperEnd::ok && legacy.restart_blocked == row.text &&
+                !legacy.restart_blocked_localization,
+            std::format("Restart refusal {} still reads legacy text", row.code));
+  }
+  require(
+      !parse_output("restart_refused 999\nend ok\n").defect.empty() &&
+          !parse_output("restart_refused 2 extra\nend ok\n").defect.empty() &&
+          !parse_output("restart_refused 2\nrestart_blocked A refusal.\nend ok\n").defect.empty(),
+      "Unknown, malformed, and duplicate restart refusals invalidate the helper result");
 }
 
 // The result is text of unknown origin: each case ends, soon, with the valid records before
@@ -333,6 +389,7 @@ void called_names_are_bounded() {
 auto main() -> int {
   try {
     wire_formats();
+    restart_refusal_codes();
     hostile_results();
     blocks_refused_by_their_text();
     called_names_are_bounded();
